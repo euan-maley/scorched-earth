@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""scorch — read the latest live Claude-usage snapshot and tell you whether to burn.
+
+Reads the snapshot the statusline caches at ~/.claude/scorched-earth/state.json so it
+works in any terminal. Pass --weekly-left / --window etc. to compute manually when
+you're outside a Claude Code session (or to fill a gap before calibration kicks in).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+import time
+
+# Resolve the repo's src/ regardless of where `scorch` is symlinked from.
+_REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(_REPO, "src"))
+
+from scorched_earth.core import Snapshot, compute  # noqa: E402
+from scorched_earth import state as st  # noqa: E402
+from scorched_earth import calibrate  # noqa: E402
+from scorched_earth import gradient  # noqa: E402
+import math  # noqa: E402
+
+LIGHT = {"green": "🟢", "amber": "🟡", "off": "⚪", "unknown": "❔"}
+COLOR = {"green": "\033[32m", "amber": "\033[33m", "off": "\033[2m", "unknown": "\033[2m"}
+RESET = "\033[0m"
+HEADLINE = {
+    "green": "Torch it all. Leave them nothing.",
+    "amber": "Almost full throttle. Not quite scorched earth yet.",
+    "off": "Well stocked. Burn at whatever pace suits you.",
+    "unknown": "No read yet. Hold your horses.",
+}
+
+
+def c(s, level, on):
+    return f"{COLOR.get(level,'')}{s}{RESET}" if on else s
+
+
+def parse_when(val):
+    """Accept '11h', '90m', '1h30m', '1d', or a raw unix timestamp -> unix seconds."""
+    if val is None:
+        return None
+    val = val.strip()
+    if re.fullmatch(r"\d{9,}", val):  # looks like a unix timestamp
+        return int(val)
+    secs = 0
+    matched = False
+    for amount, unit in re.findall(r"(\d+)\s*([dhms])", val):
+        matched = True
+        secs += int(amount) * {"d": 86400, "h": 3600, "m": 60, "s": 1}[unit]
+    if not matched:
+        raise argparse.ArgumentTypeError(f"can't parse time '{val}' (try 11h, 90m, 1h30m)")
+    return int(time.time()) + secs
+
+
+def fmt_dur(seconds):
+    if seconds is None:
+        return "—"
+    seconds = max(0, int(seconds))
+    d, rem = seconds // 86400, seconds % 86400
+    h, m = rem // 3600, (rem % 3600) // 60
+    if d:
+        return f"{d}d {h}h" if h else f"{d}d"
+    if h and m:
+        return f"{h}h {m}m"
+    if h:
+        return f"{h}h"
+    return f"{m}m"
+
+
+def render_forecast(fc, on):
+    if not fc or fc.get("projected_end_used") is None:
+        return ""
+    end = fc["projected_end_used"]
+    left = fc.get("projected_leftover") or 0.0
+    conf = fc.get("confidence", "none")
+    lines = [
+        f"  Intel: hold this pace and you finish at ~{end:.0f}% used, "
+        f"with {left:.0f}% left to rot at reset · {conf} confidence"
+    ]
+    if fc.get("basis", "").startswith("linear"):
+        lines.append("  ↳ still learning your weekly rhythm. It gets sharper over a few weeks.")
+    if fc.get("preemptive"):
+        msg = "⚠️ At this pace you'll forfeit reserves at reset. Advance harder."
+        lines.append(f"  {c(msg, 'amber', on)}")
+    return "\n".join(lines)
+
+
+def render(snap, rec, on, provisional_hint=True, fc=None):
+    out = []
+    level = rec.level
+    out.append("")
+    out.append(f"  {c('SCORCHED EARTH', level, on)}  {LIGHT.get(level,'')}  {c(HEADLINE[level], level, on)}")
+    out.append("")
+    if rec.weekly_left is not None:
+        wr = (snap.seven_day_reset - snap.now) if snap.seven_day_reset else None
+        out.append(f"  Weekly:   {rec.weekly_left:.0f}% left   ↺ resets in {fmt_dur(wr)}")
+    if snap.five_hour_pct is not None:
+        hr = (snap.five_hour_reset - snap.now) if snap.five_hour_reset else None
+        out.append(f"  Window:   {snap.five_hour_pct:.0f}% used   ↺ resets in {fmt_dur(hr)}")
+    if rec.windows_left is not None:
+        out.append(f"  Windows left before weekly reset: ~{rec.windows_left:.1f}")
+    if rec.burn_pct is not None:
+        out.append(f"  Recommended burn: {c(f'{rec.burn_pct:.0f}% per window', level, on)}")
+    out.append("")
+    out.append(f"  {rec.reason}")
+    fc_block = render_forecast(fc, on)
+    if fc_block:
+        out.append("")
+        out.append(fc_block)
+    if rec.r is not None:
+        tag = "measured" if not rec.r_provisional else "still calibrating"
+        out.append(f"  Each of your ~{rec.windows_left:.0f} remaining windows is worth "
+                   f"~{rec.r * 100:.0f}% of your weekly budget · {tag}")
+        if rec.r_provisional and provisional_hint:
+            out.append("  ↳ keep using Claude and this sharpens on its own")
+    out.append("")
+    return "\n".join(out)
+
+
+def fire_demo():
+    """Animate the fire-gradient token in this terminal so the flow is actually visible
+    (the statusline can only refresh at Claude Code's cadence)."""
+    tc = gradient.supports_truecolor()
+    if not sys.stdout.isatty():
+        # Non-interactive: print a few static frames so the effect is still inspectable.
+        for k in range(3):
+            print("  🔥 " + gradient.fire("BURN IT ALL", phase=k * 1.1))
+        return 0
+    label = "truecolor" if tc else "256-color (set COLORTERM=truecolor for full range)"
+    sys.stdout.write(f"\033[?25l")  # hide cursor
+    try:
+        print(f"\n  fire-demo · {label} · Ctrl-C to stop\n")
+        while True:
+            phase = (time.time() * 2.4) % (2 * math.pi)
+            line = "  🔥 " + gradient.fire("BURN IT ALL", phase=phase)
+            sys.stdout.write("\r\033[K" + line)
+            sys.stdout.flush()
+            time.sleep(0.05)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.stdout.write("\033[?25h\n")  # show cursor
+        sys.stdout.flush()
+    return 0
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="scorch", description=__doc__.splitlines()[0])
+    p.add_argument("--weekly-left", type=float, help="manual: %% of weekly budget remaining")
+    p.add_argument("--weekly-reset", type=parse_when, help="manual: when weekly resets (e.g. 11h)")
+    p.add_argument("--window", type=float, help="manual: %% of current 5h window used")
+    p.add_argument("--window-reset", type=parse_when, help="manual: when 5h window resets (e.g. 1h)")
+    p.add_argument("--r", type=float, help="manual: R to use for this calc only")
+    p.add_argument("--set-r", type=float, help="persist a manual R into calibration and exit")
+    p.add_argument("--style", choices=["emoji", "text", "minimal", "fire", "off"],
+                   help="set the statusline light style and exit")
+    p.add_argument("--fire-demo", action="store_true",
+                   help="animate the fire-gradient BURN IT ALL in this terminal (Ctrl-C to stop)")
+    p.add_argument("--watch", action="store_true", help="re-print every few seconds")
+    p.add_argument("--no-color", action="store_true")
+    args = p.parse_args(argv)
+
+    on = (not args.no_color) and sys.stdout.isatty()
+
+    if args.fire_demo:
+        return fire_demo()
+
+    if args.set_r is not None:
+        calib = st.load_calibration()
+        calib["r"], calib["r_provisional"] = args.set_r, False
+        st._write_json(st.CALIB_PATH, calib)
+        print(f"Set R = {args.set_r:.3f}. It'll refine itself as more data lands.")
+        return 0
+
+    if args.style is not None:
+        os.makedirs(st.STATE_DIR, exist_ok=True)
+        with open(os.path.join(st.STATE_DIR, "style"), "w") as f:
+            f.write(args.style)
+        shown = {"emoji": "🟢 BURN IT ALL / 🟡 burn N%", "text": "BURN IT ALL / burn N%",
+                 "minimal": "● green / ● amber dot", "fire": "🔥 BURN IT ALL (animated flames)",
+                 "off": "no statusline light"}[args.style]
+        print(f"Light style set to '{args.style}'  ({shown}).")
+        return 0
+
+    # Manual mode: enough overrides to build a snapshot ourselves.
+    if args.weekly_left is not None and args.weekly_reset is not None:
+        now = int(time.time())
+        snap = Snapshot(
+            now=now,
+            five_hour_pct=args.window,
+            five_hour_reset=args.window_reset,
+            seven_day_pct=100.0 - args.weekly_left,
+            seven_day_reset=args.weekly_reset,
+        )
+        calib = st.load_calibration()
+        r = args.r if args.r is not None else (calib.get("r") or calibrate.DEFAULT_R)
+        prov = args.r is None and bool(calib.get("r_provisional", True))
+        print(render(snap, compute(snap, r, r_provisional=prov), on))
+        return 0
+
+    def show_cached():
+        data = st.load_state()
+        if not data:
+            print(
+                "\n  Nothing to read yet.\n"
+                "  Open a Claude Code session so the statusline can grab a\n"
+                "  reading, or do the math by hand:\n\n"
+                "    scorch --weekly-left 62 --weekly-reset 11h --window 80 --window-reset 1h\n"
+            )
+            return False
+        snap = Snapshot(**data["snapshot"])
+        rec = compute(snap, data["recommendation"].get("r"),
+                      r_provisional=data["recommendation"].get("r_provisional", False))
+        print(render(snap, rec, on, fc=data.get("forecast")))
+        return True
+
+    if args.watch:
+        try:
+            while True:
+                sys.stdout.write("\033[2J\033[H" if on else "\n")
+                show_cached()
+                time.sleep(10)
+        except KeyboardInterrupt:
+            return 0
+    show_cached()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "scorched-earth",
+  "description": "A green light for Claude usage: know when to max out your weekly budget before it resets, plus a habit-based forecast that nudges you preemptively.",
+  "owner": {
+    "name": "Euan Maley"
+  },
+  "plugins": [
+    {
+      "name": "scorched-earth",
+      "description": "Signals when remaining weekly Claude budget can only be spent by maxing out every remaining 5-hour window (unused weekly usage doesn't roll over). Adds a 🟢 statusline light, a 🔥 habit-based preemptive nudge, the `scorch` CLI, and the `/scorched-earth` skill.",
+      "source": "./",
+      "category": "productivity",
+      "keywords": ["usage", "rate-limit", "statusline", "weekly-limit", "burn-rate", "forecast"]
+    }
+  ]
+}

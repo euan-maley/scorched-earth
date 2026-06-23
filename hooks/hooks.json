@@ -1,0 +1,16 @@
+{
+  "description": "Scorched Earth: wire the weekly burn-rate light into the statusline on session start (idempotent; wraps any existing statusline, never clobbers it).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/setup.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
