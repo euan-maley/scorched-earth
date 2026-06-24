@@ -102,6 +102,10 @@ check("read_envelope returns windows_left when fresh", read_envelope(_fresh, ROE
 check("read_envelope caps at ROE max_windows",
       read_envelope(_fresh, _rfd({"max_windows": 2.0}), _now) == 2.0)
 check("read_envelope refuses (None) on stale snapshot", read_envelope(_stale, ROE(), _now) is None)
+_noreset = {"snapshot": {"seven_day_pct": 40},  # has weekly but no five_hour_reset
+            "recommendation": {"windows_left": 3.0, "level": "green"}}
+check("is_stale: snapshot missing five_hour_reset is stale", is_stale(_noreset, _now))
+check("read_envelope refuses (None) when reset is missing", read_envelope(_noreset, ROE(), _now) is None)
 
 _rr = RunResult(generated_at="2026-06-24", state="done", repo=_repo, verdict="green",
                 note="1 secured.", available_windows=3.0, spent_estimated=1.0,

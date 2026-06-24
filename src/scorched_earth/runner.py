@@ -85,7 +85,9 @@ def is_stale(state: Optional[dict], now: int) -> bool:
     if snap.get("seven_day_pct") is None:
         return True
     reset = snap.get("five_hour_reset")
-    return reset is not None and reset < now
+    if reset is None:                 # incomplete snapshot: can't verify freshness -> stale
+        return True
+    return reset < now
 
 
 def read_envelope(state: Optional[dict], roe: ROE, now: int) -> Optional[float]:
