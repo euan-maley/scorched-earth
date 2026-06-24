@@ -70,6 +70,24 @@ check("reorder applies the given order", [j.id for j in _io.reorder(_repo, ["c",
 check("reorder appends un-named queued jobs after",
       [j.id for j in _io.reorder(_repo, ["b"])] == ["b", "c", "a"])
 
+
+# --- Task 4: board_state assembler ------------------------------------------------
+os.makedirs(os.path.join(_repo, ".scorched"), exist_ok=True)
+with open(os.path.join(_repo, ".scorched", "jobs.json"), "w") as f:
+    json.dump([{"id": "p1", "title": "Prop1", "type": "test", "est_windows": 1, "value": 5},
+               {"id": "q1", "title": "Queued1", "type": "docs", "est_windows": 1, "value": 4},
+               {"id": "d1", "title": "Done1", "type": "perf", "est_windows": 1, "value": 3}], f)
+_io.write_queue(_repo, [Job(id="q1", repo=_repo, title="Queued1", type="docs", est_windows=1, value=4)])
+_io.write_run_record(_repo, {"generated_at": "2026-06-24", "state": "done", "repo": _repo,
+                             "jobs": [{"id": "d1", "title": "Done1", "type": "perf", "tier": "M",
+                                       "outcome": "pass", "est_windows": 1.0, "branch": "scorched/d1"}]},
+                     "2026-06-24")
+_bs = _io.board_state(_repo)
+check("board_state proposes only un-queued/un-finished jobs", [j["id"] for j in _bs["proposed"]] == ["p1"])
+check("board_state queued reflects the queue", [j["id"] for j in _bs["queued"]] == ["q1"])
+check("board_state finished reflects the last run record", [j["id"] for j in _bs["finished"]] == ["d1"])
+check("board_state carries repo name", _bs["name"] == os.path.basename(_repo))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

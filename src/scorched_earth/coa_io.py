@@ -165,3 +165,20 @@ def read_run_record(repo_path: str, date: Optional[str] = None):
         date = stamps[-1]
     rec = st._read_json(os.path.join(out, f"{date}.json"), None)
     return rec
+
+
+def _job_brief(j: Job) -> dict:
+    return {"id": j.id, "title": j.title, "type": j.type, "tier": j.tier,
+            "est_windows": j.est_windows, "value": j.value}
+
+
+def board_state(repo_path: str) -> dict:
+    ap = os.path.realpath(os.path.expanduser(repo_path))
+    queued = read_queue(repo_path)
+    rec = read_run_record(repo_path) or {}
+    finished = [j for j in (rec.get("jobs") or []) if j.get("outcome") in ("pass", "fail")]
+    spoken = {j.id for j in queued} | {j.get("id") for j in finished}
+    proposed = [_job_brief(j) for j in load_jobs(repo_path) if j.id not in spoken]
+    return {"repo": ap, "name": os.path.basename(ap),
+            "proposed": proposed, "queued": [_job_brief(j) for j in queued],
+            "finished": finished}
