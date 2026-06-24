@@ -85,6 +85,35 @@ _html = render_html(_coa, "2026-06-24")
 check("render_html is a self-contained doc with the title",
       _html.lstrip().lower().startswith("<!doctype html") and "COURSE OF ACTION" in _html.upper())
 
+# --- coa_io.py (round-trips under a temp HOME) -----------------------------------
+_home = tempfile.mkdtemp()
+_repo = tempfile.mkdtemp()
+_env_keys = dict(os.environ)
+os.environ["HOME"] = _home
+import importlib  # noqa: E402
+import scorched_earth.state as _st  # noqa: E402
+importlib.reload(_st)
+import scorched_earth.coa_io as _io  # noqa: E402
+importlib.reload(_io)
+
+_io.link_repo(_repo)
+check("link_repo registers an abspath", os.path.realpath(_repo) in _io.list_repos())
+check("unlink_repo removes it", _io.unlink_repo(_repo) and _io.list_repos() == [])
+
+os.makedirs(os.path.join(_repo, ".scorched"), exist_ok=True)
+with open(os.path.join(_repo, ".scorched", "roe.json"), "w") as f:
+    json.dump({"max_windows": 4}, f)
+check("load_roe merges per-repo over default", _io.load_roe(_repo).max_windows == 4)
+
+with open(os.path.join(_repo, ".scorched", "jobs.json"), "w") as f:
+    json.dump([{"id": "j1", "est_windows": 1, "value": 3}], f)
+check("load_jobs reads the repo job list", [j.id for j in _io.load_jobs(_repo)] == ["j1"])
+
+_mdp, _htmlp = _io.write_coa(_repo, "# md", "<html></html>", "2026-06-24")
+check("write_coa writes md + html under .scorched/coa",
+      os.path.exists(_mdp) and os.path.exists(_htmlp) and "2026-06-24" in _mdp)
+os.environ.clear(); os.environ.update(_env_keys)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
