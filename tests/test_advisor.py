@@ -82,8 +82,11 @@ _md = render_md(_coa, "2026-06-24")
 check("render_md lists queued jobs and the date",
       "cheap" in _md and "2026-06-24" in _md and _md.lstrip().startswith("#"))
 _html = render_html(_coa, "2026-06-24")
-check("render_html is a self-contained doc with the title",
-      _html.lstrip().lower().startswith("<!doctype html") and "COURSE OF ACTION" in _html.upper())
+check("render_html fills the war-HUD template with the COA data",
+      _html.lstrip().lower().startswith("<!doctype html")
+      and "COURSE OF ACTION" in _html.upper()
+      and "__COA_JSON__" not in _html          # the data token was substituted
+      and "cheap" in _html)                    # a queued job title made it into the blob
 
 # --- coa_io.py (round-trips under a temp HOME) -----------------------------------
 _home = tempfile.mkdtemp()

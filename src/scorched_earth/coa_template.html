@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scorched Earth — Course of Action</title>
+<!--
+  COURSE OF ACTION (COA) — the budget-matched work plan. Sibling of the weekly SITREP;
+  same scorched-earth war-HUD look. Single self-contained file, no external assets/CDNs,
+  opens offline, ships in the plugin.
+
+  TEMPLATE CONTRACT
+  -----------------
+  All data flows through the one `const COA = {…}` blob below (same pattern as the
+  sitrep's SITREP object). Python fills it; the date is passed in as a string (no Date()).
+  Everything on screen is derived from COA in render(). Shape:
+
+    COA = {
+      sector:  string,                       // header tag, e.g. "SECTOR 07"
+      date:    string,                       // pre-formatted timestamp string
+      verdict: 'green'|'amber'|'off'|'unknown',   // drives the accent across the report
+      note:    string,                       // the COA verdict line (prose)
+      envelope: { available:number,          // windows in the budget envelope
+                  spent:number,              // windows committed by this plan
+                  unit:string,               // label, e.g. "WINDOWS"
+                  resetIn:string },          // countdown string to reset/reload
+      roe: string[],                         // Rules of Engagement (1 line each)
+      queue:  Job[],                         // the battle plan, ranked best-first
+      skipped: Job[]                         // left on the table (spillover)
+    }
+
+    Job = {
+      title:     string,
+      tier:      'S'|'M'|'L'|'XL',           // XL = hottest / biggest (drives visual weight)
+      type:      string,                     // free tag: REFACTOR, TESTS, DOCS, FIX, INFRA…
+      cost:      string,                     // e.g. "2.6 win"
+      value:     'CRITICAL'|'HIGH'|'MEDIUM'|'LOW',
+      rationale: string,                     // one-line why
+      command:   string,                     // launch command (queue jobs)
+      note:      string                      // why it didn't fit (skipped jobs)
+    }
+-->
+<style>
+  :root{
+    color-scheme:dark;
+    --font:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --ground:#0b0705; --panel:#0b0f12; --mod:#10181d;
+    --panel-bd:#243639; --mod-bd:#2b3d44; --track:#070b0d; --track-bd:#243a3a;
+    --strong:#eef3f3; --primary:#c1dada; --secondary:#9ec1c1; --muted:#86abab; --head:#8fb8b8;
+    --amber:#e2a04d; --ember:#e2541d; --ember2:#ff9a3d; --forfeit:#c0653a;
+    --bracket:#3a5a5a; --charred:#1a120b; --charred2:#0c0805;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--ground);font-family:var(--font);
+       padding:26px 16px;-webkit-font-smoothing:antialiased}
+
+  .wrap{max-width:980px;margin:0 auto;background:var(--panel);
+        border:1px solid var(--panel-bd);position:relative;overflow:hidden;
+        box-shadow:0 0 0 1px var(--ground),0 18px 60px rgba(0,0,0,.6)}
+
+  /* corner HUD brackets */
+  .br{position:absolute;width:11px;height:11px;z-index:9}
+  .br.tl{left:6px;top:6px;border-left:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.tr{right:6px;top:6px;border-right:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.bl{left:6px;bottom:6px;border-left:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+  .br.brr{right:6px;bottom:6px;border-right:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+
+  /* ---- header ---- */
+  .hdr{position:relative;padding:20px 22px 150px;border-bottom:1px solid #1b2a30;
+       background:linear-gradient(#0f161a,#0b0f12);overflow:hidden}
+  .hdr__scene{position:absolute;left:0;bottom:0;width:100%;height:auto;display:block;
+             image-rendering:pixelated;pointer-events:none;z-index:0}
+  .hdr__top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;
+            gap:12px;flex-wrap:wrap}
+  .hdr__tag{display:flex;align-items:center;gap:11px;font-size:18px;letter-spacing:2px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .hdr__title{position:relative;z-index:2;margin:13px 0 0;
+    font-size:clamp(30px,6vw,52px);font-weight:800;letter-spacing:2px;line-height:.96;
+    background:linear-gradient(90deg,#ff3b1f,#ff8a1f,#ffd24a,#ff8a1f,#ff3b1f);
+    background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:firetext 2s linear infinite;text-shadow:0 2px 0 rgba(58,18,6,.0)}
+  @keyframes firetext{to{background-position:200% 0}}
+  .hdr__sub{position:relative;z-index:2;margin-top:8px;font-size:19px;letter-spacing:2px;color:#e9c08a}
+
+  .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid;padding:4px 11px 3px;
+        font-size:13px;font-weight:700;letter-spacing:1.5px}
+
+  /* ---- generic module ---- */
+  .deck{padding:18px;display:flex;flex-direction:column;gap:14px}
+  .mod{border:1px solid var(--mod-bd);background:var(--mod);padding:14px 16px}
+  .mod__hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+           border-bottom:1px solid var(--mod-bd);padding-bottom:8px;margin-bottom:13px;letter-spacing:2px}
+  .mod__hd .l{font-size:16px;color:var(--head);font-weight:700}
+  .mod__hd .r{font-size:13px;color:var(--muted)}
+
+  /* ---- ammunition envelope ---- */
+  .ammo{position:relative;border:1px solid var(--mod-bd);background:var(--mod);padding:16px 18px 18px}
+  .ammo__accent{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .ammo__row{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+  .ammo__big{line-height:.82;letter-spacing:.5px}
+  .ammo__big b{font-size:62px;color:var(--strong);font-weight:800}
+  .ammo__big i{font-size:34px;color:var(--amber);font-style:normal}
+  .ammo__big small{font-size:24px;color:var(--secondary)}
+  .ammo__lbl{font-size:14px;letter-spacing:2px;color:var(--head);margin-top:8px}
+  .ammo__side{text-align:right;font-size:14px;letter-spacing:1px;color:var(--secondary)}
+  .ammo__side b{display:block;font-size:30px;line-height:1;color:var(--forfeit);font-weight:800;letter-spacing:0}
+  .ammo__side .reset{margin-top:10px}
+  .ammo__side .reset b{font-size:26px;color:var(--primary)}
+  .gauge{position:relative;height:26px;background:var(--track);border:1px solid var(--track-bd);overflow:hidden}
+  .gauge__fill{position:absolute;top:0;left:0;bottom:0;
+    background:linear-gradient(180deg,#ffd24a,#ff8a1f 45%,#ff6a1f 75%,#e2541d);
+    box-shadow:0 0 16px rgba(255,90,20,.5)}
+  .gauge__forfeit{position:absolute;top:0;bottom:0;
+    background:repeating-linear-gradient(135deg,#241910 0 5px,#15100b 5px 10px);opacity:.95}
+  .gauge__rounds{position:absolute;inset:0;
+    background:repeating-linear-gradient(90deg,transparent 0 14px,#0b0f12 14px 17px)}
+  .gauge__tick{position:absolute;top:-1px;bottom:-1px;width:2px;background:#0b0f12;
+    box-shadow:0 0 0 1px rgba(255,210,74,.7)}
+
+  /* ---- ROE ---- */
+  .roe{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:8px 22px}
+  .roe li{display:flex;gap:10px;font-size:19px;line-height:1.25;color:var(--primary)}
+  .roe .n{flex:none;color:var(--ember2);font-weight:700;min-width:26px}
+
+  /* ---- section heading ---- */
+  .sec{display:flex;align-items:center;gap:13px;margin:4px 2px 0}
+  .sec h2{margin:0;font-size:15px;font-weight:800;letter-spacing:3px;color:var(--head);white-space:nowrap}
+  .sec .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--mod-bd),transparent)}
+  .sec .rt{font-size:14px;letter-spacing:2px;color:var(--muted)}
+
+  /* ---- job cards ---- */
+  .jobs{display:flex;flex-direction:column;gap:10px}
+  .job{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:stretch;
+       background:var(--mod);border:1px solid var(--mod-bd);padding:13px 16px 13px 13px;position:relative}
+  .job__rank{align-self:center;font-size:30px;font-weight:800;color:#3f5358;line-height:1;
+             min-width:34px;text-align:center;letter-spacing:0}
+  .job__body{min-width:0}
+  .job__head{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .tier{flex:none;display:inline-flex;align-items:center;justify-content:center;
+        min-width:34px;height:24px;padding:0 9px;font-size:14px;font-weight:800;letter-spacing:1px}
+  .job__title{font-weight:700;color:var(--strong);letter-spacing:.3px}
+  .type{flex:none;font-size:13px;letter-spacing:1.5px;color:var(--muted);
+        border:1px solid var(--mod-bd);padding:2px 8px}
+  .job__rationale{margin-top:7px;font-size:18px;line-height:1.3;color:var(--secondary);max-width:70ch}
+  .job__cmd{margin-top:10px;display:flex;align-items:center;gap:9px;background:var(--track);
+            border:1px solid var(--track-bd);padding:7px 11px;font-size:16px;letter-spacing:.5px;
+            color:var(--primary);overflow:auto}
+  .job__cmd .px{flex:none;color:var(--ember);font-weight:800}
+  .job__meta{align-self:center;text-align:right;flex:none;padding-left:6px;border-left:1px solid var(--mod-bd);
+             min-width:104px}
+  .job__cost{font-size:26px;color:var(--strong);line-height:1;font-weight:700}
+  .job__sub{font-size:12px;letter-spacing:2px;color:var(--muted);margin-top:2px}
+  .job__value{font-size:18px;font-weight:700;letter-spacing:1px;margin-top:11px;line-height:1}
+
+  /* skipped / charred */
+  .job--dim{opacity:.62;background:linear-gradient(#120c08,#0d0907);border-color:#2a1c12}
+  .job--dim .job__rank{color:#3a2615}
+  .job--dim .job__title{color:#b59478}
+  .job--dim .job__rationale{color:#8a6a52}
+  .job__stamp{flex:none;font-size:12px;letter-spacing:2px;font-weight:800;
+              color:#a8623f;border:1px solid #5a3420;padding:3px 8px 2px;transform:rotate(-2.5deg);
+              background:rgba(40,20,10,.45)}
+  .job--dim .job__cmd{color:#8a6a52}
+  .job--dim .job__cmd .px{color:#7a4a30}
+
+  /* ---- verdict ---- */
+  .verdict{position:relative;border:1px solid var(--mod-bd);
+           background:linear-gradient(90deg,rgba(226,160,77,.12),rgba(11,15,18,0) 62%);
+           padding:15px 17px 16px 21px;overflow:hidden}
+  .verdict__accent{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .verdict__hd{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .verdict__hd .lab{font-size:15px;letter-spacing:2px;color:var(--muted)}
+  .verdict__note{font-size:21px;line-height:1.35;color:var(--strong);margin-top:11px;max-width:84ch}
+
+  .meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
+        font-size:14px;letter-spacing:1px;color:#7a9d9d;padding:2px}
+
+  /* ---- overlays ---- */
+  .scan{position:absolute;inset:0;pointer-events:none;z-index:7;
+        background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);
+        mix-blend-mode:multiply}
+  .vig{position:absolute;inset:0;pointer-events:none;z-index:7;
+       background:radial-gradient(ellipse at center,transparent 56%,rgba(0,0,0,.42) 100%)}
+
+  .blink{animation:blink 1.4s steps(1,end) infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+  @media (prefers-reduced-motion:reduce){
+    .hdr__title,.blink{animation:none}
+    .hdr__title{background-position:0 0}
+  }
+  @media (max-width:680px){
+    .roe{grid-template-columns:1fr}
+    .job{grid-template-columns:auto 1fr;gap:11px}
+    .job__meta{grid-column:1 / -1;text-align:left;border-left:0;border-top:1px solid var(--mod-bd);
+               padding:9px 0 0;margin-top:4px;display:flex;gap:22px;align-items:baseline}
+    .job__value{margin-top:0}
+  }
+</style></head>
+<body>
+<div class="wrap" id="coa">
+  <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br brr"></span>
+</div>
+
+<script>
+/* ======================================================================
+   COA — sample data blob. Python overwrites this object; nothing else.
+   ====================================================================== */
+const COA = __COA_JSON__;
+
+/* ======================================================================
+   Render — everything below is derived from COA. No data lives here.
+   ====================================================================== */
+(function(){
+  const VERDICT = {
+    green:  { color:"#7cb342", level:"GREEN",  op:"EXECUTE" },
+    amber:  { color:"#e2a04d", level:"AMBER",  op:"PROCEED W/ CAUTION" },
+    off:    { color:"#c0392b", level:"OFF",    op:"HOLD FIRE" },
+    unknown:{ color:"#6f8a8a", level:"UNKNOWN", op:"GATHER INTEL" }
+  };
+  const TIER = {
+    XL:{ bar:"#ff6a1f", barW:6, title:23, badgeBg:"linear-gradient(135deg,#ffd24a,#ff6a1f)", badgeFg:"#190d05", badgeBd:"#ff6a1f", glow:true },
+    L: { bar:"#ff9a3d", barW:5, title:20, badgeBg:"#ff9a3d", badgeFg:"#190d05", badgeBd:"#ff9a3d", glow:false },
+    M: { bar:"#e2a04d", barW:4, title:18, badgeBg:"#e2a04d", badgeFg:"#190d05", badgeBd:"#e2a04d", glow:false },
+    S: { bar:"#5e7a7a", barW:3, title:16, badgeBg:"transparent", badgeFg:"#9ec1c1", badgeBd:"#3a5a5a", glow:false }
+  };
+  const VALUE = { CRITICAL:"#ff6a1f", HIGH:"#e2a04d", MEDIUM:"#c1dada", LOW:"#86abab" };
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+  const V = VERDICT[COA.verdict] || VERDICT.unknown;
+  const env = COA.envelope;
+  const forfeit = Math.max(0, env.available - env.spent);
+  const spentPct = env.available > 0 ? Math.min(100, env.spent / env.available * 100) : 0;
+  const fmt = n => (Math.round(n*10)/10).toString();
+
+  function jobCard(job, idx){
+    const t = TIER[job.tier] || TIER.M;
+    const badge = `<span class="tier" style="background:${t.badgeBg};color:${t.badgeFg};border:1px solid ${t.badgeBd};">${esc(job.tier)}</span>`;
+    const glow = t.glow ? "box-shadow:0 0 0 1px rgba(255,106,31,.28),0 0 24px rgba(255,90,20,.16);" : "";
+    return `
+    <div class="job" style="border-left:${t.barW}px solid ${t.bar};${glow}">
+      <div class="job__rank">${String(idx).padStart(2,"0")}</div>
+      <div class="job__body">
+        <div class="job__head">
+          ${badge}
+          <span class="job__title" style="font-size:${t.title}px;">${esc(job.title)}</span>
+          <span class="type">${esc(job.type)}</span>
+        </div>
+        <div class="job__rationale">${esc(job.rationale)}</div>
+        <div class="job__cmd"><span class="px">&#9656;</span> ${esc(job.command)}</div>
+      </div>
+      <div class="job__meta">
+        <div class="job__cost">${esc(job.cost)}</div>
+        <div class="job__sub">COST</div>
+        <div class="job__value" style="color:${VALUE[job.value]||"#c1dada"};">${esc(job.value)}</div>
+        <div class="job__sub">VALUE</div>
+      </div>
+    </div>`;
+  }
+
+  function skipCard(job){
+    const t = TIER[job.tier] || TIER.M;
+    return `
+    <div class="job job--dim" style="border-left:${t.barW}px solid #3a2615;">
+      <div class="job__rank">&mdash;</div>
+      <div class="job__body">
+        <div class="job__head">
+          <span class="tier" style="background:transparent;color:#9c7a5e;border:1px solid #5a3420;">${esc(job.tier)}</span>
+          <span class="job__title" style="font-size:${t.title}px;">${esc(job.title)}</span>
+          <span class="type" style="border-color:#3a2615;color:#8a6a52;">${esc(job.type)}</span>
+          <span class="job__stamp">DID NOT FIT</span>
+        </div>
+        <div class="job__rationale">${esc(job.note)}</div>
+      </div>
+      <div class="job__meta" style="border-left-color:#3a2615;">
+        <div class="job__cost" style="color:#b59478;">${esc(job.cost)}</div>
+        <div class="job__sub" style="color:#7a5e44;">COST</div>
+        <div class="job__value" style="color:#8a6a52;">${esc(job.value)}</div>
+        <div class="job__sub" style="color:#7a5e44;">VALUE</div>
+      </div>
+    </div>`;
+  }
+
+  const html = `
+    <div class="hdr">
+      <canvas class="hdr__scene" width="360" height="60"></canvas>
+      <div class="hdr__top">
+        <div class="hdr__tag">
+          <span class="dot blink" style="background:${V.color};box-shadow:0 0 8px ${V.color};"></span>
+          <span>// COA &middot; ${esc(COA.sector)} &middot; ${esc(COA.date)}</span>
+        </div>
+        <span class="pill" style="border-color:${V.color};color:${V.color};">
+          <span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>
+          ${esc(V.level)} &nbsp;&rsaquo;&rsaquo; ${esc(V.op)}
+        </span>
+      </div>
+      <h1 class="hdr__title">COURSE OF ACTION</h1>
+      <div class="hdr__sub">BUDGET-MATCHED BATTLE PLAN &middot; ${COA.queue.length} JOBS COMMITTED &middot; ${COA.skipped.length} HELD BACK</div>
+    </div>
+
+    <div class="deck">
+
+      <!-- 2. AMMUNITION -->
+      <div class="ammo">
+        <div class="ammo__accent" style="background:${V.color};"></div>
+        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">AMMUNITION</span><span class="r">BUDGET ENVELOPE &middot; ${esc(env.unit)}</span></div>
+        <div class="ammo__row">
+          <div class="ammo__big">
+            <b>${fmt(env.spent)}</b><i> / ${fmt(env.available)}</i> <small>${esc(env.unit)}</small>
+            <div class="ammo__lbl">COMMITTED OF AVAILABLE</div>
+          </div>
+          <div class="ammo__side">
+            FORFEIT AT RESET
+            <b>${fmt(forfeit)} ${esc(env.unit.slice(0,3))}</b>
+            <div class="reset">RELOAD IN<br><b>${esc(env.resetIn)}</b></div>
+          </div>
+        </div>
+        <div class="gauge">
+          <div class="gauge__fill" style="width:${spentPct.toFixed(2)}%;"></div>
+          <div class="gauge__forfeit" style="left:${spentPct.toFixed(2)}%;right:0;"></div>
+          <div class="gauge__tick" style="left:${spentPct.toFixed(2)}%;"></div>
+          <div class="gauge__rounds"></div>
+        </div>
+      </div>
+
+      <!-- 3. ROE -->
+      <div class="mod">
+        <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT</span><span class="r">ROE // STANDING ORDERS</span></div>
+        <ul class="roe">
+          ${COA.roe.map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
+        </ul>
+      </div>
+
+      <!-- 4. BATTLE PLAN -->
+      <div class="sec"><h2>BATTLE PLAN</h2><span class="rule"></span><span class="rt">FIRING ORDER &middot; HIGH \u2192 LOW</span></div>
+      <div class="jobs">
+        ${COA.queue.map((j,i)=>jobCard(j,i+1)).join("")}
+      </div>
+
+      <!-- 5. LEFT ON THE TABLE -->
+      <div class="sec" style="margin-top:6px;"><h2 style="color:#8a6a52;">LEFT ON THE TABLE</h2><span class="rule" style="background:linear-gradient(90deg,#3a2615,transparent);"></span><span class="rt" style="color:#7a5e44;">SPILLOVER &middot; UNFUNDED</span></div>
+      <div class="jobs">
+        ${COA.skipped.map(skipCard).join("")}
+      </div>
+
+      <!-- 6. VERDICT -->
+      <div class="verdict">
+        <div class="verdict__accent" style="background:${V.color};"></div>
+        <div class="verdict__hd">
+          <span class="lab">COA //</span>
+          <span class="pill" style="border-color:${V.color};color:${V.color};">
+            <span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>${esc(V.level)}
+          </span>
+        </div>
+        <div class="verdict__note">${esc(COA.note)}</div>
+      </div>
+
+      <div class="meta">
+        <span>GENERATED ${esc(COA.date)}</span>
+        <span>// FIELD INTEL &middot; COURSE OF ACTION</span>
+      </div>
+
+    </div>
+
+    <div class="scan"></div>
+    <div class="vig"></div>
+  `;
+
+  const root = document.getElementById("coa");
+  root.insertAdjacentHTML("beforeend", html);
+
+  /* ---- procedural pixel-art DUSK landscape: charred field after the burn ---- */
+  function buildScene(cv){
+    if(!cv) return;
+    const W=cv.width, H=cv.height, ctx=cv.getContext("2d");
+    ctx.imageSmoothingEnabled=false;
+    const rng=s=>{let v=(s>>>0)||1;return()=>{v=(v*1664525+1013904223)>>>0;return v/4294967296;};};
+    const gl=H-9, sunX=Math.round(W*0.60), sunY=gl-2;
+
+    // static scene rendered once into an offscreen buffer
+    const off=document.createElement("canvas"); off.width=W; off.height=H;
+    const o=off.getContext("2d"); o.imageSmoothingEnabled=false;
+    const px=(x,y,f)=>{ if(x>=0&&x<W&&y>=0&&y<H){ o.fillStyle=f; o.fillRect(x|0,y|0,1,1);} };
+
+    // dusk sky
+    const sky=o.createLinearGradient(0,0,0,gl);
+    sky.addColorStop(0,"#0b0f12"); sky.addColorStop(.16,"#1a1622"); sky.addColorStop(.38,"#34203c");
+    sky.addColorStop(.58,"#6e3a44"); sky.addColorStop(.78,"#b3552b"); sky.addColorStop(.92,"#e2843a"); sky.addColorStop(1,"#f4ab50");
+    o.fillStyle=sky; o.fillRect(0,0,W,gl);
+    // setting sun glow + disc
+    const sg=o.createRadialGradient(sunX,sunY,0,sunX,sunY,30);
+    sg.addColorStop(0,"rgba(255,224,150,.95)"); sg.addColorStop(.22,"rgba(255,182,86,.72)");
+    sg.addColorStop(.55,"rgba(228,118,48,.26)"); sg.addColorStop(1,"rgba(228,118,48,0)");
+    o.fillStyle=sg; o.fillRect(0,0,W,gl+4);
+    o.fillStyle="#ffd479"; o.beginPath(); o.arc(sunX,sunY,5,0,6.283); o.fill();
+
+    // rolling hills near the horizon (far -> near)
+    const hill=(amp,freq,ph,base,col)=>{ for(let x=0;x<W;x++){ const top=base-Math.round(amp*(0.5+0.5*Math.sin(x/W*freq+ph)));
+      for(let y=top;y<gl;y++) px(x,y,col); } };
+    hill(5,7,0.5,gl-1,"#2a1d2c"); hill(3,12,2.2,gl,"#1c1422");
+
+    // charred ground, top edge catching the last light
+    const rg=rng(7);
+    for(let x=0;x<W;x++) for(let y=gl;y<H;y++){ const d=y-gl; let f;
+      if(d===0)      f=(rg()<0.5?"#7d401d":"#5a2e16");
+      else if(d===1) f=(rg()<0.4?"#3a2212":"#1a120b");
+      else           f=(rg()<0.18?"#0a0604":(rg()<0.12?"#2a1d12":"#160f0a"));
+      px(x,y,f);
+    }
+
+    // ---- sprite atlas (silhouettes, warm rim toward the sun) ----
+    const SPR={
+      wagon:["..................",".....hhhhhhh......","....hhhhhhhhh.....","...hhhhhhhhhhhr...",
+             "..bbbbbbbbbbbbr...","..bbbbbbbbbbbbr...","..bbbbbbbbbbbb....","...ww......ww.....",
+             "..wsw......wsw....","...ww......ww....."],
+      scare:["...www...","..wwwww..",".ttttttt.","...hhh...","aaaaPaaaa","...PPP...","..PPPPP..",
+             "..PPPPP..","...PPP...","...P.P...","...P.P..."],
+      barrel:[".bbbb.","bbbbbb","bBBBBb","bbbbbb","bBBBBb","bbbbbb","bBBBBb",".bbbb."],
+      crate:["kkkkkkkk","kKkkkkKk","kkKkkKkk","kkkKKkkk","kkKkkKkk","kKkkkkKk","kkkkkkkk"],
+      stump:[".ssss.","ssssss","sSSSSs","ssssss"]
+    };
+    const PALS={
+      wagon:{h:"#0e0805",b:"#130d08",w:"#1a120b",s:"#33240f",r:"#9a4a20"},
+      scare:{w:"#52391a",t:"#2c1d0f",h:"#241910",a:"#1a120b",P:"#15100a"},
+      barrel:{b:"#15100a",B:"#2c1d12"},
+      crate:{k:"#130d08",K:"#28190f"},
+      stump:{s:"#1a120b",S:"#2f2012"}
+    };
+    const place=(name,cx,flip)=>{ const m=SPR[name],p=PALS[name],wd=m[0].length,ht=m.length,ox=Math.round(cx-wd/2),oy=gl-ht+1;
+      for(let r=0;r<ht;r++){ const row=m[r]; for(let c=0;c<wd;c++){ const ch=row[flip?wd-1-c:c],f=p[ch]; if(f) px(ox+c,oy+r,f); } } };
+
+    // burned tree (depth = hazy/short, else near-black with warm rim + broken branches)
+    function tree(x0,h,lean,seed,depth){
+      const r=rng(seed); const brk=r()<0.30?Math.floor(h*(0.5+r()*0.3)):h;
+      const rimRight=x0<sunX, trunk=depth?"#241a2a":"#110b06", rim="#8a3e1a"; let x=x0;
+      for(let i=0;i<brk;i++){ const y=gl-i;
+        x=x0+Math.round(lean*i)+(i>2&&r()<0.16?(r()<0.5?-1:1):0);
+        px(x,y,trunk);
+        if(!depth&&i<brk*0.4&&r()<0.5) px(x+(rimRight?-1:1),y,"#0a0604");
+        if(!depth&&r()<0.42) px(x+(rimRight?1:-1),y,rim);
+        if(!depth&&i>brk*0.45&&r()<0.2){ const dir=r()<0.5?-1:1,bl=2+Math.floor(r()*4); let bx=x,by=y;
+          for(let b=0;b<bl;b++){ bx+=dir; if(r()<0.6) by-=1; px(bx,by,trunk); if(r()<0.3) px(bx,by,rim); } }
+      }
+      if(brk<h) px(x0+Math.round(lean*brk),gl-brk,"#0a0604");
+    }
+
+    // broken fence: posts + sagging rail
+    function fence(x0,x1,seed){ const r=rng(seed), posts=[];
+      for(let x=x0;x<=x1;x+=8){ posts.push(x); const ph=4+Math.floor(r()*2);
+        for(let k=0;k<ph;k++) px(x,gl-k,"#150f0a"); px(x+1,gl-ph+1,"#7d401d"); }
+      for(let i=0;i<posts.length-1;i++){ const a=posts[i],b=posts[i+1];
+        for(let x=a;x<=b;x++) px(x,gl-3+(r()<0.3?1:0),"#170f09"); } }
+
+    // depth treeline across the ridge
+    const rb=rng(555), nBg=Math.floor(W/15);
+    for(let i=0;i<nBg;i++){ const x=Math.floor((i+0.5)*(W/nBg)+(rb()-0.5)*6); tree(x,5+Math.floor(rb()*9),(rb()-0.5)*0.4,2000+i,true); }
+
+    // scattered props + foreground trees (deliberate composition)
+    place("wagon", W*0.14, false);
+    place("stump", W*0.27, false);
+    place("scare", W*0.33, false);
+    place("barrel",W*0.45, false);
+    place("crate", W*0.50, false);
+    fence(Math.round(W*0.54),Math.round(W*0.70),77);
+    place("barrel",W*0.66, false);
+    place("stump", W*0.72, false);
+    place("wagon", W*0.85, true);
+    const rf=rng(99);
+    [0.06,0.21,0.39,0.58,0.77,0.93].forEach((fx,i)=>tree(Math.round(W*fx),18+Math.floor(rf()*16),(rf()-0.5)*0.5,99+i*13,false));
+
+    // ---- dynamic layer: drifting crows, smoke, smolder ----
+    const re=rng(321), embers=[];
+    for(let k=0;k<6;k++) embers.push({x:Math.floor(re()*W),y:gl-1-Math.floor(re()*2),ph:re()*6.28});
+    const smokeAt=[Math.round(W*0.14),Math.round(W*0.85)];
+    const crows=[{x:W*0.30,y:13,sp:0.16,ph:0},{x:W*0.66,y:9,sp:0.12,ph:1.5},{x:W*0.48,y:6,sp:0.09,ph:3}];
+
+    const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let t=0;
+    function frame(){
+      ctx.clearRect(0,0,W,H); ctx.drawImage(off,0,0);
+      // smoke wisps (warm-lit at base)
+      for(const sx of smokeAt) for(let j=0;j<6;j++){
+        const yy=gl-6-j*1.6-((t*0.14)%11);
+        const xx=sx+Math.round(Math.sin(t*0.04+j*0.5+sx)*1.5);
+        ctx.globalAlpha=Math.max(0,0.24-j*0.034); ctx.fillStyle=j<2?"#5a4030":"#39291c";
+        ctx.fillRect(xx|0,yy|0,1,1);
+      }
+      ctx.globalAlpha=1;
+      for(const e of embers){ const fl=0.5+0.5*Math.sin(t*0.12+e.ph);
+        ctx.globalAlpha=0.35+0.65*fl; ctx.fillStyle=fl>0.6?"#ff9a3d":"#e2541d"; ctx.fillRect(e.x,e.y,1,1); }
+      ctx.globalAlpha=1;
+      for(const c of crows){ const cx=((c.x+t*c.sp)%(W+12))-6, cy=c.y+Math.sin(t*0.06+c.ph)*1.2;
+        ctx.fillStyle="#0c0907";
+        ctx.fillRect((cx-2)|0,(cy+1)|0,1,1); ctx.fillRect((cx-1)|0,cy|0,1,1);
+        ctx.fillRect(cx|0,(cy+1)|0,1,1); ctx.fillRect((cx+1)|0,cy|0,1,1); ctx.fillRect((cx+2)|0,(cy+1)|0,1,1); }
+      if(!reduce) t++;
+    }
+    frame();
+    if(!reduce) setInterval(frame,90);
+  }
+  buildScene(root.querySelector(".hdr__scene"));
+})();
+</script>
+</body></html>

@@ -21,7 +21,8 @@ spent by maxing out every remaining 5-hour window.
 - `install.sh` — manual (non-plugin) install: puts `scorch` on PATH, offers light styles, wires the segment.
 - `.claude-plugin/plugin.json` — plugin manifest. Skills/commands/hooks/bin are auto-discovered by directory convention (no explicit declaration needed).
 - `src/scorched_earth/jobs.py` / `roe.py` / `advisor.py` — COA advisor: job schema, rules of engagement, and the pure tier-and-fill budget matcher. No I/O.
-- `src/scorched_earth/coa_report.py` — renders a COA result to Markdown (the record) and HTML (the presentation), from one structured source.
+- `src/scorched_earth/coa_report.py` — renders a COA result to Markdown (the record) and HTML (the presentation), from one structured source. HTML fills the bundled `coa_template.html` by injecting one JSON blob (same pattern report.py uses for the sitrep).
+- `src/scorched_earth/coa_template.html` — the self-contained war-HUD COA template (from the design handoff). `render_html` substitutes its `__COA_JSON__` token with the live data; the template's JS renders the battle plan from that one object.
 - `src/scorched_earth/coa_io.py` — advisor I/O: the linked-repos registry, ROE/jobs loaders, COA output writers (central config + per-repo `.scorched/`).
 - `commands/coa.md` / `commands/roe.md` — `/coa` (generate a Course of Action) and `/roe` (edit the Rules of Engagement).
 
