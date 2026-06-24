@@ -144,6 +144,41 @@ check("render_review_html omits refresh when done",
 check("render_review_html refresh injection survives running state",
       render_review_html(_running).lower().count("http-equiv") == 1)
 
+# --- Task 6: command builders + sandbox settings ----------------------------------
+from scorched_earth.runner import (worktree_path, branch_name, build_claude_cmd,  # noqa: E402
+                                    build_gate_cmd, merge_cmd, discard_cmd,
+                                    write_sandbox_settings)
+
+_jb = Job(id="cov", repo=_repo, title="Coverage", type="test", est_windows=1.0, value=5,
+          launch="Raise coverage to 90%, TDD.")
+check("branch_name namespaces under scorched/", branch_name("cov") == "scorched/cov")
+check("worktree_path lives under .scorched/wt", worktree_path(_repo, "cov").endswith("/.scorched/wt/cov"))
+_cmd = build_claude_cmd(_jb, worktree_path(_repo, "cov"))
+check("build_claude_cmd is a headless claude invocation carrying the launch",
+      _cmd[0] == "claude" and "-p" in _cmd and any("Raise coverage" in a for a in _cmd))
+check("build_claude_cmd prelude forbids push", any("do not push" in a.lower() for a in _cmd))
+check("build_gate_cmd prefers per-job verify",
+      build_gate_cmd(Job(id="x", repo="r", title="x", type="test", est_windows=1, value=1,
+                         verify="make test"), _rfd({"test_cmd": "pytest"})) == "make test")
+check("build_gate_cmd falls back to ROE test_cmd",
+      build_gate_cmd(_jb, _rfd({"test_cmd": "pytest -q"})) == "pytest -q")
+check("build_gate_cmd is None when neither set", build_gate_cmd(_jb, ROE()) is None)
+check("merge_cmd / discard_cmd reference the branch",
+      "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
+
+# write_sandbox_settings: API-only network, sandbox enabled
+import tempfile as _tempfile  # noqa: E402
+_wt = _tempfile.mkdtemp()
+write_sandbox_settings(_wt)
+_settings_path = os.path.join(_wt, ".claude", "settings.json")
+with open(_settings_path) as _f:
+    _settings = json.load(_f)
+check("write_sandbox_settings: sandbox.enabled is true",
+      _settings.get("sandbox", {}).get("enabled") is True)
+check("write_sandbox_settings: network allowedDomains is API-only (no npm/pypi)",
+      set(_settings.get("sandbox", {}).get("network", {}).get("allowedDomains", [])) ==
+      {"api.anthropic.com", "*.anthropic.com"})
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
