@@ -101,6 +101,61 @@ _bsn = _io.board_state(_repo_norec)
 check("board_state with no run record yields empty finished + the job proposed",
       _bsn["finished"] == [] and [j["id"] for j in _bsn["proposed"]] == ["n1"])
 
+# --- Task 5: Engine (event-driven advance) ----------------------------------------
+from scorched_earth.coa_serve import Engine  # noqa: E402
+
+def _mk_repo(jobs):
+    r = tempfile.mkdtemp()
+    _io.write_queue(r, jobs)
+    return r
+
+_ran = []
+def _exec(repo, job, roe):
+    _ran.append(job.id)
+    return ("pass", {"files": 1, "insertions": 3, "deletions": 0}, "ok")
+_STATE = {"snapshot": {"now": 1, "five_hour_reset": 9_999_999_999, "seven_day_pct": 50},
+          "recommendation": {"windows_left": 2.5, "level": "green"}}
+_r = _mk_repo([Job(id="t1", repo=".", title="T1", type="test", est_windows=1.0, value=5),
+               Job(id="r1", repo=".", title="R1", type="refactor", est_windows=0.2, value=9),  # ROE block
+               Job(id="t2", repo=".", title="T2", type="test", est_windows=1.0, value=4),
+               Job(id="t3", repo=".", title="T3", type="test", est_windows=1.0, value=3)])  # over budget
+_beats = []
+_eng = Engine([_r], execute=_exec, broadcast=lambda: _beats.append(1),
+              load_state=lambda: _STATE, now=lambda: 1)
+_eng.run(_r)
+check("engine drains the affordable additive cards in order", _ran == ["t1", "t2"])
+check("engine skips the ROE-blocked card (refactor never ran)", "r1" not in _ran)
+check("engine stops when the next card is over budget (t3 left queued)",
+      [j.id for j in _io.read_queue(_r)] == ["r1", "t3"])
+check("engine broadcast fired across the run", len(_beats) >= 4)
+check("engine not busy after draining", _eng.state_json()["busy"] is False)
+
+# crash containment + no-retry
+_ran2 = []
+def _boom(repo, job, roe):
+    _ran2.append(job.id)
+    if job.id == "x1":
+        raise RuntimeError("died")
+    return ("pass", None, "ok")
+_r2 = _mk_repo([Job(id="x1", repo=".", title="X1", type="test", est_windows=0.5, value=5),
+                Job(id="x2", repo=".", title="X2", type="test", est_windows=0.5, value=4)])
+_eng2 = Engine([_r2], execute=_boom, load_state=lambda: _STATE, now=lambda: 1)
+_eng2.run(_r2)
+check("engine: a crashing job is dropped (not retried) and the chain continues",
+      _ran2 == ["x1", "x2"] and _io.read_queue(_r2) == [])
+
+# stop halts the chain
+_ran3 = []
+def _exec_stop(repo, job, roe):
+    _ran3.append(job.id)
+    _eng3.stop()                     # request stop after the first job
+    return ("pass", None, "ok")
+_r3 = _mk_repo([Job(id="s1", repo=".", title="S1", type="test", est_windows=0.5, value=5),
+                Job(id="s2", repo=".", title="S2", type="test", est_windows=0.5, value=4)])
+_eng3 = Engine([_r3], execute=_exec_stop, load_state=lambda: _STATE, now=lambda: 1)
+_eng3.run(_r3)
+check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
