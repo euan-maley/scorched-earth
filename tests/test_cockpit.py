@@ -208,14 +208,29 @@ check("server binds loopback only", _httpd.server_address[0] == "127.0.0.1")
 check("GET / without token is 403", _get("/")[0] == 403)
 check("GET / with token serves html", _get(f"/?t={_TOKEN}")[0] == 200)
 check("POST without token is 403", _post("/queue", {"repo": _r6, "id": "g1"}, None)[0] == 403)
-check("POST with a raw command field runs no command (job-id only)",
-      _post("/run", {"repo": _r6, "cmd": "rm -rf /"}, _TOKEN)[0] == 200)
+import time as _t6
+_inj = _post("/run", {"repo": _r6, "cmd": "rm -rf /", "launch": "evil"}, _TOKEN)
+_t6.sleep(0.2)   # let the worker thread settle
+check("POST with raw command/launch fields executes no command (job-ids only)",
+      _inj[0] == 200 and "rm -rf /" not in _ran and "evil" not in _ran)
 _st6, _b6 = _get(f"/state?t={_TOKEN}")
 check("GET /state returns board json", _st6 == 200 and b"repos" in _b6)
 # /queue mutates the queue file
 _io.write_queue(_r6, [Job(id="g1", repo=".", title="G1", type="test", est_windows=1.0, value=5)])
 _post("/reorder", {"repo": _r6, "ids": ["g1"]}, _TOKEN)
 check("POST /reorder returns ok", _post("/reorder", {"repo": _r6, "ids": ["g1"]}, _TOKEN)[0] == 200)
+
+_raised = False
+try:
+    make_server(_eng6, "")
+except ValueError:
+    _raised = True
+check("make_server refuses an empty token", _raised)
+
+_unknown = tempfile.mkdtemp()
+check("POST naming an unregistered repo is rejected (400)",
+      _post("/run", {"repo": _unknown}, _TOKEN)[0] == 400)
+
 _httpd.shutdown()
 
 print(f"\n{passed} checks passed.")

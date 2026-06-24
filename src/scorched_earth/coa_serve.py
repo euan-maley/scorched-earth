@@ -12,6 +12,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
+from urllib.parse import urlparse, parse_qs
 
 from . import coa_io
 from . import runner
@@ -162,6 +163,8 @@ def make_server(engine, token, *, render=None):
     Returns ``(httpd, port)``.  Does NOT call ``serve_forever``; the caller
     controls the event loop.
     """
+    if not token:
+        raise ValueError("token required")
     render = render or _default_render
     clients = []                               # list[queue.Queue] for SSE subscribers
     clients_lock = threading.Lock()
@@ -185,7 +188,6 @@ def make_server(engine, token, *, render=None):
             pass
 
         def _tok_q(self):
-            from urllib.parse import urlparse, parse_qs
             qs = parse_qs(urlparse(self.path).query)
             return (qs.get("t") or [None])[0]
 
@@ -254,6 +256,9 @@ def make_server(engine, token, *, render=None):
                 return
             path = self.path.split("?", 1)[0]
             repo = body.get("repo")
+            if path in ("/queue", "/unqueue", "/reorder", "/run"):
+                if os.path.realpath(os.path.expanduser(repo or "")) not in engine.repos:
+                    self._send(400, b'{"error":"unknown repo"}'); return
             # job-ids ONLY: any cmd/launch field in the body is never read.
             try:
                 if path == "/queue":
