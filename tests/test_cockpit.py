@@ -179,6 +179,45 @@ check("engine busy guard: after release the chain drains the rest and goes idle"
       sorted(_cstarted) == ["c1", "c2"] and _engc.state_json()["busy"] is False
       and _io.read_queue(_rc) == [])
 
+# --- Task 6: HTTP server (token, routing, SSE) ------------------------------------
+import http.client  # noqa: E402
+import threading as _threading  # noqa: E402
+from scorched_earth.coa_serve import make_server  # noqa: E402
+
+_r6 = _mk_repo([Job(id="g1", repo=".", title="G1", type="test", est_windows=1.0, value=5)])
+_eng6 = Engine([_r6], execute=_exec, load_state=lambda: _STATE, now=lambda: 1)
+_TOKEN = "secret-token-xyz"
+_httpd, _port = make_server(_eng6, _TOKEN)
+_srv_thread = _threading.Thread(target=_httpd.serve_forever, daemon=True)
+_srv_thread.start()
+
+def _get(path, headers=None):
+    c = http.client.HTTPConnection("127.0.0.1", _port, timeout=3)
+    c.request("GET", path, headers=headers or {}); r = c.getresponse(); body = r.read(); c.close()
+    return r.status, body
+
+def _post(path, payload, token):
+    c = http.client.HTTPConnection("127.0.0.1", _port, timeout=3)
+    hdr = {"Content-Type": "application/json"}
+    if token: hdr["X-Scorch-Token"] = token
+    c.request("POST", path, body=json.dumps(payload), headers=hdr)
+    r = c.getresponse(); body = r.read(); c.close()
+    return r.status, body
+
+check("server binds loopback only", _httpd.server_address[0] == "127.0.0.1")
+check("GET / without token is 403", _get("/")[0] == 403)
+check("GET / with token serves html", _get(f"/?t={_TOKEN}")[0] == 200)
+check("POST without token is 403", _post("/queue", {"repo": _r6, "id": "g1"}, None)[0] == 403)
+check("POST with a raw command field runs no command (job-id only)",
+      _post("/run", {"repo": _r6, "cmd": "rm -rf /"}, _TOKEN)[0] == 200)
+_st6, _b6 = _get(f"/state?t={_TOKEN}")
+check("GET /state returns board json", _st6 == 200 and b"repos" in _b6)
+# /queue mutates the queue file
+_io.write_queue(_r6, [Job(id="g1", repo=".", title="G1", type="test", est_windows=1.0, value=5)])
+_post("/reorder", {"repo": _r6, "ids": ["g1"]}, _TOKEN)
+check("POST /reorder returns ok", _post("/reorder", {"repo": _r6, "ids": ["g1"]}, _TOKEN)[0] == 200)
+_httpd.shutdown()
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
