@@ -69,6 +69,14 @@ plugin/skill; install flow asks the user how they want the light displayed.
   value (their plan / observed windows-per-week).
 - The 5h window resets independently of the weekly window — `windows_left` must count
   the partial current window plus full windows up to the weekly reset.
+- **Straddle correction:** the current window's unused capacity is also capped by the time
+  left before the *weekly* reset (`min(current_remaining, secs_to_weekly / WINDOW_SECONDS)`).
+  Without this, a window straddling the weekly reset credits next week's capacity to this
+  week and can flip the verdict (green→amber). Tested by "straddle: still green …".
+- **Cold-start forecast guard:** the linear fallback refuses to extrapolate when < 1 day of
+  the weekly cycle has elapsed (or the reset is > 7 days out, i.e. clock skew) — otherwise the
+  rate inflates several-fold (the old `max(0.25, elapsed)` floor) or goes negative. It returns
+  a `low`/"too early in the cycle to forecast" result that assumes full spend (no false nudge).
 - **Windows are sleep-discounted.** Counting every rolling 5h window (including overnight)
   overstates usable windows and under-warns. `core.compute(active_fraction=...)` scales the
   future tail by `active_hours/24`; `habits.active_hours` learns active hours from when the
