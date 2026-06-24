@@ -46,3 +46,23 @@ Steps:
    print the ranked queue. It refuses if there's no live snapshot yet; relay that as-is.
 4. Summarize the top of the queue and point the user at the written COA. Don't invent numbers;
    relay what `scorch` prints.
+
+## Autonomous execution (Phase 2)
+
+Once a COA exists you can have Scorched Earth burn it for you, unattended:
+
+- `scorch coa queue --all` — enqueue the matched jobs into `.scorched/queue.json`.
+- `scorch coa run` — drain the queue: each job runs headless in a sandboxed git worktree
+  (`scorched/<job-id>`), additive-only by ROE leash, commit-not-push, with a test gate after.
+  Budget is spent predictively (the runner can't read usage live); it stops when the envelope
+  is exhausted. Opens a live After-Action Report that fills in as jobs complete.
+- `scorch coa review` — reopen the latest After-Action Report. `--merge <id>` / `--discard <id>`
+  print the git command to take or drop a job's branch.
+
+Safety: only additive/verifiable job types run unattended (widen via ROE `unattended_types`);
+nothing is pushed or merged without you. Set `test_cmd` and `setup_cmd` in the repo's ROE.
+
+**Linux caveat:** the runner executes each job in an OS sandbox (settings written into the
+worktree's `.claude/settings.json`: API-only network, filesystem confined). On macOS this
+isolation is built in; on **Linux it requires `bubblewrap` and `socat` installed**. If unavailable,
+`failIfUnavailable` means the job hard-fails rather than running unconfined.

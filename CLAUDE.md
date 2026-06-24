@@ -24,6 +24,8 @@ spent by maxing out every remaining 5-hour window.
 - `src/scorched_earth/coa_report.py` — renders a COA result to Markdown (the record) and HTML (the presentation), from one structured source. HTML fills the bundled `coa_template.html` by injecting one JSON blob (same pattern report.py uses for the sitrep).
 - `src/scorched_earth/coa_template.html` — the self-contained war-HUD COA template (from the design handoff). `render_html` substitutes its `__COA_JSON__` token with the live data; the template's JS renders the battle plan from that one object.
 - `src/scorched_earth/coa_io.py` — advisor I/O: the linked-repos registry, ROE/jobs loaders, COA output writers (central config + per-repo `.scorched/`).
+- `src/scorched_earth/runner.py` — COA queue-runner (Phase 2a): drains `.scorched/queue.json`, runs each job headless in a sandboxed worktree under the ROE leash (`plan_run` is the pure predictive-budget core; the per-job work is the injected `execute_job`). I/O tier; never on the statusline hot path.
+- `src/scorched_earth/review_report.py` + `review_template.html` — renders the live After-Action Report (md + HTML) from one `RunResult`; auto-refreshes while running, settles when done.
 - `commands/coa.md` / `commands/roe.md` — `/coa` (generate a Course of Action) and `/roe` (edit the Rules of Engagement).
 
 ## Packaging facts (confirmed against installed plugins + docs)

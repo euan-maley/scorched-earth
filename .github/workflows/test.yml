@@ -22,3 +22,5 @@ jobs:
         run: python3 tests/test_scorched.py
       - name: Advisor tests
         run: python3 tests/test_advisor.py
+      - name: Runner tests
+        run: python3 tests/test_runner.py
