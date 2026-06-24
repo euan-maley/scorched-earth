@@ -143,6 +143,44 @@ Optionally scoped to a repo; default is all linked repos. For each repo:
    caps. Output is the ranked COA queue that drains the available burn.
 5. **Render** to both formats (see Output), and open the HTML.
 
+### What the scan hunts for (the advisor's instinct)
+
+The scan is not a generic "what could I do here" pass. It looks for work that *this moment* is
+uniquely good for: a real budget to spend, often an unsupervised window. That fit is the
+advisor's personality. It prefers work that is **compute-hungry** (exhaustive, not a quick fix),
+**bounded and verifiable** (a clear done-condition, tests can confirm it, so it is safe to run
+less supervised), **low-coordination** (no product or design call needed mid-run), and
+**batchable** (churns across many files or modules).
+
+It grounds suggestions in the user's intent first. It reads the repo's own signals before
+inventing work: `TODO`/`FIXME`, the issue tracker if reachable, a roadmap or CHANGELOG, recent
+commit themes, and any existing `.scorched/jobs.json`. It surfaces the expensive items already
+flagged. The **adversarial** lens then fills gaps the user has not named (thin coverage, weak
+error handling, security holes, stale deps, undocumented modules, dead code, flaky tests). The
+**constructive** lens proposes the one big exhaustive job worth a night of compute.
+
+Task taxonomy, split by blast radius:
+- **Additive / low-risk** (safe to run less supervised): test coverage, documentation,
+  audits-as-reports, type coverage.
+- **Transformative / higher-risk** (real value but changes code, wants tests + review):
+  refactors, dependency upgrades, migrations/codemods, performance, bug/flaky-test burndown.
+
+Biases:
+- **Additive-leaning for autonomy.** Anything that might run unsupervised leans toward the
+  additive/verifiable set; transformative work is flagged review-required rather than queued to
+  run blind. Phase 1 runs nothing autonomously, so this is advisory; Phase 2's runner uses the
+  split to decide what may run unattended. `type` already separates the two; Phase 2 may add an
+  explicit supervision flag.
+- **Sized to the available tokens.** Jobs carry an honest `est_windows` for their natural scope,
+  and the matcher fills the available budget (tier-and-fill), so the COA always reflects the
+  tokens you actually have. The scan is handed the rough envelope so it proposes work *ambitious
+  enough to be worth the window*: the whole-repo coverage push on a big night, a single module
+  when little is left.
+- **Skips the trivial.** It does not propose quick one-off fixes, lint nits, or anything a human
+  would just do inline, those waste a burn window. It also skips work needing a product/design
+  decision, work with no way to verify it, and speculative features the user never asked for (it
+  does not invent product direction).
+
 ### Job schema
 
 What the scan writes and the matcher reads:
