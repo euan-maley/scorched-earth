@@ -11,6 +11,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+from . import coa_io
 from .jobs import Job
 from .roe import ROE
 
@@ -272,3 +273,88 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
         return "fail", diff, "gate FAILED ({}) — branch kept for triage.".format(gate)
     except Exception as e:          # noqa: BLE001 — never let one job abort the run
         return "fail", None, "runner error: {}".format(e)
+
+
+def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
+    note = {"blocked-roe": f"type '{job.type}' not in unattended leash — not run.",
+            "skipped-budget": "no budget left when reached."}[disposition]
+    return JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
+                      outcome=disposition, est_windows=job.est_windows, note=note)
+
+
+def run_queue(repo, state, *, now, date, execute=None, on_step=None):
+    """Drain the queue under the full safety model. Returns the final RunResult, or None if it
+    refuses (stale/absent snapshot). Persists the record + HTML after every job so the same
+    artifact is the live monitor and the final debrief. `execute` is injected for testing."""
+    from . import review_report as _rev   # lazy: avoid import cycle at module load
+    execute = execute or execute_job
+
+    roe = coa_io.load_roe(repo)
+    envelope = read_envelope(state, roe, now)
+    if envelope is None:
+        return None
+
+    queue = coa_io.read_queue(repo)
+    dispositions, predicted = plan_run(queue, envelope, roe)
+    verdict = ((state or {}).get("recommendation") or {}).get("level", "unknown")
+    repo_disp = os.path.realpath(os.path.expanduser(repo))
+
+    rr = RunResult(generated_at=date, state="running", repo=repo_disp, verdict=verdict,
+                   note="", available_windows=envelope, spent_estimated=0.0)
+
+    def _persist():
+        rr.note = _summary(rr)
+        coa_io.write_run_record(repo, _dataclass_dict(rr), date)
+        html = _rev.render_review_html(rr)
+        with open(os.path.join(coa_io.runs_dir(repo), f"{date}.html"), "w") as f:
+            f.write(html)
+        if on_step:
+            on_step(rr)
+
+    spent = 0.0
+    for i, (job, disp) in enumerate(dispositions, start=1):
+        if disp != "run":
+            rr.jobs.append(_outcome_for(job, i, disp))
+            _persist()
+            continue
+        running = JobOutcome(seq=i, id=job.id, title=job.title, type=job.type, tier=job.tier,
+                             outcome="running", est_windows=job.est_windows,
+                             branch=branch_name(job.id))
+        rr.jobs.append(running)
+        _persist()                                    # live: this job is in progress
+        try:
+            outcome, diff, note = execute(repo, job, roe)
+        except Exception as e:          # noqa: BLE001 — never let one job abort the run
+            outcome, diff, note = "fail", None, "runner error: {}".format(e)
+        spent += job.est_windows
+        running.outcome = outcome
+        running.diff = diff
+        running.note = note
+        running.merge_cmd = merge_cmd(repo_disp, job.id)
+        running.discard_cmd = discard_cmd(repo_disp, job.id)
+        rr.spent_estimated = spent
+        _persist()
+
+    rr.state = "done"
+    rr.spent_estimated = spent
+    _persist()
+    return rr
+
+
+def _summary(rr: RunResult) -> str:
+    n = {}
+    for j in rr.jobs:
+        n[j.outcome] = n.get(j.outcome, 0) + 1
+    parts = []
+    if n.get("pass"):           parts.append(f"{n['pass']} secured")
+    if n.get("fail"):           parts.append(f"{n['fail']} cratered")
+    if n.get("blocked-roe"):    parts.append(f"{n['blocked-roe']} blocked")
+    if n.get("skipped-budget"): parts.append(f"{n['skipped-budget']} forfeit")
+    if n.get("running"):        parts.append(f"{n['running']} working")
+    head = ", ".join(parts) if parts else "no jobs"
+    return f"{head}. ~{rr.spent_estimated:.1f} of {rr.available_windows:.1f} windows (estimated)."
+
+
+def _dataclass_dict(rr: RunResult) -> dict:
+    from dataclasses import asdict
+    return asdict(rr)

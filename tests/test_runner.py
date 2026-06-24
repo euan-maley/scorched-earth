@@ -184,6 +184,46 @@ check("sandbox settings: failIfUnavailable is True",
 check("sandbox settings: allowUnsandboxedCommands is False",
       _settings["sandbox"]["allowUnsandboxedCommands"] is False)
 
+# --- Task 7: run_queue orchestration (hermetic, stub executor) --------------------
+from scorched_earth.runner import run_queue  # noqa: E402
+
+# queue: a runnable test job, a refactor (ROE-blocked), a big audit (won't fit 1.5 envelope)
+_io.write_queue(_repo, [
+    Job(id="t1", repo=_repo, title="Tests", type="test", est_windows=1.0, value=5,
+        launch="add tests"),
+    Job(id="r1", repo=_repo, title="Refactor", type="refactor", est_windows=0.2, value=9),
+    Job(id="a1", repo=_repo, title="Audit", type="audit", est_windows=3.0, value=8),
+])
+_steps = []
+def _stub_exec(repo, job, roe):
+    return ("pass", {"files": 2, "insertions": 30, "deletions": 4}, "gate passed.")
+_state_ok = {"snapshot": {"five_hour_reset": 9_999_999_999, "seven_day_pct": 50},
+             "recommendation": {"windows_left": 1.5, "level": "green"}}
+_rr = run_queue(_repo, _state_ok, now=1, date="2026-06-24",
+                execute=_stub_exec, on_step=lambda rr: _steps.append(rr.state))
+_out = {j.id: j.outcome for j in _rr.jobs}
+check("run_queue executes the runnable additive job", _out["t1"] == "pass")
+check("run_queue blocks the refactor via ROE leash", _out["r1"] == "blocked-roe")
+check("run_queue marks the oversize audit skipped-budget", _out["a1"] == "skipped-budget")
+check("run_queue final state is done", _rr.state == "done")
+check("run_queue re-renders live (on_step fired per job)", len(_steps) >= 3)
+check("run_queue records estimated spend, not measured", _rr.spent_estimated == 1.0)
+check("run_queue attaches merge/discard to executed job",
+      _rr.jobs[0].branch == "scorched/t1" and "scorched/t1" in (_rr.jobs[0].merge_cmd or ""))
+check("run_queue persisted a run record + html",
+      os.path.exists(os.path.join(_io.runs_dir(_repo), "2026-06-24.json"))
+      and os.path.exists(os.path.join(_io.runs_dir(_repo), "2026-06-24.html")))
+
+_refused = run_queue(_repo, _stale, now=_now, date="2026-06-24", execute=_stub_exec)
+check("run_queue refuses on a stale snapshot", _refused is None)
+
+def _boom_exec(repo, job, roe):
+    raise RuntimeError("claude died")
+_io.write_queue(_repo, [Job(id="t2", repo=_repo, title="T2", type="test", est_windows=0.5, value=5)])
+_rr2 = run_queue(_repo, _state_ok, now=1, date="2026-06-25", execute=_boom_exec)
+check("run_queue turns an executor crash into a failed job, not an abort",
+      _rr2 is not None and _rr2.jobs[0].outcome == "fail")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
