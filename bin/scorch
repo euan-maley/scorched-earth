@@ -209,8 +209,79 @@ def _coa_cli(raw):
     return 0
 
 
+def _coa_run_cli(rest):
+    """`scorch coa <queue|run|review> …` — the Phase 2 queue-runner surface."""
+    import time as _time
+    from scorched_earth import coa_io, advisor, runner, review_report
+    sub = rest[0] if rest else "review"
+    args = rest[1:]
+    date = _time.strftime("%Y-%m-%d", _time.localtime())
+
+    if sub == "queue":
+        all_flag = "--all" in args
+        ids = [a for a in args if not a.startswith("-")]
+        repo = ids.pop(0) if ids and os.path.isdir(os.path.expanduser(ids[0])) else "."
+        state = st.load_state()
+        rec = (state or {}).get("recommendation") or {}
+        wl = rec.get("windows_left")
+        if wl is None:
+            print("No live budget reading yet — open a Claude Code session, then queue.")
+            return 0
+        roe = coa_io.load_roe(repo)
+        coa = advisor.match(wl, coa_io.load_jobs(repo), roe)
+        pick = coa.queue if (all_flag or not ids) else [j for j in coa.queue if j.id in ids]
+        if not pick:
+            print("Nothing to queue (the latest COA produced no eligible jobs).")
+            return 0
+        q = coa_io.enqueue(repo, pick)
+        print(f"Queued {len(pick)} job(s); {len(q)} in {repo}/.scorched/queue.json.")
+        return 0
+
+    if sub == "run":
+        repos = [a for a in args if not a.startswith("-")] or coa_io.list_repos() or ["."]
+        state = st.load_state()
+        now = int(_time.time())
+        if runner.is_stale(state, now):
+            print("No fresh budget snapshot — open a Claude Code session so the statusline "
+                  "captures a reading, then run again. (The runner can't read usage live.)")
+            return 0
+        for repo in repos:
+            if not coa_io.read_queue(repo):
+                continue
+            rr = runner.run_queue(repo, state, now=now, date=date)
+            if rr is None:
+                print(f"{repo}: refused (stale snapshot).")
+                continue
+            html = os.path.join(coa_io.runs_dir(repo), f"{date}.html")
+            print(f"{repo}: {rr.note}")
+            _open_file(html)
+        return 0
+
+    # review (default)
+    repo = (args[0] if args and os.path.isdir(os.path.expanduser(args[0])) else
+            (coa_io.list_repos()[0] if coa_io.list_repos() else "."))
+    if "--merge" in args or "--discard" in args:
+        flag = "--merge" if "--merge" in args else "--discard"
+        jid = args[args.index(flag) + 1]
+        cmd = (runner.merge_cmd(repo, jid) if flag == "--merge"
+               else runner.discard_cmd(repo, jid))
+        print(f"Run this to {flag[2:]} {jid}:\n  {cmd}")
+        return 0
+    rec = coa_io.read_run_record(repo)
+    if not rec:
+        print("No run on record yet. Queue jobs (scorch coa queue) then run (scorch coa run).")
+        return 0
+    html = os.path.join(coa_io.runs_dir(repo), f"{rec['generated_at']}.html")
+    if os.path.exists(html):
+        _open_file(html)
+    print(f"Latest run: {rec.get('note', '')}")
+    return 0
+
+
 def main(argv=None):
     raw = sys.argv[1:] if argv is None else list(argv)
+    if raw and raw[0] == "coa":
+        return _coa_run_cli(raw[1:])
     if raw and raw[0] in ("link", "unlink", "advise", "roe"):
         return _coa_cli(raw)
 

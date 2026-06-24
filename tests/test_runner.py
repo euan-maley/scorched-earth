@@ -224,6 +224,25 @@ _rr2 = run_queue(_repo, _state_ok, now=1, date="2026-06-25", execute=_boom_exec)
 check("run_queue turns an executor crash into a failed job, not an abort",
       _rr2 is not None and _rr2.jobs[0].outcome == "fail")
 
+# --- Task 8: CLI verbs (subprocess, temp HOME) ------------------------------------
+os.environ.clear(); os.environ.update(_saved_env)
+_cli_env = dict(os.environ)
+_cli_env["HOME"] = tempfile.mkdtemp()
+_scorch = os.path.join(os.path.dirname(__file__), "..", "bin", "scorch")
+_cli_repo = tempfile.mkdtemp()
+subprocess.run([sys.executable, _scorch, "link", _cli_repo], capture_output=True, text=True, env=_cli_env)
+
+_run = subprocess.run([sys.executable, _scorch, "coa", "run"], capture_output=True, text=True, env=_cli_env)
+check("scorch coa run refuses cleanly with no snapshot",
+      _run.returncode == 0 and ("no" in _run.stdout.lower() or "snapshot" in _run.stdout.lower()))
+_rev = subprocess.run([sys.executable, _scorch, "coa", "review"], capture_output=True, text=True, env=_cli_env)
+check("scorch coa review reports cleanly when there's no run yet",
+      _rev.returncode == 0 and ("no" in _rev.stdout.lower()))
+_que = subprocess.run([sys.executable, _scorch, "coa", "queue", "--all", _cli_repo],
+                      capture_output=True, text=True, env=_cli_env)
+check("scorch coa queue runs without error (empty COA -> nothing queued)",
+      _que.returncode == 0)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
