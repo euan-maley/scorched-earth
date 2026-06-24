@@ -80,13 +80,26 @@ with open(os.path.join(_repo, ".scorched", "jobs.json"), "w") as f:
 _io.write_queue(_repo, [Job(id="q1", repo=_repo, title="Queued1", type="docs", est_windows=1, value=4)])
 _io.write_run_record(_repo, {"generated_at": "2026-06-24", "state": "done", "repo": _repo,
                              "jobs": [{"id": "d1", "title": "Done1", "type": "perf", "tier": "M",
-                                       "outcome": "pass", "est_windows": 1.0, "branch": "scorched/d1"}]},
+                                       "outcome": "pass", "est_windows": 1.0, "branch": "scorched/d1"},
+                                      {"id": "d2", "title": "Done2", "type": "test", "tier": "S",
+                                       "outcome": "fail", "est_windows": 0.5, "branch": "scorched/d2"},
+                                      {"id": "d3", "title": "Skip3", "type": "docs", "tier": "S",
+                                       "outcome": "skipped-budget", "est_windows": 0.5, "branch": None}]},
                      "2026-06-24")
 _bs = _io.board_state(_repo)
 check("board_state proposes only un-queued/un-finished jobs", [j["id"] for j in _bs["proposed"]] == ["p1"])
 check("board_state queued reflects the queue", [j["id"] for j in _bs["queued"]] == ["q1"])
-check("board_state finished reflects the last run record", [j["id"] for j in _bs["finished"]] == ["d1"])
+check("board_state finished keeps only pass/fail, drops non-terminal (skipped)",
+      [j["id"] for j in _bs["finished"]] == ["d1", "d2"])
 check("board_state carries repo name", _bs["name"] == os.path.basename(_repo))
+
+_repo_norec = tempfile.mkdtemp()
+os.makedirs(os.path.join(_repo_norec, ".scorched"), exist_ok=True)
+with open(os.path.join(_repo_norec, ".scorched", "jobs.json"), "w") as f:
+    json.dump([{"id": "n1", "title": "N1", "type": "test", "est_windows": 1, "value": 5}], f)
+_bsn = _io.board_state(_repo_norec)
+check("board_state with no run record yields empty finished + the job proposed",
+      _bsn["finished"] == [] and [j["id"] for j in _bsn["proposed"]] == ["n1"])
 
 print(f"\n{passed} checks passed.")
 if failures:
