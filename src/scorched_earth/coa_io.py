@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import List, Tuple
 
@@ -108,8 +109,7 @@ def write_queue(repo_path: str, jobs: List[Job]) -> str:
     for j in jobs:
         j.status = "queued"
     with open(path, "w") as f:
-        import json as _json
-        _json.dump([_job_to_dict(j) for j in jobs], f, indent=2)
+        json.dump([_job_to_dict(j) for j in jobs], f, indent=2)
     return path
 
 
