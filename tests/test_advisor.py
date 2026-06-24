@@ -115,6 +115,18 @@ check("load_jobs reads the repo job list", [j.id for j in _io.load_jobs(_repo)] 
 _mdp, _htmlp = _io.write_coa(_repo, "# md", "<html></html>", "2026-06-24")
 check("write_coa writes md + html under .scorched/coa",
       os.path.exists(_mdp) and os.path.exists(_htmlp) and "2026-06-24" in _mdp)
+
+# link_repo ignores .scorched/ in the target repo, preserving existing content, idempotently
+_repo2 = tempfile.mkdtemp()
+with open(os.path.join(_repo2, ".gitignore"), "w") as f:
+    f.write("node_modules/\n")
+_io.link_repo(_repo2)
+_gi = open(os.path.join(_repo2, ".gitignore")).read()
+check("link_repo gitignores .scorched/ without clobbering existing entries",
+      ".scorched/" in _gi and "node_modules/" in _gi)
+_io.link_repo(_repo2)  # re-link must not duplicate
+check("gitignore .scorched/ entry is idempotent",
+      open(os.path.join(_repo2, ".gitignore")).read().count(".scorched") == 1)
 os.environ.clear(); os.environ.update(_env_keys)
 
 # --- bin/scorch verbs (subprocess, temp HOME) ------------------------------------

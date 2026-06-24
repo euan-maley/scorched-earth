@@ -121,6 +121,8 @@ ROE is the confines that bound the advisor (and later the executor). Three rule 
 - A **global default ROE** lives centrally (`~/.claude/scorched-earth/roe.default.json`);
   per-repo files inherit and override it.
 - The central **linked-repos registry** (`repos.json`) tracks which paths are in scope.
+- `scorch link` (and any first write into a repo's `.scorched/`) appends `.scorched/` to that
+  repo's `.gitignore`, idempotently, so the tool never dirties the user's working tree.
 
 ## The COA flow (`/coa`)
 

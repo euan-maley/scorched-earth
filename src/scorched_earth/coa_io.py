@@ -23,12 +23,32 @@ def list_repos() -> List[str]:
     return list(st._read_json(REPOS_PATH, {"repos": []}).get("repos", []))
 
 
+def ensure_scorched_gitignored(repo_path: str) -> bool:
+    """Make sure the target repo ignores our per-repo `.scorched/` dir, so linking and scanning
+    never dirty the user's working tree. Idempotent; preserves any existing .gitignore content.
+    Returns True if it added the entry."""
+    root = os.path.realpath(os.path.expanduser(repo_path))
+    gi = os.path.join(root, ".gitignore")
+    existing = ""
+    if os.path.exists(gi):
+        with open(gi) as f:
+            existing = f.read()
+    # treat `.scorched` and `.scorched/` as the same entry
+    if any(ln.strip().rstrip("/") == ".scorched" for ln in existing.splitlines()):
+        return False
+    sep = "" if existing == "" or existing.endswith("\n") else "\n"
+    with open(gi, "a") as f:
+        f.write(f"{sep}.scorched/\n")
+    return True
+
+
 def link_repo(repo_path: str) -> str:
     ap = os.path.realpath(os.path.expanduser(repo_path))
     repos = list_repos()
     if ap not in repos:
         repos.append(ap)
         st._write_json(REPOS_PATH, {"repos": repos})
+    ensure_scorched_gitignored(ap)
     return ap
 
 
