@@ -58,11 +58,6 @@ projected/recommended for the days ahead).
 
 https://github.com/user-attachments/assets/b735ffb4-5764-426c-b282-5b9c5e8c3481
 
-<!-- Inline player: open this README in github.com's web editor and drag assets/sitrep-demo.mp4
-     onto this line. GitHub uploads it to user-attachments and renders an autoplaying HTML5
-     player. (A repo-relative <video> tag is stripped from rendered READMEs, so we link the
-     full-res poster to the mp4 instead.) -->
-
 When the verdict goes green, the whole sitrep catches fire. Toggle the field across the
 three views:
 
@@ -72,7 +67,7 @@ three views:
   <img src="assets/sitrep-thisweek.png" alt="THE FIELD: this week (projected)" width="240">
 </p>
 
-<sub><i>Sample data. The poster links to a 15s clip (<a href="assets/sitrep-demo.mp4">mp4, 1512×944</a>). Stills and footage rendered from the real report pipeline.</i></sub>
+<sub><i>Sample data. The clip and stills are rendered from the real report pipeline (<a href="assets/sitrep-demo.mp4">download the mp4</a>).</i></sub>
 
 ## Install
 
