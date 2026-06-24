@@ -3,28 +3,545 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Scorched Earth — After-Action Report</title>
 <!--
-  AFTER-ACTION REPORT (AAR) — the COA runner's live monitor + morning-after debrief.
-  STUB TEMPLATE: replace with the Claude-design HTML (see docs/design brief). Contract:
-  all data flows through `const AAR = __REVIEW_JSON__`. Python substitutes the token.
-  When AAR.state === "running", the renderer also injects an auto-refresh meta tag.
+  AFTER-ACTION REPORT (AAR) — the runner review. Third sibling of the weekly SITREP
+  and the COURSE OF ACTION; same scorched-earth war-HUD look. Single self-contained
+  file, no external assets/CDNs, opens offline, ships in the plugin.
+
+  LIVE vs DONE
+  ------------
+  The runner re-renders this whole file after every job and once more at the end.
+    • AAR.state === "running"  -> this is the live monitor. The page auto-refreshes
+      every AAR.refreshSeconds (an auto-refresh meta tag injected into <head>),
+      the header reads "OPERATION LIVE", and the active job burns.
+    • AAR.state === "done"     -> the final debrief. NO refresh is emitted; the header
+      settles to "OPERATION COMPLETE"; nothing animates except restrained ambience.
+  You render the AAR object you are handed; you never fetch anything.
+
+  TEMPLATE CONTRACT
+  -----------------
+  All data flows through the one `const AAR = …` blob near the bottom, which Python fills by
+  substituting the injected data token. generatedAt is pre-formatted; no Date() is called.
+  Shape (window-units except diffstat counts):
+
+    AAR = {
+      generatedAt, state:"running"|"done", refreshSeconds, sector, repo,
+      verdict:"GREEN"|"AMBER"|"OFF"|"UNKNOWN", note,
+      envelope:{ available, spentEstimated },          // gauge = spent so far (ESTIMATED)
+      jobs:[ { seq, id, title, type, tier:"S"|"M"|"L"|"XL",
+               outcome:"running"|"pass"|"fail"|"blocked-roe"|"skipped-budget"|"pending",
+               branch, estWindows, diff:{files,insertions,deletions}|null, note,
+               mergeCmd|null, discardCmd|null } ]
+    }
+
+  Budget is ALWAYS estimated — the runner can't measure live usage. Keep the qualifier visible.
 -->
 <style>
-  body{background:#0b0705;color:#f4e4c8;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:24px}
-  h1{letter-spacing:.2em} .job{border:1px solid #6b4a2b;padding:8px;margin:6px 0}
-  .pass{color:#9fd36a}.fail{color:#ff6a1f}.running{color:#ffd24a}
-  @media (prefers-reduced-motion: reduce){*{animation:none!important}}
-</style>
-</head><body>
-<h1>AFTER-ACTION REPORT</h1>
-<div id="run"></div><div id="jobs"></div>
+  :root{
+    color-scheme:dark;
+    --font:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --ground:#0b0705; --panel:#0b0f12; --mod:#10181d;
+    --panel-bd:#243639; --mod-bd:#2b3d44; --track:#070b0d; --track-bd:#243a3a;
+    --strong:#eef3f3; --primary:#c1dada; --secondary:#9ec1c1; --muted:#86abab; --head:#8fb8b8;
+    --amber:#e2a04d; --ember:#e2541d; --ember2:#ff9a3d; --fire:#ff6a1f; --forfeit:#c0653a;
+    --secured:#7bb04a; --secured2:#9fd36a; --fail:#c0392b; --fail2:#e2705a;
+    --bracket:#3a5a5a; --charred:#1a120b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--ground);font-family:var(--font);padding:26px 16px;-webkit-font-smoothing:antialiased}
+
+  .wrap{max-width:1000px;margin:0 auto;background:var(--panel);border:1px solid var(--panel-bd);
+        position:relative;overflow:hidden;box-shadow:0 0 0 1px var(--ground),0 18px 60px rgba(0,0,0,.6)}
+
+  .br{position:absolute;width:11px;height:11px;z-index:9}
+  .br.tl{left:6px;top:6px;border-left:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.tr{right:6px;top:6px;border-right:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.bl{left:6px;bottom:6px;border-left:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+  .br.brr{right:6px;bottom:6px;border-right:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+
+  /* header */
+  .hdr{position:relative;padding:20px 22px 146px;border-bottom:1px solid #1b2a30;
+       background:linear-gradient(#0f161a,#0b0f12);overflow:hidden}
+  .hdr__scene{position:absolute;left:0;bottom:0;width:100%;height:auto;display:block;
+             image-rendering:pixelated;pointer-events:none;z-index:0}
+  .hdr__top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .hdr__tag{display:flex;align-items:center;gap:11px;font-size:18px;letter-spacing:2px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .hdr__title{position:relative;z-index:2;margin:13px 0 0;
+    font-size:clamp(26px,5.2vw,46px);font-weight:800;letter-spacing:2px;line-height:.98;
+    background:linear-gradient(90deg,#ff3b1f,#ff8a1f,#ffd24a,#ff8a1f,#ff3b1f);
+    background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:firetext 2s linear infinite}
+  @keyframes firetext{to{background-position:200% 0}}
+  .hdr__sub{position:relative;z-index:2;margin-top:8px;font-size:19px;letter-spacing:2px;color:#e9c08a}
+
+  .liveflag{display:inline-flex;align-items:center;gap:8px;border:1px solid;padding:4px 12px 3px;
+        font-size:13px;font-weight:800;letter-spacing:2px}
+
+  .deck{padding:18px;display:flex;flex-direction:column;gap:14px}
+  .mod{border:1px solid var(--mod-bd);background:var(--mod);padding:14px 16px}
+  .mod__hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+           border-bottom:1px solid var(--mod-bd);padding-bottom:8px;margin-bottom:13px;letter-spacing:2px}
+  .mod__hd .l{font-size:16px;color:var(--head);font-weight:700}
+  .mod__hd .r{font-size:13px;color:var(--muted)}
+
+  /* run banner */
+  .banner{position:relative;border:1px solid var(--mod-bd);background:var(--mod);padding:0}
+  .banner__accent{position:absolute;left:0;top:0;bottom:0;width:4px;z-index:1}
+  .banner__grid{display:grid;grid-template-columns:1.15fr 1fr;gap:0}
+  .banner__col{padding:15px 18px}
+  .banner__col+.banner__col{border-left:1px solid var(--mod-bd)}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+  .chip{display:flex;align-items:baseline;gap:7px;border:1px solid var(--mod-bd);padding:5px 10px 4px;background:#0c1217}
+  .chip b{font-size:22px;line-height:1;font-weight:800}
+  .chip span{font-size:12px;letter-spacing:1.5px;color:var(--muted)}
+  .progress{font-size:13px;letter-spacing:2px;color:var(--muted);margin-top:2px}
+  .progress b{font-size:40px;color:var(--strong);font-weight:800;letter-spacing:0}
+  .progress i{font-size:22px;color:var(--secondary);font-style:normal}
+
+  .ammo__big{line-height:.82}
+  .ammo__big b{font-size:44px;color:var(--strong);font-weight:800}
+  .ammo__big i{font-size:24px;color:var(--ember2);font-style:normal}
+  .ammo__lbl{display:flex;align-items:center;gap:8px;font-size:13px;letter-spacing:2px;color:var(--head);margin-top:8px}
+  .estbadge{font-size:11px;letter-spacing:1.5px;color:#d0a86a;border:1px solid #5a4426;background:rgba(226,160,77,.1);padding:1px 7px}
+  .gauge{position:relative;height:22px;margin-top:13px;background:var(--track);border:1px solid var(--track-bd);overflow:hidden}
+  .gauge__fill{position:absolute;top:0;left:0;bottom:0;
+    background:linear-gradient(180deg,#ffd24a,#ff8a1f 45%,#ff6a1f 75%,#e2541d);box-shadow:0 0 14px rgba(255,90,20,.5)}
+  .gauge__rounds{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 13px,#0b0f12 13px 16px)}
+  .gauge__tick{position:absolute;top:-1px;bottom:-1px;width:2px;background:#0b0f12;box-shadow:0 0 0 1px rgba(255,210,74,.7)}
+
+  /* field strip (battlefield map) */
+  .strip{display:flex;gap:5px;align-items:stretch;flex-wrap:wrap;margin-top:13px}
+  .cell{position:relative;flex:1;min-width:34px;height:34px;border:1px solid #000;
+        display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#0a0604}
+  .cell small{position:absolute;left:3px;top:1px;font-size:9px;letter-spacing:0;opacity:.65}
+  .stripleg{display:flex;gap:14px;flex-wrap:wrap;margin-top:11px;font-size:13px;letter-spacing:1px;color:var(--muted)}
+  .stripleg span{display:inline-flex;align-items:center;gap:6px}
+  .swatch{width:11px;height:11px;border:1px solid #000;display:inline-block}
+
+  /* section heading */
+  .sec{display:flex;align-items:center;gap:13px;margin:4px 2px 0}
+  .sec h2{margin:0;font-size:15px;font-weight:800;letter-spacing:3px;color:var(--head);white-space:nowrap}
+  .sec .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--mod-bd),transparent)}
+  .sec .rt{font-size:14px;letter-spacing:2px;color:var(--muted)}
+
+  /* objective cards */
+  .jobs{display:flex;flex-direction:column;gap:10px}
+  .job{display:grid;grid-template-columns:auto 1fr auto;gap:15px;align-items:stretch;
+       background:var(--mod);border:1px solid var(--mod-bd);padding:13px 15px 13px 13px;position:relative;overflow:hidden}
+  .job__seq{align-self:flex-start;font-size:26px;font-weight:800;color:#3f5358;line-height:1;min-width:30px;text-align:center;padding-top:2px}
+  .job__body{min-width:0}
+  .job__head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .opill{flex:none;display:inline-flex;align-items:center;gap:7px;padding:3px 10px 2px;font-size:12px;font-weight:800;letter-spacing:1.5px;border:1px solid}
+  .tier{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:23px;padding:0 8px;font-size:13px;font-weight:800;letter-spacing:1px}
+  .job__title{font-weight:700;color:var(--strong);letter-spacing:.3px;font-size:18px}
+  .type{flex:none;font-size:12px;letter-spacing:1.5px;color:var(--muted);border:1px solid var(--mod-bd);padding:2px 8px}
+  .job__stamp{flex:none;font-size:11px;letter-spacing:2px;font-weight:800;padding:3px 8px 2px;transform:rotate(-2deg)}
+
+  .job__data{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:15px;letter-spacing:.5px}
+  .branch{display:inline-flex;align-items:center;gap:6px;color:var(--secondary);background:#0c1217;border:1px solid var(--track-bd);padding:2px 9px}
+  .branch .g{color:var(--muted)}
+  .diff{display:inline-flex;align-items:center;gap:8px;color:var(--muted)}
+  .diff .ins{color:var(--secured2)} .diff .del{color:var(--fail2)}
+  .diff .files{color:var(--secondary)}
+  .nobranch{font-size:14px;letter-spacing:1.5px;color:#5e7378}
+  .job__est{margin-left:auto;font-size:14px;letter-spacing:1px;color:var(--muted)}
+  .job__est b{font-size:16px;color:var(--secondary);font-weight:700}
+
+  .job__note{margin-top:9px;font-size:17px;line-height:1.3;color:var(--secondary);max-width:78ch}
+
+  .cmds{margin-top:11px;display:flex;flex-direction:column;gap:6px}
+  .cmd{display:flex;align-items:stretch;gap:0;border:1px solid var(--track-bd);background:var(--track)}
+  .cmd__k{flex:none;display:flex;align-items:center;font-size:12px;font-weight:800;letter-spacing:1.5px;
+          padding:0 11px;color:#0a0604;background:var(--secured)}
+  .cmd__k--d{background:#6f8a8a}
+  .cmd code{flex:1;min-width:0;padding:8px 11px;font-size:14.5px;color:var(--primary);
+            white-space:nowrap;overflow-x:auto;letter-spacing:.3px}
+  .copy{flex:none;align-self:stretch;border:0;border-left:1px solid var(--track-bd);background:#141d22;
+        color:var(--head);font-family:var(--font);font-size:12px;font-weight:800;letter-spacing:1.5px;
+        padding:0 13px;cursor:pointer;transition:background .12s,color .12s}
+  .copy:hover{background:#1c2a31;color:var(--strong)}
+  .copy.copied{background:var(--secured);color:#0a0604}
+
+  /* right meta: the test-gate result */
+  .gate{align-self:center;text-align:center;flex:none;min-width:96px;padding-left:8px;border-left:1px solid var(--mod-bd)}
+  .gate__glyph{font-size:34px;line-height:1;font-weight:800}
+  .gate__lbl{font-size:11px;letter-spacing:1.5px;margin-top:5px;color:var(--muted)}
+  .gate__win{font-size:14px;color:var(--secondary);margin-top:9px}
+  .gate__win b{font-weight:700}
+
+  /* per-outcome card treatments */
+  .o-running{background:linear-gradient(#16110c,#100b08);border-color:#5a3014;
+             box-shadow:0 0 0 1px rgba(255,106,31,.25),0 0 26px rgba(255,90,20,.16)}
+  .o-fail{background:linear-gradient(#1c0f0a,#100806);border-color:#3d1f14}
+  .o-blocked{background:#0e1418;opacity:.82;
+             background-image:repeating-linear-gradient(90deg,rgba(120,150,150,.05) 0 2px,transparent 2px 9px)}
+  .o-skipped{background:linear-gradient(#120c08,#0d0907);border-color:#2a1c12;opacity:.6}
+  .o-pending{background:transparent;border-style:dashed;border-color:#22343a;opacity:.5}
+  .o-running .job__seq{color:#7a4a22}
+  .o-fail .job__seq{color:#6a342a}
+  .o-skipped .job__title,.o-blocked .job__title,.o-pending .job__title{color:#b8c6c6}
+
+  /* verdict */
+  .verdict{position:relative;border:1px solid var(--mod-bd);
+           background:linear-gradient(90deg,rgba(123,176,74,.10),rgba(11,15,18,0) 62%);
+           padding:15px 17px 16px 21px;overflow:hidden}
+  .verdict__accent{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .verdict__hd{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .verdict__hd .lab{font-size:15px;letter-spacing:2px;color:var(--muted)}
+  .verdict__note{font-size:21px;line-height:1.35;color:var(--strong);margin-top:11px;max-width:88ch}
+
+  .meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:14px;letter-spacing:1px;color:#7a9d9d;padding:2px}
+
+  .scan{position:absolute;inset:0;pointer-events:none;z-index:7;
+        background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+  .vig{position:absolute;inset:0;pointer-events:none;z-index:7;
+       background:radial-gradient(ellipse at center,transparent 56%,rgba(0,0,0,.42) 100%)}
+
+  .blink{animation:blink 1.2s steps(1,end) infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .ember{animation:emberpulse 1s ease-in-out infinite}
+  @keyframes emberpulse{0%,100%{opacity:1;box-shadow:0 0 7px var(--fire)}50%{opacity:.45;box-shadow:0 0 3px var(--fire)}}
+
+  @media (prefers-reduced-motion:reduce){
+    .hdr__title,.blink,.ember{animation:none}
+    .hdr__title{background-position:0 0}
+  }
+  @media (max-width:720px){
+    .banner__grid{grid-template-columns:1fr}
+    .banner__col+.banner__col{border-left:0;border-top:1px solid var(--mod-bd)}
+    .job{grid-template-columns:auto 1fr}
+    .gate{grid-column:1 / -1;border-left:0;border-top:1px solid var(--mod-bd);padding:9px 0 0;margin-top:4px;
+          display:flex;align-items:center;gap:16px;text-align:left;min-width:0}
+    .gate__lbl,.gate__win{margin-top:0}
+  }
+</style></head>
+<body>
+<div class="wrap" id="aar">
+  <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br brr"></span>
+</div>
+
 <script>
+/* ======================================================================
+   AAR — the run data. review_report.render_review_html injects it by
+   substituting the data token below; nothing else lives here. When
+   AAR.state === "done" the header settles and no refresh is emitted
+   (render_review_html injects the <meta refresh> only while running).
+   ====================================================================== */
 const AAR = __REVIEW_JSON__;
-function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-document.getElementById('run').textContent =
-  AAR.repo + ' · ' + AAR.note + ' · ~' + AAR.envelope.spentEstimated +
-  ' of ' + AAR.envelope.available + ' windows (estimated)';
-document.getElementById('jobs').innerHTML = AAR.jobs.map(j =>
-  '<div class="job '+esc(j.outcome)+'">#'+j.seq+' ['+esc(j.outcome)+'] '+esc(j.title)+
-  (j.branch?' — '+esc(j.branch):'')+'</div>').join('');
+
+/* ======================================================================
+   Render — everything below is derived from AAR. No data lives here.
+   ====================================================================== */
+(function(){
+  const VERDICT = { GREEN:"#7bb04a", AMBER:"#e2a04d", OFF:"#c0392b", UNKNOWN:"#6f8a8a" };
+  const TIER = {
+    XL:{ badgeBg:"linear-gradient(135deg,#ffd24a,#ff6a1f)", badgeFg:"#190d05", badgeBd:"#ff6a1f" },
+    L: { badgeBg:"#ff9a3d", badgeFg:"#190d05", badgeBd:"#ff9a3d" },
+    M: { badgeBg:"#e2a04d", badgeFg:"#190d05", badgeBd:"#e2a04d" },
+    S: { badgeBg:"transparent", badgeFg:"#9ec1c1", badgeBd:"#3a5a5a" }
+  };
+  // outcome -> visual spec
+  const STATE = {
+    running:        { cls:"o-running", label:"WORKING",   bar:"#ff6a1f", pill:"#ff6a1f", pillBg:"rgba(255,106,31,.16)", pillBd:"#ff6a1f", glyph:"\u25C9", glyphCol:"#ffd24a", gate:"RUNNING", cell:"#ff6a1f", cellTxt:"#190d05", live:true },
+    pass:           { cls:"o-pass",    label:"SECURED",    bar:"#7bb04a", pill:"#9fd36a", pillBg:"rgba(123,176,74,.14)", pillBd:"#7bb04a", glyph:"\u2713", glyphCol:"#9fd36a", gate:"GATE PASS", cell:"#7bb04a", cellTxt:"#0c1206" },
+    fail:           { cls:"o-fail",    label:"CRATERED",   bar:"#c0392b", pill:"#e2705a", pillBg:"rgba(192,57,43,.18)", pillBd:"#c0392b", glyph:"\u2717", glyphCol:"#e2705a", gate:"GATE FAIL", cell:"#5a241a", cellTxt:"#e2705a" },
+    "blocked-roe":  { cls:"o-blocked", label:"FENCED OFF", bar:"#6f8a8a", pill:"#9ec1c1", pillBg:"transparent", pillBd:"#3a5a5a", glyph:"\u2298", glyphCol:"#86abab", gate:"NOT RUN", stamp:"ROE", stampCol:"#9ec1c1", stampBd:"#3a5a5a", cell:"#3a4a4a", cellTxt:"#cfe0e0", dim:true },
+    "skipped-budget":{ cls:"o-skipped",label:"FORFEIT",    bar:"#7a4a30", pill:"#c0653a", pillBg:"rgba(192,101,58,.12)", pillBd:"#7a4a30", glyph:"\u2205", glyphCol:"#c0653a", gate:"FORFEIT", stamp:"NO BUDGET", stampCol:"#c0653a", stampBd:"#5a3420", cell:"#3a2615", cellTxt:"#c0653a", dim:true },
+    pending:        { cls:"o-pending", label:"QUEUED",     bar:"#2b3d44", pill:"#86abab", pillBg:"transparent", pillBd:"#2b3d44", glyph:"\u00B7", glyphCol:"#6f8a8a", gate:"QUEUED", cell:"transparent", cellTxt:"#86abab", dim:true }
+  };
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const fmt = n => (Math.round(n*10)/10).toString();
+
+  const live = AAR.state === "running";
+  const vCol = VERDICT[AAR.verdict] || VERDICT.UNKNOWN;
+  const J = AAR.jobs;
+  const c = o => J.filter(j=>j.outcome===o).length;
+  const passed=c("pass"), failed=c("fail"), blocked=c("blocked-roe"), forfeit=c("skipped-budget"), running=c("running");
+  const done = passed+failed;
+  const env = AAR.envelope;
+  const spentPct = env.available>0 ? Math.min(100, env.spentEstimated/env.available*100) : 0;
+
+  // ---- field strip cell ----
+  function cell(j){
+    const s = STATE[j.outcome] || STATE.pending;
+    const border = j.outcome==="pending" ? "border:1px dashed #2b3d44;" : "border:1px solid #000;";
+    const fire = s.live ? " ember" : "";
+    const inner = j.outcome==="fail"
+      ? "background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.4) 0 2px,transparent 2px 5px);" : "";
+    return `<span class="cell${fire}" title="${esc(j.id)} — ${esc(s.label)}" style="background:${s.cell};${border}${inner}color:${s.cellTxt};">
+      <small>${j.seq}</small>${esc(s.glyph)}</span>`;
+  }
+
+  // ---- diffstat / branch row ----
+  function dataRow(j){
+    const branch = j.branch
+      ? `<span class="branch"><span class="g">\u2387</span> ${esc(j.branch)}</span>`
+      : `<span class="nobranch">\u2014 NO BRANCH PRODUCED</span>`;
+    const diff = j.diff
+      ? `<span class="diff"><span class="files">${j.diff.files} files</span> <span class="ins">+${j.diff.insertions}</span> <span class="del">\u2212${j.diff.deletions}</span></span>`
+      : (j.branch ? "" : "");
+    return `<div class="job__data">${branch}${diff}
+      <span class="job__est">EST <b>~${fmt(j.estWindows)} win</b></span></div>`;
+  }
+
+  // ---- copyable command lines ----
+  function cmds(j){
+    if(!j.mergeCmd && !j.discardCmd) return "";
+    const line = (k,kc,cmd)=>cmd?`<div class="cmd"><span class="cmd__k ${kc}">${k}</span><code>${esc(cmd)}</code><button class="copy" data-copy="${esc(cmd)}">COPY</button></div>`:"";
+    return `<div class="cmds">${line("MERGE","",j.mergeCmd)}${line("DISCARD","cmd__k--d",j.discardCmd)}</div>`;
+  }
+
+  function jobCard(j){
+    const s = STATE[j.outcome] || STATE.pending;
+    const t = TIER[j.tier] || TIER.M;
+    const emberDot = s.live ? `<span class="dot ember" style="background:${s.pill};"></span>` : `<span class="dot" style="background:${s.pill};"></span>`;
+    const pill = `<span class="opill" style="color:${s.pill};background:${s.pillBg};border-color:${s.pillBd};">${emberDot}${esc(s.label)}</span>`;
+    const tier = `<span class="tier" style="background:${t.badgeBg};color:${t.badgeFg};border:1px solid ${t.badgeBd};">${esc(j.tier)}</span>`;
+    const stamp = s.stamp ? `<span class="job__stamp" style="color:${s.stampCol};border:1px solid ${s.stampBd};background:rgba(0,0,0,.25);">${esc(s.stamp)}</span>` : "";
+    return `
+    <div class="job ${s.cls}" style="border-left:5px solid ${s.bar};">
+      <div class="job__seq">${String(j.seq).padStart(2,"0")}</div>
+      <div class="job__body">
+        <div class="job__head">${pill}${tier}<span class="job__title">${esc(j.title)}</span><span class="type">${esc(j.type)}</span>${stamp}</div>
+        ${dataRow(j)}
+        <div class="job__note" style="${j.outcome==="fail"?"color:#e0a090;":""}">${esc(j.note)}</div>
+        ${cmds(j)}
+      </div>
+      <div class="gate">
+        <div class="gate__glyph" style="color:${s.glyphCol};">${esc(s.glyph)}</div>
+        <div class="gate__lbl">${esc(s.gate)}</div>
+      </div>
+    </div>`;
+  }
+
+  const headerTag = live
+    ? `<span class="liveflag" style="border-color:#ff6a1f;color:#ff8a3f;"><span class="dot blink" style="background:#ff6a1f;box-shadow:0 0 8px #ff6a1f;"></span>OPERATION LIVE</span>`
+    : `<span class="liveflag" style="border-color:${vCol};color:${vCol};"><span class="dot" style="background:${vCol};box-shadow:0 0 6px ${vCol};"></span>OPERATION COMPLETE</span>`;
+
+  const html = `
+    <div class="hdr">
+      <canvas class="hdr__scene" width="360" height="56"></canvas>
+      <div class="hdr__top">
+        <div class="hdr__tag">
+          <span class="dot ${live?"blink":""}" style="background:${vCol};box-shadow:0 0 8px ${vCol};"></span>
+          <span>// AAR \u00b7 ${esc(AAR.sector)} \u00b7 ${esc(AAR.generatedAt)}</span>
+        </div>
+        ${headerTag}
+      </div>
+      <h1 class="hdr__title">AFTER-ACTION REPORT</h1>
+      <div class="hdr__sub">BATTLE-DAMAGE ASSESSMENT \u00b7 ${esc(AAR.repo)} \u00b7 ${J.length} OBJECTIVES</div>
+    </div>
+
+    <div class="deck">
+
+      <!-- RUN BANNER -->
+      <div class="banner">
+        <div class="banner__accent" style="background:${live?"#ff6a1f":vCol};"></div>
+        <div class="banner__grid">
+          <div class="banner__col">
+            <div class="mod__hd" style="margin-bottom:0;border:0;padding:0;"><span class="l">OPERATION STATUS</span><span class="r">${live?"LIVE \u00b7 AUTO-REFRESH "+AAR.refreshSeconds+"s":"COMPLETE"}</span></div>
+            <div class="progress" style="margin-top:11px;"><b>${done}</b><i> / ${J.length}</i> OBJECTIVES RESOLVED${running?` \u00b7 <span style="color:#ff8a3f;">${running} ON FIRE</span>`:""}</div>
+            <div class="chips">
+              <div class="chip"><b style="color:#9fd36a;">${passed}</b><span>SECURED</span></div>
+              <div class="chip"><b style="color:#e2705a;">${failed}</b><span>CRATERED</span></div>
+              <div class="chip"><b style="color:#9ec1c1;">${blocked}</b><span>FENCED</span></div>
+              <div class="chip"><b style="color:#c0653a;">${forfeit}</b><span>FORFEIT</span></div>
+            </div>
+          </div>
+          <div class="banner__col">
+            <div class="mod__hd" style="margin-bottom:0;border:0;padding:0;"><span class="l">AMMUNITION SPENT</span><span class="r">BUDGET ENVELOPE</span></div>
+            <div class="ammo__big" style="margin-top:11px;"><b>~${fmt(env.spentEstimated)}</b><i> / ${fmt(env.available)} WIN</i></div>
+            <div class="ammo__lbl">SPENT OF AVAILABLE <span class="estbadge">\u25B2 ESTIMATED</span></div>
+            <div class="gauge">
+              <div class="gauge__fill" style="width:${spentPct.toFixed(2)}%;"></div>
+              <div class="gauge__tick" style="left:${spentPct.toFixed(2)}%;"></div>
+              <div class="gauge__rounds"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FIELD STRIP -->
+      <div class="mod">
+        <div class="mod__hd"><span class="l">THE FIELD</span><span class="r">ONE CELL PER OBJECTIVE</span></div>
+        <div class="strip">${J.map(cell).join("")}</div>
+        <div class="stripleg">
+          <span><i class="swatch" style="background:#7bb04a;"></i>SECURED</span>
+          <span><i class="swatch" style="background:#5a241a;"></i>CRATERED</span>
+          <span><i class="swatch" style="background:#ff6a1f;"></i>ON FIRE</span>
+          <span><i class="swatch" style="background:#3a4a4a;"></i>FENCED</span>
+          <span><i class="swatch" style="background:#3a2615;"></i>FORFEIT</span>
+        </div>
+      </div>
+
+      <!-- OBJECTIVES -->
+      <div class="sec"><h2>OBJECTIVES</h2><span class="rule"></span><span class="rt">BATTLE-DAMAGE ASSESSMENT \u00b7 RUN ORDER</span></div>
+      <div class="jobs">${J.map(jobCard).join("")}</div>
+
+      <!-- VERDICT -->
+      <div class="verdict">
+        <div class="verdict__accent" style="background:${vCol};"></div>
+        <div class="verdict__hd">
+          <span class="lab">${live?"LIVE SITREP //":"AFTER-ACTION //"}</span>
+          <span class="liveflag" style="border-color:${vCol};color:${vCol};padding:3px 10px 2px;">
+            <span class="dot ${live?"blink":""}" style="background:${vCol};box-shadow:0 0 6px ${vCol};"></span>${esc(AAR.verdict)}
+          </span>
+        </div>
+        <div class="verdict__note">${esc(AAR.note)}</div>
+      </div>
+
+      <div class="meta">
+        <span>GENERATED ${esc(AAR.generatedAt)} \u00b7 ${esc(AAR.repo)}</span>
+        <span>// FIELD INTEL \u00b7 AFTER-ACTION REPORT</span>
+      </div>
+
+    </div>
+
+    <div class="scan"></div>
+    <div class="vig"></div>
+  `;
+
+  const root = document.getElementById("aar");
+  root.insertAdjacentHTML("beforeend", html);
+
+  // ---- copy buttons (offline-safe, no permissions) ----
+  root.addEventListener("click", e=>{
+    const b = e.target.closest(".copy"); if(!b) return;
+    const txt = b.getAttribute("data-copy");
+    let ok=false;
+    try{ const ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select(); ok=document.execCommand("copy"); document.body.removeChild(ta); }catch(_){}
+    if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
+    const o=b.textContent; b.textContent="COPIED"; b.classList.add("copied");
+    setTimeout(()=>{ b.textContent=o; b.classList.remove("copied"); }, 1200);
+  });
+
+
+  /* ---- procedural pixel-art SUNRISE: forward operating base at dawn (AAR's own setting) ---- */
+  function buildScene(cv){
+    if(!cv) return;
+    const W=cv.width, H=cv.height, ctx=cv.getContext("2d");
+    ctx.imageSmoothingEnabled=false;
+    const rng=s=>{let v=(s>>>0)||1;return()=>{v=(v*1664525+1013904223)>>>0;return v/4294967296;};};
+    const gl=H-9, sunX=Math.round(W*0.42), sunY=gl-1;
+    const off=document.createElement("canvas"); off.width=W; off.height=H;
+    const o=off.getContext("2d"); o.imageSmoothingEnabled=false;
+    const px=(x,y,f)=>{ if(x>=0&&x<W&&y>=0&&y<H){ o.fillStyle=f; o.fillRect(x|0,y|0,1,1);} };
+
+    // dawn sky — cool indigo up top warming to gold at the horizon
+    const sky=o.createLinearGradient(0,0,0,gl);
+    sky.addColorStop(0,"#0b0f12"); sky.addColorStop(.16,"#141a30"); sky.addColorStop(.36,"#313a64");
+    sky.addColorStop(.54,"#6a4a78"); sky.addColorStop(.70,"#b96a72"); sky.addColorStop(.84,"#e89a66");
+    sky.addColorStop(.94,"#f6c878"); sky.addColorStop(1,"#fbe6a2");
+    o.fillStyle=sky; o.fillRect(0,0,W,gl);
+    // rising sun — bright, whiter than the dusk one
+    const sg=o.createRadialGradient(sunX,sunY,0,sunX,sunY,42);
+    sg.addColorStop(0,"rgba(255,248,212,.98)"); sg.addColorStop(.18,"rgba(255,226,150,.78)");
+    sg.addColorStop(.5,"rgba(250,182,112,.28)"); sg.addColorStop(1,"rgba(250,182,112,0)");
+    o.fillStyle=sg; o.fillRect(0,0,W,gl+2);
+    o.fillStyle="#fff3cf"; o.beginPath(); o.arc(sunX,sunY,6,0,6.283); o.fill();
+
+    // far hills / cool dawn ridge
+    const hill=(amp,freq,ph,base,col)=>{ for(let x=0;x<W;x++){ const top=base-Math.round(amp*(0.5+0.5*Math.sin(x/W*freq+ph)));
+      for(let y=top;y<gl;y++) px(x,y,col); } };
+    hill(5,6,0.8,gl-1,"#3a3052"); hill(3,11,2.5,gl,"#2a2340");
+
+    // dewy ground — top edge catches the dawn light
+    const rg=rng(7);
+    for(let x=0;x<W;x++) for(let y=gl;y<H;y++){ const d=y-gl; let f;
+      if(d===0)      f=(rg()<0.5?"#b06848":"#7a4632");
+      else if(d===1) f=(rg()<0.4?"#3a2a1e":"#211812");
+      else           f=(rg()<0.16?"#120d0a":(rg()<0.12?"#2a2018":"#181210"));
+      px(x,y,f);
+    }
+    const rd=rng(31); for(let i=0;i<W*0.04;i++) px(Math.floor(rd()*W),gl+1+Math.floor(rd()*2),"#6a5a48"); // dew
+
+    // sprite atlas (camp silhouettes)
+    const SPR={
+      tent:[".....A.....","....bbb....","...bbbbb...","..bbbbbbb..",".bbbbDbbbb.","bbbbDDDbbbb","bbbbDDDbbbb","rrrrrrrrrrr"],
+      mast:["....b....","...b.b...","...bbb...","..b...b..","..b.b.b..","..bbbbb..",".b.....b.",".b..b..b.",".b.bbb.b.","b.......b","b...b...b","b..bbb..b","b.......b","b.......b","b.......b"],
+      flag:["P........","PFFFFFF..","PFFFFFFF.","PFFFFFF..","PFFF.....","P........","P........","P........","P........","P........","P........","P........"],
+      crate:["kkkkkkkk","kKkkkkKk","kkKkkKkk","kkkKKkkk","kkKkkKkk","kKkkkkKk","kkkkkkkk"],
+      barrel:[".bbbb.","bbbbbb","bBBBBb","bbbbbb","bBBBBb","bbbbbb","bBBBBb",".bbbb."]
+    };
+    const PALS={
+      tent:{A:"#d8b878",b:"#171109",D:"#090605",r:"#7a4e2c"},
+      mast:{b:"#14100b"},
+      flag:{P:"#241a10",F:"#ff6a1f"},
+      crate:{k:"#130d08",K:"#28190f"}, barrel:{b:"#15100a",B:"#2c1d12"}
+    };
+    const place=(name,cx,flip)=>{ const m=SPR[name],p=PALS[name],wd=m[0].length,ht=m.length,ox=Math.round(cx-wd/2),oy=gl-ht+1;
+      for(let r=0;r<ht;r++){ const row=m[r]; for(let cc=0;cc<wd;cc++){ const ch=row[flip?wd-1-cc:cc],f=p[ch]; if(f) px(ox+cc,oy+r,f); } } };
+
+    // live trees (round canopy, cool dawn silhouette + warm rim toward the sun)
+    function tree(x0,h,seed,depth){
+      const r=rng(seed), trunkH=Math.max(3,Math.floor(h*0.42));
+      const trunk=depth?"#2a2440":"#15100b", leaf=depth?"#33405a":"#1a2416", rim="#c47a3a", rimRight=x0<sunX;
+      for(let i=0;i<trunkH;i++) px(x0,gl-i,trunk);
+      const cy=gl-trunkH, rad=Math.max(2,Math.round(h*0.32));
+      for(let dy=-rad;dy<=1;dy++) for(let dx=-rad;dx<=rad;dx++){
+        if(dx*dx+dy*dy<=rad*rad+rad){ const yy=cy+dy; if(yy<gl){ px(x0+dx,yy,leaf);
+          if(!depth && dx===(rimRight?rad:-rad)) px(x0+dx,yy,rim); } } }
+    }
+    // sandbag barricade — stacked bumps with lit tops
+    function sandbags(x0,x1){
+      for(let row=0;row<3;row++){ const y=gl-1-row*2;
+        for(let x=x0;x<=x1;x+=5){ for(let dx=0;dx<4;dx++){ px(x+dx,y,"#2a2018"); px(x+dx,y-1,"#352818"); } px(x,y-1,"#4a3a26"); } }
+    }
+
+    // distant treeline (depth)
+    const rb=rng(555), nBg=Math.floor(W/20);
+    for(let i=0;i<nBg;i++){ const x=Math.floor((i+0.5)*(W/nBg)+(rb()-0.5)*8); tree(x,6+Math.floor(rb()*4),2000+i,true); }
+
+    // the camp (composition is deliberate; sun sits at 0.42 behind the mast & flag)
+    tree(Math.round(W*0.06),14,11,false);
+    place("tent", W*0.12,false); place("tent", W*0.205,true); place("barrel",W*0.27,false);
+    place("mast", W*0.345,false);
+    place("flag", W*0.40,false);
+    const fireX=Math.round(W*0.50);
+    o.fillStyle="#241910"; o.fillRect(fireX-2,gl-1,2,1); o.fillRect(fireX+1,gl-1,2,1); px(fireX,gl-1,"#3a2615");
+    sandbags(Math.round(W*0.55),Math.round(W*0.67));
+    place("crate",W*0.62,false);
+    place("tent", W*0.745,false); place("tent", W*0.835,true);
+    tree(Math.round(W*0.92),15,71,false);
+
+    // ---- dynamic: morning mist, campfire, mast beacon, dawn birds ----
+    const mast={x:Math.round(W*0.345), y:gl-14};   // beacon at mast tip
+    const mist=[]; const rm=rng(88);
+    for(let i=0;i<7;i++) mist.push({x:rm()*W, y:gl-2-rm()*4, r:14+rm()*16, a:0.05+rm()*0.06, sp:0.10+rm()*0.18});
+    const birds=[{x:W*0.30,y:12,sp:0.15,ph:0},{x:W*0.62,y:8,sp:0.11,ph:1.5},{x:W*0.50,y:6,sp:0.08,ph:3}];
+
+    const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let t=0;
+    function frame(){
+      ctx.clearRect(0,0,W,H); ctx.drawImage(off,0,0);
+      // campfire flame + smoke
+      const ff=0.5+0.5*Math.sin(t*0.4);
+      ctx.fillStyle="#ff9a3d"; ctx.fillRect(fireX,gl-2,1,1);
+      if(ff>0.4){ ctx.fillStyle="#ffd24a"; ctx.fillRect(fireX,gl-3,1,1); }
+      if(ff>0.7){ ctx.fillStyle="#ff6a1f"; ctx.fillRect(fireX+(t%2?1:-1),gl-2,1,1); }
+      for(let j=0;j<5;j++){ const yy=gl-5-j*1.6-((t*0.13)%9), xx=fireX+Math.round(Math.sin(t*0.05+j*0.5)*1.4);
+        ctx.globalAlpha=Math.max(0,0.22-j*0.035); ctx.fillStyle="#5a4c40"; ctx.fillRect(xx|0,yy|0,1,1); }
+      ctx.globalAlpha=1;
+      // drifting morning mist (soft, low)
+      for(const m of mist){ m.x+=m.sp; if(m.x>W+m.r) m.x=-m.r;
+        const g=ctx.createRadialGradient(m.x,m.y,0,m.x,m.y,m.r);
+        g.addColorStop(0,"rgba(214,226,230,"+m.a.toFixed(3)+")"); g.addColorStop(1,"rgba(214,226,230,0)");
+        ctx.fillStyle=g; ctx.fillRect(m.x-m.r,m.y-m.r,m.r*2,m.r*2); }
+      // mast beacon (HUD red blink)
+      if(!reduce ? (Math.sin(t*0.22)>0) : true){ ctx.fillStyle="#ff3b1f"; ctx.fillRect(mast.x,mast.y,1,1); }
+      // dawn birds
+      for(const b of birds){ const cx=((b.x+t*b.sp)%(W+12))-6, cy=b.y+Math.sin(t*0.06+b.ph)*1.2;
+        ctx.fillStyle="#1a2230";
+        ctx.fillRect((cx-2)|0,(cy+1)|0,1,1); ctx.fillRect((cx-1)|0,cy|0,1,1);
+        ctx.fillRect(cx|0,(cy+1)|0,1,1); ctx.fillRect((cx+1)|0,cy|0,1,1); ctx.fillRect((cx+2)|0,(cy+1)|0,1,1); }
+      if(!reduce) t++;
+    }
+    frame();
+    if(!reduce) setInterval(frame,90);
+  }
+  buildScene(root.querySelector(".hdr__scene"));
+})();
 </script>
 </body></html>
