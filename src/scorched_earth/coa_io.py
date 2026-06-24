@@ -124,6 +124,22 @@ def enqueue(repo_path: str, jobs: List[Job]) -> List[Job]:
     return existing
 
 
+def unqueue(repo_path: str, job_id: str) -> List[Job]:
+    kept = [j for j in read_queue(repo_path) if j.id != job_id]
+    write_queue(repo_path, kept)
+    return kept
+
+
+def reorder(repo_path: str, ids: List[str]) -> List[Job]:
+    current = read_queue(repo_path)
+    by_id = {j.id: j for j in current}
+    ordered = [by_id[i] for i in ids if i in by_id]
+    named = set(ids)
+    ordered += [j for j in current if j.id not in named]   # keep un-named jobs, prior order
+    write_queue(repo_path, ordered)
+    return ordered
+
+
 def runs_dir(repo_path: str) -> str:
     return os.path.join(_repo_dir(repo_path), "runs")
 

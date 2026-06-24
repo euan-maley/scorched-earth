@@ -49,6 +49,27 @@ _stale = {"snapshot": {"now": 3000, "seven_day_pct": 50},
 check("EnvelopeTracker returns None on stale snapshot", _tr.available(_stale, 1) is None)
 
 
+# --- Task 3: queue ops ------------------------------------------------------------
+import importlib  # noqa: E402
+_home = tempfile.mkdtemp(); _repo = tempfile.mkdtemp()
+os.environ["HOME"] = _home
+import scorched_earth.state as _st  # noqa: E402
+importlib.reload(_st)
+import scorched_earth.coa_io as _io  # noqa: E402
+importlib.reload(_io)
+
+_io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", est_windows=1, value=5),
+                        Job(id="b", repo=_repo, title="B", type="docs", est_windows=1, value=4),
+                        Job(id="c", repo=_repo, title="C", type="perf", est_windows=1, value=3)])
+check("unqueue removes by id", [j.id for j in _io.unqueue(_repo, "b")] == ["a", "c"])
+check("unqueue persisted", [j.id for j in _io.read_queue(_repo)] == ["a", "c"])
+_io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", est_windows=1, value=5),
+                        Job(id="b", repo=_repo, title="B", type="docs", est_windows=1, value=4),
+                        Job(id="c", repo=_repo, title="C", type="perf", est_windows=1, value=3)])
+check("reorder applies the given order", [j.id for j in _io.reorder(_repo, ["c", "a", "b"])] == ["c", "a", "b"])
+check("reorder appends un-named queued jobs after",
+      [j.id for j in _io.reorder(_repo, ["b"])] == ["b", "c", "a"])
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
