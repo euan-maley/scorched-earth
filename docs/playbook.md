@@ -65,10 +65,40 @@ plugin/skill; install flow asks the user how they want the light displayed.
   value (their plan / observed windows-per-week).
 - The 5h window resets independently of the weekly window — `windows_left` must count
   the partial current window plus full windows up to the weekly reset.
+- **Windows are sleep-discounted.** Counting every rolling 5h window (including overnight)
+  overstates usable windows and under-warns. `core.compute(active_fraction=...)` scales the
+  future tail by `active_hours/24`; `habits.active_hours` learns active hours from when the
+  statusline fires (16h fallback). The current window isn't discounted (you're awake in it).
+- **R can't be read live**, only estimated from Δweekly%/Δ5h% over time. Guard it: discard
+  out-of-band per-pair estimates (`R_MIN..R_MAX`, ~1–20%) and hold the default until
+  `MIN_PAIRS` clean pairs. A single noisy pair (e.g. 0.25) will otherwise swing the verdict.
+- **Forecast is capped by capacity:** `habits.forecast(max_burnable=...)` caps
+  `expected_remaining`, so projected leftover is never lower than the physical floor.
+- **The sitrep recomputes live.** `report._stats` recomputes the recommendation AND forecast
+  from the snapshot (not the cached `state.json` fields) and re-estimates R from calibration,
+  so verdict/voice/projections never go stale. Canonical `HEADLINE` lives in `core.py`.
+- **Fire animation:** the burn-mode fire is a continuously-animated canvas. Playwright
+  screenshots time out on it — verify the report by opening it (`scorch --report`), not by
+  screenshot. Consider pausing on `visibilitychange` later.
+
+## The sitrep (HTML report)
+
+`scorch --sitrep` (alias `--report`) writes a self-contained HTML field report via
+`report.py` and opens it. Aesthetic: 8-bit war / scorched-earth crop field. THE FIELD is a
+Stardew-style top-down pixel farm whose seven weekday plots grow lush when you burn light
+and char when you burn heavy. The procedural SVG pixel engine (sprites, palettes, soil
+states, scarecrow/trough/fence, motion) was ported 1:1 from an external design handoff
+(`~/Downloads/design_handoff_the_field`, React → vanilla JS). Python computes the data and
+HUD stats; a small JS layer renders the field and ticks the live countdowns.
+
+The field has a three-way toggle: LAST WEEK (actual burn that week), AVERAGE (all-time
+day-of-week habit), THIS WEEK (actual for elapsed days + projected/recommended for days
+ahead, with projected plots dimmed/"PLANNED" and today tagged "NOW").
 
 ## Current Status
 
-Working end-to-end. Core math + R self-calibration, `scorch` CLI, statusline green/amber
-light (wired into Euan's `~/.claude/statusline.sh`), habits/forecast layer with a
-once-per-week preemptive notification, skill + plugin manifest + installer. 25 unit
-checks passing. Forecast and R both start provisional and sharpen with real usage.
+Working end-to-end. Core math + R self-calibration, `scorch` CLI, statusline light (fire
+gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast layer with
+a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
+marketplace + installer. War-general voice throughout. 25 unit checks passing. Forecast and
+R both start provisional and sharpen with real usage.

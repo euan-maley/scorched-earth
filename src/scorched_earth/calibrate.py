@@ -21,6 +21,10 @@ DEFAULT_R = 0.05
 MIN_DH = 2.0       # ignore pairs with < 2 pp of window movement (noise / div blow-up)
 MIN_PAIRS = 3      # need this many clean pairs before R is considered measured
 MAX_SAMPLES = 300  # ring-buffer cap on stored samples
+# Plausible band for R. One maxed 5h window realistically burns somewhere between ~1% and
+# ~20% of a week; estimates outside this are noise from sparse data and get discarded.
+R_MIN = 0.01
+R_MAX = 0.20
 
 
 def append_sample(samples: List[dict], snap_dict: dict) -> List[dict]:
@@ -83,18 +87,18 @@ def _pair_estimates(samples: List[dict]) -> List[float]:
         if dh < MIN_DH or dw < 0:
             continue
         r = dw / dh
-        # Sanity clamp: a window can't plausibly be more than the whole week or absurdly tiny.
-        if 0 < r <= 1.0:
+        # Discard implausible estimates (sparse-data spikes), keep only the realistic band.
+        if R_MIN <= r <= R_MAX:
             ests.append(r)
     return ests
 
 
 def estimate_r(samples: List[dict]) -> tuple[float, bool]:
-    """Return (R, provisional). provisional=True means it's the fallback, not measured."""
+    """Return (R, provisional). provisional=True means it's the safe fallback, not measured.
+
+    We only trust a measured R once there are MIN_PAIRS clean (in-band) pairs. One or two
+    noisy pairs would otherwise swing the whole verdict, so until then we hold the default."""
     ests = _pair_estimates(samples)
     if len(ests) >= MIN_PAIRS:
         return median(ests), False
-    if ests:
-        # Some signal but not enough to trust — blend toward the fallback, still provisional.
-        return median(ests), True
     return DEFAULT_R, True

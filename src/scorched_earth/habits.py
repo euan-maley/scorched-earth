@@ -124,8 +124,13 @@ def _weeks_observed(history: List[dict]) -> int:
     return len({o["seven_day_reset"] for o in history})
 
 
-def forecast(history: List[dict], now: int, current_used: float, weekly_reset: int) -> Forecast:
-    """Project end-of-week usage from habits. current_used = seven_day used %, 0..100."""
+def forecast(history: List[dict], now: int, current_used: float, weekly_reset: int,
+             max_burnable: float = None) -> Forecast:
+    """Project end-of-week usage from habits. current_used = seven_day used %, 0..100.
+
+    `max_burnable` (% of weekly you could physically still spend before reset, from the
+    recommendation) caps the projection: you can't burn more than capacity allows, so the
+    leftover is never understated."""
     if weekly_reset is None or now is None or current_used is None:
         return Forecast(basis="no weekly data")
 
@@ -175,7 +180,10 @@ def forecast(history: List[dict], now: int, current_used: float, weekly_reset: i
         confidence = "low"
         basis = "linear estimate (building day-of-week profile)"
 
-    projected_end = min(100.0, current_used + expected_remaining)
+    # You can't burn more than you have, nor more than the windows physically allow.
+    cap = weekly_left if max_burnable is None else min(weekly_left, max_burnable)
+    expected_remaining = min(expected_remaining, cap)
+    projected_end = current_used + expected_remaining
     projected_leftover = max(0.0, 100.0 - projected_end)
     # Preemptive only if you're trending to waste a meaningful slice AND there's still
     # runway to do something about it.
@@ -205,6 +213,118 @@ def _start_of_next_day(now: int) -> int:
     lt = time.localtime(now)
     secs_into_day = lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec
     return now - secs_into_day + DAY_SECONDS
+
+
+DOWCODE = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+
+def _day_start(t: int) -> int:
+    lt = time.localtime(t)
+    return t - (lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec)
+
+
+def active_hours(history: List[dict]) -> tuple[float, bool]:
+    """Estimate how many hours a day you're actually around to burn, from when the statusline
+    fires (history covers an hour-of-day only when you're in Claude that hour). Returns
+    (hours, provisional). Falls back to 16h (assume 8h sleep) until there's enough history."""
+    if len(history) < 12:
+        return 16.0, True
+    if len({_day_key(o["ts"]) for o in history}) < 3:
+        return 16.0, True
+    hrs = len({time.localtime(o["ts"]).tm_hour for o in history})
+    return float(max(4, min(24, hrs))), False
+
+
+def active_fraction(history: List[dict]) -> float:
+    """Fraction of the day you can actually burn (usable windows = raw windows x this)."""
+    return active_hours(history)[0] / 24.0
+
+
+def average_days(history: List[dict]) -> List[dict]:
+    """7 plots (Mon..Sun) of your all-time average burn per weekday."""
+    avg = dow_profile(history).get("avg", {})
+    return [{"code": DOWCODE[i], "pct": (round(avg[i]) if i in avg else None)} for i in range(7)]
+
+
+def _week_consumption_by_dow(history: List[dict], reset) -> dict:
+    """Sum of burn per weekday within a single weekly cycle (the one with `reset`)."""
+    obs = sorted((o for o in history if o["seven_day_reset"] == reset), key=lambda x: x["ts"])
+    by, prev = {}, None
+    for o in obs:
+        if prev is not None:
+            by[o["dow"]] = by.get(o["dow"], 0.0) + max(0.0, o["used"] - prev["used"])
+        prev = o
+    return by
+
+
+def last_completed_reset(history: List[dict], current_reset):
+    """The weekly-reset value of the most recent week strictly before the current one."""
+    resets = sorted({o["seven_day_reset"] for o in history})
+    prior = [r for r in resets if current_reset is None or r < current_reset]
+    return prior[-1] if prior else None
+
+
+def week_days(history: List[dict], reset) -> List[dict]:
+    """7 plots of actual burn per weekday for one specific week (None = unobserved)."""
+    if reset is None:
+        return [{"code": c, "pct": None} for c in DOWCODE]
+    by = _week_consumption_by_dow(history, reset)
+    observed = {o["dow"] for o in history if o["seven_day_reset"] == reset}
+    return [{"code": DOWCODE[i], "pct": (round(by.get(i, 0.0)) if i in observed else None)}
+            for i in range(7)]
+
+
+def _projected_state(weekly_left_at_day: float, secs_to_reset: int, r: float,
+                     active_fraction: float = 1.0) -> str:
+    """Soil state for a future day, from the burn STATUS you're projected to be in that day.
+    Mirrors core.compute's thresholds: scorched-earth -> charred, on-the-fence -> wheat,
+    plenty/no-limit -> lush green. Windows are discounted by active_fraction (sleep)."""
+    if weekly_left_at_day <= 0.5:
+        return "lush"                      # nothing left to burn; no pressure
+    windows = (secs_to_reset / (5 * 3600)) * active_fraction
+    if windows <= 0:
+        return "charred"                   # reset imminent, budget remains -> burn it
+    target = (weekly_left_at_day / windows) / (r * 100)
+    if target >= 1.0:
+        return "charred"                   # can't spend it all even maxed -> scorched earth
+    if target >= 0.70:
+        return "golden"                    # on the fence -> wheat
+    return "lush"                          # plenty of runway -> green grass
+
+
+def current_week_days(history: List[dict], reset, now: int, r=None, weekly_left=None,
+                      active_fraction: float = 1.0) -> List[dict]:
+    """7 plots for the CURRENT week: actual burn for elapsed days, and for days still ahead a
+    projection. When r + weekly_left are given, each future day also carries a `state` set from
+    the burn STATUS you're estimated to be in that day (charred = scorched-earth/should-burn,
+    golden = on the fence, lush = no limit). Each entry carries kind=actual|today|projected."""
+    if reset is None:
+        return [{"code": c, "pct": None, "kind": "projected"} for c in DOWCODE]
+    avg = dow_profile(history).get("avg", {})
+    by = _week_consumption_by_dow(history, reset)
+    observed = {o["dow"] for o in history if o["seven_day_reset"] == reset}
+    start = reset - WEEK_SECONDS
+    nd = _day_start(now)
+    out: List = [None] * 7
+    proj_spent = 0.0  # cumulative projected burn on prior future days (drains the reserve)
+    for off in range(7):
+        ts = start + off * DAY_SECONDS + 12 * 3600
+        dow = _dow_hour(ts)[0]
+        td = _day_start(ts)
+        if td < nd:
+            pct = round(by.get(dow, 0.0)) if dow in observed else 0
+            out[dow] = {"code": DOWCODE[dow], "pct": pct, "kind": "actual"}
+        elif td == nd:
+            out[dow] = {"code": DOWCODE[dow], "pct": round(by.get(dow, 0.0)), "kind": "today"}
+        else:
+            a = avg.get(dow)
+            day = {"code": DOWCODE[dow], "pct": (None if a is None else round(a)), "kind": "projected"}
+            if r and weekly_left is not None:
+                wlft = max(0.0, weekly_left - proj_spent)
+                day["state"] = _projected_state(wlft, max(0, reset - td), r, active_fraction)
+                proj_spent += (a or 0.0)
+            out[dow] = day
+    return [out[i] or {"code": DOWCODE[i], "pct": None, "kind": "projected"} for i in range(7)]
 
 
 def _consumed_today(history: List[dict], now: int, current_used: float) -> float:

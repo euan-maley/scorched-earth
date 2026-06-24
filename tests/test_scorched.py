@@ -99,6 +99,20 @@ check("weekly rollover clears old samples", len(rolled) == 1)
 r_def, prov_def = calibrate.estimate_r([])
 check("fallback R is provisional", prov_def is True and r_def == calibrate.DEFAULT_R)
 
+# guardrails: one/two pairs are NOT trusted (hold the default), implausible spikes discarded
+two = []
+for i in range(2):
+    two = calibrate.append_sample(two, {"now": NOW + i * 600, "five_hour_pct": i * 10.0,
+        "five_hour_reset": h_reset, "seven_day_pct": 30.0 + i * 0.7, "seven_day_reset": w_reset})
+r2, prov2 = calibrate.estimate_r(two)
+check("one clean pair still uses provisional default", r2 == calibrate.DEFAULT_R and prov2 is True)
+spike = []
+for i in range(6):  # weekly jumps 5pp per 10pp window -> R=0.5, out of band, all discarded
+    spike = calibrate.append_sample(spike, {"now": NOW + i * 600, "five_hour_pct": i * 10.0,
+        "five_hour_reset": h_reset, "seven_day_pct": 10.0 + i * 5.0, "seven_day_reset": w_reset})
+r_spk, prov_spk = calibrate.estimate_r(spike)
+check("implausible R spikes are discarded -> default", r_spk == calibrate.DEFAULT_R and prov_spk is True)
+
 # --- habits / forecast ---------------------------------------------------------
 from scorched_earth import habits  # noqa: E402
 
@@ -114,6 +128,10 @@ check("linear projected_end ~70", abs(fc.projected_end_used - 70.0) < 0.5)
 check("linear leftover ~30", abs(fc.projected_leftover - 30.0) < 0.5)
 check("linear preemptive (trending to waste)", fc.preemptive is True)
 check("linear confidence low", fc.confidence == "low")
+
+# capacity cap: can't project burning more than max_burnable; leftover = weekly_left - cap
+fc_cap = habits.forecast([], now2, 20.0, weekly_reset, max_burnable=15.0)
+check("forecast capped by physical capacity", abs(fc_cap.projected_leftover - 65.0) < 0.5)
 
 # On pace to finish ~full -> not preemptive.
 fc2 = habits.forecast([], start + 6 * DAY, current_used=96.0, weekly_reset=start + 7 * DAY)
@@ -140,5 +158,17 @@ hist2 = habits.record_observation(
     hist, {"now": weekly_reset + DAY, "five_hour_pct": 0.0, "five_hour_reset": 0,
            "seven_day_pct": 3.0, "seven_day_reset": weekly_reset + 7 * DAY})
 check("habits retain prior week", len({o["seven_day_reset"] for o in hist2}) == 2)
+
+# --- active-hours (sleep) discount ------------------------------------------------
+afull = windows_left(snap, 1.0)
+ahalf = windows_left(snap, 0.5)
+check("sleep discount reduces usable windows", ahalf < afull)
+check("current window is not discounted", ahalf >= (100 - 80) / 100 - 1e-9)
+rec_full = compute(snap, 0.05, active_fraction=1.0)
+rec_disc = compute(snap, 0.05, active_fraction=0.5)
+check("fewer usable windows -> higher per-window burn", (rec_disc.burn_pct or 0) >= (rec_full.burn_pct or 0))
+ah, ah_prov = habits.active_hours([])
+check("active hours falls back to 16h provisional", ah == 16.0 and ah_prov is True)
+check("default active_fraction leaves windows unchanged", windows_left(snap) == windows_left(snap, 1.0))
 
 print(f"\n{passed} checks passed.")

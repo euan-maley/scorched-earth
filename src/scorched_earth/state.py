@@ -150,10 +150,12 @@ def update_from_statusline(data: dict, at: Optional[int] = None) -> Result:
     """The statusline hot path: parse -> calibrate -> forecast -> compute -> persist."""
     snap = snapshot_from_statusline(data, at=at)
     r, provisional = record_and_calibrate(snap)
-    rec = compute(snap, r, r_provisional=provisional)
     hist = record_history(snap)
+    af = habits.active_fraction(hist) if snap.has_weekly else 1.0
+    rec = compute(snap, r, r_provisional=provisional, active_fraction=af)
     fc = (
-        habits.forecast(hist, snap.now, snap.seven_day_pct, snap.seven_day_reset)
+        habits.forecast(hist, snap.now, snap.seven_day_pct, snap.seven_day_reset,
+                        max_burnable=rec.max_burnable_weekly)
         if snap.has_weekly else habits.Forecast()
     )
     # Don't let a partial refresh (no weekly bucket early in a session) clobber the last

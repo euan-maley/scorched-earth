@@ -38,8 +38,15 @@ for how it's built.
 ```bash
 scorch            # full readout from the latest live snapshot
 scorch --watch    # re-print as data updates
-scorch --style minimal   # change the statusline light (emoji|text|minimal|off)
+scorch --style fire      # change the statusline light (fire|emoji|text|minimal|off)
+scorch --sitrep   # open a stylized HTML field report (8-bit war / scorched crop field)
 ```
+
+The **sitrep** (`scorch --sitrep`, alias `--report`) renders a war-HUD situation report
+with THE FIELD: a Stardew-style pixel farm where each weekday plot grows lush when you
+burn light and chars when you burn heavy. Toggle the field between **LAST WEEK** (what you
+actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual so far plus
+projected/recommended for the days ahead).
 
 ## Install
 

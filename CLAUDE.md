@@ -7,7 +7,8 @@ spent by maxing out every remaining 5-hour window.
 
 - `src/scorched_earth/core.py` — pure math: snapshot + R → hard recommendation. No I/O.
 - `src/scorched_earth/calibrate.py` — self-measures R (weekly% burned per full window) from snapshot deltas.
-- `src/scorched_earth/habits.py` — pure: cross-week history → day-of-week profile → end-of-week forecast + preemptive flag.
+- `src/scorched_earth/habits.py` — pure: cross-week history → day-of-week profile → end-of-week forecast + preemptive flag. Also the field-view helpers: `average_days`, `week_days`, `last_completed_reset`, `current_week_days` (actual-so-far + projected-ahead).
+- `src/scorched_earth/report.py` — generates the self-contained HTML **sitrep**: 8-bit war / scorched-earth crop-field HUD. THE FIELD is a Stardew-style pixel farm (procedural SVG engine ported from the design handoff) with a LAST WEEK / AVERAGE / THIS WEEK toggle; Python computes the data + HUD stats, a sliver of JS renders the field and live countdowns. `scorch --report` / `--sitrep`.
 - `src/scorched_earth/state.py` — read/write snapshot, calibration, and habits files under `~/.claude/scorched-earth/`; the hot-path `update_from_statusline`.
 - `src/scorched_earth/statusline.py` — statusline entry: parse stdin JSON, emit the light token, fire the once-per-week forecast notification.
 - `bin/scorch` — CLI readout (hard signal + forecast), reads the cached snapshot, manual overrides for use outside Claude Code.

@@ -19,6 +19,15 @@ WINDOW_SECONDS = 5 * 60 * 60  # 18000; the 5-hour rolling window
 GREEN_THRESHOLD = 1.0
 AMBER_THRESHOLD = 0.70
 
+# Canonical war-general verdict per status. The CLI headline and the HTML sitrep banner both
+# read this, so the voice can't drift between surfaces. The reason sentences live in compute().
+HEADLINE = {
+    "green": "Torch it all. Leave them nothing.",
+    "amber": "Almost full throttle. Not quite scorched earth yet.",
+    "off": "Well stocked. Burn at whatever pace suits you.",
+    "unknown": "No read yet. Hold your horses.",
+}
+
 
 @dataclass
 class Snapshot:
@@ -50,10 +59,13 @@ class Recommendation:
     reason: str                      # short human explanation
 
 
-def windows_left(snap: Snapshot) -> Optional[float]:
+def windows_left(snap: Snapshot, active_fraction: float = 1.0) -> Optional[float]:
     """Fractional 5h-window capacity remaining before the weekly reset.
 
     = unused capacity of the current window  +  full windows of time until weekly reset.
+    The future tail is scaled by `active_fraction` (hours/day you're actually around to burn,
+    over 24), since you can't spend a window you're asleep for. The current window isn't
+    discounted: you're awake in it now.
     """
     if not snap.has_weekly:
         return None
@@ -67,17 +79,19 @@ def windows_left(snap: Snapshot) -> Optional[float]:
         # No window reset known: approximate the tail from now + one window.
         tail_seconds = max(0, snap.seven_day_reset - (snap.now + WINDOW_SECONDS))
     tail_windows = tail_seconds / WINDOW_SECONDS
-    return current_remaining + tail_windows
+    return current_remaining + tail_windows * active_fraction
 
 
-def compute(snap: Snapshot, r: Optional[float], r_provisional: bool = False) -> Recommendation:
+def compute(snap: Snapshot, r: Optional[float], r_provisional: bool = False,
+            active_fraction: float = 1.0) -> Recommendation:
     """Turn a snapshot + calibration R into a recommendation.
 
     `r` is the fraction of the *weekly* cap that one full 5h window burns (e.g. 0.07).
-    Pass None when no estimate exists yet -> level "unknown".
+    `active_fraction` discounts future windows for sleep/inactivity (1.0 = count them all).
+    Pass None for r when no estimate exists yet -> level "unknown".
     """
     weekly_left = None if snap.seven_day_pct is None else max(0.0, 100.0 - snap.seven_day_pct)
-    wl = windows_left(snap)
+    wl = windows_left(snap, active_fraction)
 
     hrs_week = (
         max(0.0, (snap.seven_day_reset - snap.now) / 3600.0)

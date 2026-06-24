@@ -18,21 +18,18 @@ import time
 _REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(_REPO, "src"))
 
-from scorched_earth.core import Snapshot, compute  # noqa: E402
+from scorched_earth.core import Snapshot, compute, HEADLINE  # noqa: E402
 from scorched_earth import state as st  # noqa: E402
 from scorched_earth import calibrate  # noqa: E402
 from scorched_earth import gradient  # noqa: E402
+from scorched_earth import habits  # noqa: E402
 import math  # noqa: E402
 
 LIGHT = {"green": "🟢", "amber": "🟡", "off": "⚪", "unknown": "❔"}
 COLOR = {"green": "\033[32m", "amber": "\033[33m", "off": "\033[2m", "unknown": "\033[2m"}
 RESET = "\033[0m"
-HEADLINE = {
-    "green": "Torch it all. Leave them nothing.",
-    "amber": "Almost full throttle. Not quite scorched earth yet.",
-    "off": "Well stocked. Burn at whatever pace suits you.",
-    "unknown": "No read yet. Hold your horses.",
-}
+# HEADLINE (war-general verdict per status) is imported from core so the CLI and the HTML
+# sitrep stay in lockstep.
 
 
 def c(s, level, on):
@@ -160,6 +157,9 @@ def main(argv=None):
                    help="set the statusline light style and exit")
     p.add_argument("--fire-demo", action="store_true",
                    help="animate the fire-gradient BURN IT ALL in this terminal (Ctrl-C to stop)")
+    p.add_argument("--report", "--sitrep", nargs="?", const="", metavar="PATH", dest="report",
+                   help="write a stylized HTML sitrep (situation report) and open it")
+    p.add_argument("--no-open", action="store_true", help="with --report, don't auto-open the file")
     p.add_argument("--watch", action="store_true", help="re-print every few seconds")
     p.add_argument("--no-color", action="store_true")
     args = p.parse_args(argv)
@@ -168,6 +168,24 @@ def main(argv=None):
 
     if args.fire_demo:
         return fire_demo()
+
+    if args.report is not None:
+        from scorched_earth import report as rpt
+        path = os.path.expanduser(args.report or os.path.join(st.STATE_DIR, "report.html"))
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        # Refresh R from the calibration samples so the report uses the current (guard-railed)
+        # estimate, not whatever was cached in state.json by an earlier reading.
+        state = st.load_state()
+        r_fresh, prov_fresh = calibrate.estimate_r(st.load_calibration().get("samples", []))
+        if state and isinstance(state.get("recommendation"), dict):
+            state["recommendation"]["r"] = r_fresh
+            state["recommendation"]["r_provisional"] = prov_fresh
+        rpt.generate(state, st.load_history(), path, int(time.time()))
+        print(f"Sitrep written to {path}")
+        if not args.no_open and sys.platform == "darwin":
+            import subprocess
+            subprocess.run(["open", path], check=False)
+        return 0
 
     if args.set_r is not None:
         calib = st.load_calibration()
@@ -199,7 +217,8 @@ def main(argv=None):
         calib = st.load_calibration()
         r = args.r if args.r is not None else (calib.get("r") or calibrate.DEFAULT_R)
         prov = args.r is None and bool(calib.get("r_provisional", True))
-        print(render(snap, compute(snap, r, r_provisional=prov), on))
+        af = habits.active_fraction(st.load_history())
+        print(render(snap, compute(snap, r, r_provisional=prov, active_fraction=af), on))
         return 0
 
     def show_cached():
@@ -213,8 +232,10 @@ def main(argv=None):
             )
             return False
         snap = Snapshot(**data["snapshot"])
+        af = habits.active_fraction(st.load_history())
         rec = compute(snap, data["recommendation"].get("r"),
-                      r_provisional=data["recommendation"].get("r_provisional", False))
+                      r_provisional=data["recommendation"].get("r_provisional", False),
+                      active_fraction=af)
         print(render(snap, rec, on, fc=data.get("forecast")))
         return True
 
