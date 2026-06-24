@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/scorched-earth.png" alt="Scorched Earth — burn it all" width="320">
+</p>
+
 # Scorched Earth
 
 A green light for your Claude usage. It tells you when your remaining **weekly**
