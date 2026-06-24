@@ -141,6 +141,8 @@ _done = RunResult(generated_at="2026-06-24 03:20", state="done", repo=_repo, ver
                   note="done.", available_windows=2.5, spent_estimated=1.0, jobs=_running.jobs)
 check("render_review_html omits refresh when done",
       "http-equiv" not in render_review_html(_done).lower())
+check("render_review_html refresh injection survives running state",
+      render_review_html(_running).lower().count("http-equiv") == 1)
 
 print(f"\n{passed} checks passed.")
 if failures:

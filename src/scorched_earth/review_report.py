@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from .runner import RunResult
 
@@ -56,5 +57,7 @@ def render_review_html(rr: RunResult) -> str:
     html = template.replace("__REVIEW_JSON__", json.dumps(aar_dict(rr)))
     if rr.state == "running":
         meta = f'<meta http-equiv="refresh" content="{rr.refresh_seconds}">'
-        html = html.replace("<head>", "<head>\n" + meta, 1)
+        # Inject after the <head> open tag, tolerating attributes (design template may use
+        # <head ...>); a lambda replacement avoids re backref-escaping in `meta`.
+        html = re.sub(r"(<head[^>]*>)", lambda m: m.group(1) + "\n" + meta, html, count=1)
     return html
