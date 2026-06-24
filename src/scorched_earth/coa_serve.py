@@ -135,6 +135,17 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
+_COCKPIT_TEMPLATE = os.path.join(os.path.dirname(__file__), "cockpit_template.html")
+
+
+def render_cockpit(token, state):
+    with open(_COCKPIT_TEMPLATE, encoding="utf-8") as f:
+        html = f.read()
+    html = html.replace("__COCKPIT_TOKEN__", json.dumps(token))
+    html = html.replace("__COCKPIT_JSON__", json.dumps(state))
+    return html.encode("utf-8")
+
+
 def _default_render(token, state):
     # Minimal page; Task 7 replaces this with the cockpit template renderer.
     return ("<!doctype html><meta charset=utf-8><title>COA Cockpit</title>"

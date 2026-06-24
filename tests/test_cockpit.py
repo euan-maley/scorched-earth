@@ -233,6 +233,18 @@ check("POST naming an unregistered repo is rejected (400)",
 
 _httpd.shutdown()
 
+# --- Task 7: cockpit renderer -----------------------------------------------------
+from scorched_earth.coa_serve import render_cockpit  # noqa: E402
+
+_html = render_cockpit("tok-123", {"repos": [{"repo": _r6, "name": "g", "proposed": [],
+                                              "queued": [{"id": "g1"}], "finished": []}],
+                                   "running": None, "busy": False})
+_txt = _html.decode("utf-8")
+check("render_cockpit substitutes both tokens",
+      "__COCKPIT_TOKEN__" not in _txt and "__COCKPIT_JSON__" not in _txt)
+check("render_cockpit embeds token + state",
+      "tok-123" in _txt and "g1" in _txt and _txt.lstrip().lower().startswith("<!doctype html"))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
