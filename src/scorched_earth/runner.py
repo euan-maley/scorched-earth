@@ -370,3 +370,40 @@ def _summary(rr: RunResult) -> str:
 def _dataclass_dict(rr: RunResult) -> dict:
     from dataclasses import asdict
     return asdict(rr)
+
+
+def pick_next(queue, available, roe):
+    """First queued job that is ROE-allowed and fits `available` (window-units). Skips
+    ahead past a too-big or ROE-blocked card — the interactive cockpit runs what fits
+    rather than stalling the whole queue on the top card. None if nothing is eligible."""
+    for j in queue:
+        if not _allowed_unattended(roe, j.type):
+            continue
+        if j.est_windows <= available + _EPS:
+            return j
+    return None
+
+
+class EnvelopeTracker:
+    """Refreshing budget envelope for the cockpit. Predicts spend between snapshots and
+    re-syncs to ground truth whenever an interactive session advances state.json's snapshot
+    timestamp (the new windows_left already reflects the engine's real headless burn)."""
+
+    def __init__(self, roe):
+        self.roe = roe
+        self._synced_ts = object()      # sentinel: forces a re-sync on first call
+        self.spent = 0.0
+
+    def available(self, state, now):
+        snap = (state or {}).get("snapshot") or {}
+        ts = snap.get("now")
+        if ts != self._synced_ts:       # snapshot advanced -> re-sync to ground truth
+            self._synced_ts = ts
+            self.spent = 0.0
+        base = read_envelope(state, self.roe, now)
+        if base is None:
+            return None
+        return max(0.0, base - self.spent)
+
+    def charge(self, est):
+        self.spent += est
