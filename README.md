@@ -56,9 +56,7 @@ burn light and chars when you burn heavy. Toggle the field between **LAST WEEK**
 actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual so far plus
 projected/recommended for the days ahead).
 
-<p align="center">
-  <a href="assets/sitrep-demo.mp4"><img src="assets/sitrep-poster.png" alt="Scorched Earth sitrep, green / burn-mode (click to play the 15s clip)" width="640"></a>
-</p>
+https://github.com/user-attachments/assets/b735ffb4-5764-426c-b282-5b9c5e8c3481
 
 <!-- Inline player: open this README in github.com's web editor and drag assets/sitrep-demo.mp4
      onto this line. GitHub uploads it to user-attachments and renders an autoplaying HTML5
