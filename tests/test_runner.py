@@ -86,6 +86,33 @@ check("SAFE_UNATTENDED is additive-only",
 check("explicit unattended_types widens the leash",
       {j.id: d for j, d in plan_run([_pjobs[1]], 5.0, _rfd({"unattended_types": ["refactor"]}))[0]}["ref"] == "run")
 
+# --- Task 4: RunResult + envelope/staleness + run-record I/O ----------------------
+from scorched_earth.runner import JobOutcome, RunResult, read_envelope, is_stale  # noqa: E402
+from dataclasses import asdict as _asdict  # noqa: E402
+
+_now = 1_000_000
+_fresh = {"snapshot": {"five_hour_reset": _now + 3600, "seven_day_pct": 40},
+          "recommendation": {"windows_left": 3.0, "level": "green"}}
+_stale = {"snapshot": {"five_hour_reset": _now - 10, "seven_day_pct": 40},
+          "recommendation": {"windows_left": 3.0, "level": "green"}}
+check("is_stale: fresh snapshot is usable", not is_stale(_fresh, _now))
+check("is_stale: elapsed-window snapshot is stale", is_stale(_stale, _now))
+check("is_stale: missing snapshot is stale", is_stale(None, _now))
+check("read_envelope returns windows_left when fresh", read_envelope(_fresh, ROE(), _now) == 3.0)
+check("read_envelope caps at ROE max_windows",
+      read_envelope(_fresh, _rfd({"max_windows": 2.0}), _now) == 2.0)
+check("read_envelope refuses (None) on stale snapshot", read_envelope(_stale, ROE(), _now) is None)
+
+_rr = RunResult(generated_at="2026-06-24", state="done", repo=_repo, verdict="green",
+                note="1 secured.", available_windows=3.0, spent_estimated=1.0,
+                jobs=[JobOutcome(seq=1, id="j1", title="One", type="test", tier="M",
+                                 outcome="pass", est_windows=1.0, branch="scorched/j1")])
+_path = _io.write_run_record(_repo, _asdict(_rr), "2026-06-24")
+check("write_run_record persists under .scorched/runs",
+      os.path.exists(_path) and "runs" in _path and "2026-06-24" in _path)
+check("read_run_record reads the latest record",
+      _io.read_run_record(_repo)["jobs"][0]["id"] == "j1")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

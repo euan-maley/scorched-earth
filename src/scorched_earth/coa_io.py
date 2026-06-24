@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from . import state as st
 from .jobs import Job, parse_jobs
@@ -122,3 +122,30 @@ def enqueue(repo_path: str, jobs: List[Job]) -> List[Job]:
             seen.add(j.id)
     write_queue(repo_path, existing)
     return existing
+
+
+def runs_dir(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "runs")
+
+
+def write_run_record(repo_path: str, record: dict, date: str) -> str:
+    out = runs_dir(repo_path)
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{date}.json")
+    with open(path, "w") as f:
+        json.dump(record, f, indent=2)
+    return path
+
+
+def read_run_record(repo_path: str, date: Optional[str] = None):
+    out = runs_dir(repo_path)
+    if date is None:
+        try:
+            stamps = sorted(p[:-5] for p in os.listdir(out) if p.endswith(".json"))
+        except OSError:
+            return None
+        if not stamps:
+            return None
+        date = stamps[-1]
+    rec = st._read_json(os.path.join(out, f"{date}.json"), None)
+    return rec

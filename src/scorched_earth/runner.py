@@ -5,6 +5,7 @@ sandboxed git worktree under the ROE leash, and emits a live After-Action Report
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from .jobs import Job
@@ -45,3 +46,60 @@ def plan_run(jobs: List[Job], envelope: float, roe: ROE) -> Tuple[List[Tuple[Job
         spent += j.est_windows
         out.append((j, "run"))
     return out, spent
+
+
+@dataclass
+class JobOutcome:
+    seq: int
+    id: str
+    title: str
+    type: str
+    tier: str
+    outcome: str                      # running|pass|fail|blocked-roe|skipped-budget|pending
+    est_windows: float
+    branch: Optional[str] = None
+    diff: Optional[dict] = None       # {"files":int,"insertions":int,"deletions":int} or None
+    note: str = ""
+    merge_cmd: Optional[str] = None
+    discard_cmd: Optional[str] = None
+
+
+@dataclass
+class RunResult:
+    generated_at: str
+    state: str                        # running | done
+    repo: str
+    verdict: str
+    note: str
+    available_windows: float
+    spent_estimated: float
+    jobs: List[JobOutcome] = field(default_factory=list)
+    refresh_seconds: int = 6
+    sector: str = "SECTOR 07"
+
+
+def is_stale(state: Optional[dict], now: int) -> bool:
+    """A run needs a recent snapshot. Stale when there's no usable snapshot, or the cached
+    5-hour window has already reset (so windows_left no longer reflects reality)."""
+    snap = (state or {}).get("snapshot") or {}
+    if snap.get("seven_day_pct") is None:
+        return True
+    reset = snap.get("five_hour_reset")
+    return reset is not None and reset < now
+
+
+def read_envelope(state: Optional[dict], roe: ROE, now: int) -> Optional[float]:
+    """The window envelope for this run, from the cached snapshot's windows_left, capped by
+    ROE max_windows. Returns None (refuse) when the snapshot is stale/missing — the same
+    honesty rule `scorch --report` enforces. Staleness is delegated to is_stale (needs `now`),
+    so the runner never plans against an elapsed window."""
+    if is_stale(state, now):
+        return None
+    rec = (state or {}).get("recommendation") or {}
+    wl = rec.get("windows_left")
+    if wl is None:
+        return None
+    env = max(0.0, float(wl))
+    if roe.max_windows is not None:
+        env = min(env, roe.max_windows)
+    return env
