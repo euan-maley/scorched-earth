@@ -64,6 +64,28 @@ _io.enqueue(_repo, [Job(id="j2", repo=_repo, title="dup", type="docs", est_windo
 check("enqueue appends new and dedups by id, preserving order",
       [j.id for j in _io.read_queue(_repo)] == ["j1", "j2", "j3"])
 
+# --- Task 3: predictive planner ---------------------------------------------------
+from scorched_earth.runner import plan_run, SAFE_UNATTENDED  # noqa: E402
+from scorched_earth.roe import roe_from_dict as _rfd  # noqa: E402
+
+_pjobs = [
+    Job(id="t", repo="r", title="t", type="test", est_windows=1.0, value=5),
+    Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.5, value=9),  # not in SAFE
+    Job(id="d", repo="r", title="d", type="docs", est_windows=1.0, value=4),
+    Job(id="a", repo="r", title="a", type="audit", est_windows=2.0, value=8),
+]
+_disp, _spent = plan_run(_pjobs, envelope=2.5, roe=ROE())
+_by_id = {j.id: d for j, d in _disp}
+check("plan_run runs additive jobs that fit, in order",
+      _by_id["t"] == "run" and _by_id["d"] == "run")
+check("plan_run blocks non-SAFE types regardless of budget", _by_id["ref"] == "blocked-roe")
+check("plan_run marks the overflow job skipped-budget", _by_id["a"] == "skipped-budget")
+check("plan_run predicted spend counts only run jobs", _spent == 2.0)
+check("SAFE_UNATTENDED is additive-only",
+      set(SAFE_UNATTENDED) == {"test", "docs", "perf", "audit"})
+check("explicit unattended_types widens the leash",
+      {j.id: d for j, d in plan_run([_pjobs[1]], 5.0, _rfd({"unattended_types": ["refactor"]}))[0]}["ref"] == "run")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
