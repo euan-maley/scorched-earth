@@ -141,17 +141,43 @@ tier module like `state.py` / `statusline.py`, not pure.
 |--------|------|
 | `runner.py` (new) | Orchestration: queue drain loop, predictive accounting, per-job worktree/pre-warm/spawn/test/record. The **job-spawn step is dependency-injected** so tests substitute a stub instead of spawning real Claude. |
 | `coa_io.py` (extend) | `read_queue` / `enqueue` / `write_queue` for `.scorched/queue.json`; run-record read/write under `.scorched/runs/<date>.json`. |
-| `review_report.py` (new) | `render_review_md` + `render_review_html` from a structured `RunResult`, reusing the template-injection pattern (a new `review_template.html` war-HUD debrief). |
+| `review_report.py` (new) | `render_review_md` + `render_review_html` from a structured `RunResult`, reusing the template-injection pattern (a new `review_template.html` war-HUD debrief). Renders both the **live** view (in-progress, with auto-refresh) and the **final** debrief — same template, same source. |
 | `roe.py` (extend) | Add `test_cmd`, `setup_cmd`, and `unattended_types` fields. |
 | `jobs.py` (extend) | Optional per-job `verify` override (overrides ROE `test_cmd` for the gate). |
 | `bin/scorch` | New verbs: `coa queue`, `coa run`, `coa review` (+ thin `--merge` / `--discard` helpers for acting on a reviewed branch). |
 | `commands/coa.md` | Document the queue → run → review flow. |
 
-### The `RunResult` (structured source for the review)
-One structured object per run, persisted to `.scorched/runs/<date>.json`, drives both the
-Markdown record and the HTML debrief (same single-source pattern as `coa_report.py`). Per job
-it carries: id, title, type, branch, gate outcome (pass/fail/blocked-by-ROE/skipped-no-budget),
-diffstat, estimated windows spent, and a merge/discard hint.
+### The `RunResult` (structured source for the review *and* the live view)
+One structured object per run, persisted to `.scorched/runs/<date>.json`, drives the Markdown
+record and the HTML war-HUD (same single-source pattern as `coa_report.py`). Per job it
+carries: id, title, type, branch, gate outcome (pass/fail/blocked-by-ROE/skipped-no-budget),
+diffstat, estimated windows spent, and a merge/discard hint. It also carries a run-level
+`state` field (`running` | `done`).
+
+The runner **rewrites the JSON and re-renders the HTML after every job**, so the same artifact
+is both the live monitor and the final record — it fills in job-by-job during the run and sits
+as the debrief afterward.
+
+## Live monitoring
+
+Two passive views, both fed by the incremental `RunResult` — no server, no new security surface:
+
+- **Terminal stream:** `scorch coa run` prints progress to stdout as it goes (job started →
+  pre-warm → tests pass/fail → next, plus the running envelope). Background it and redirect to
+  a logfile to `tail -f`.
+- **Auto-refresh HTML:** after each job the runner re-renders the review HTML. While
+  `state == running`, the page carries a `<meta http-equiv="refresh">` (a few seconds) so an
+  open browser tab fills in job-by-job on its own; when the run finishes the runner re-renders
+  once more **without** the refresh tag, leaving the final debrief. Open it once at the start
+  (or via `scorch coa review` mid-run) and glance whenever.
+
+A real pushed live dashboard (localhost server) is the Phase 2b `--serve` bridge; the
+auto-refresh file deliberately gets the passive-monitoring feel without that machinery.
+
+The HTML war-HUD (the "After-Action Report") is specified for a Claude design pass in
+`docs/design/2026-06-24-coa-review-hud-brief.md` — same handoff pattern that produced the
+sitrep and COA templates (a self-contained file driven by one `const AAR = {…}` JSON blob,
+with the six per-job outcome states and the live-vs-done refresh behavior).
 
 ## Testing
 
