@@ -20,6 +20,10 @@ spent by maxing out every remaining 5-hour window.
 - `commands/sitrep.md` — `/sitrep` slash command: runs `scorch --sitrep` to generate + open the HTML report.
 - `install.sh` — manual (non-plugin) install: puts `scorch` on PATH, offers light styles, wires the segment.
 - `.claude-plugin/plugin.json` — plugin manifest. Skills/commands/hooks/bin are auto-discovered by directory convention (no explicit declaration needed).
+- `src/scorched_earth/jobs.py` / `roe.py` / `advisor.py` — COA advisor: job schema, rules of engagement, and the pure tier-and-fill budget matcher. No I/O.
+- `src/scorched_earth/coa_report.py` — renders a COA result to Markdown (the record) and HTML (the presentation), from one structured source.
+- `src/scorched_earth/coa_io.py` — advisor I/O: the linked-repos registry, ROE/jobs loaders, COA output writers (central config + per-repo `.scorched/`).
+- `commands/coa.md` / `commands/roe.md` — `/coa` (generate a Course of Action) and `/roe` (edit the Rules of Engagement).
 
 ## Packaging facts (confirmed against installed plugins + docs)
 

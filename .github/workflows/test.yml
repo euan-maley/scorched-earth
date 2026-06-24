@@ -20,3 +20,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Run tests (stdlib only, no deps)
         run: python3 tests/test_scorched.py
+      - name: Advisor tests
+        run: python3 tests/test_advisor.py
