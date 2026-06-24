@@ -10,8 +10,8 @@ window**, so you never leave credits on the table at the weekly reset.
 
 Unused weekly usage doesn't roll over. When you have lots of weekly budget left
 but few windows before the reset, the rational move is to go scorched earth: burn
-100% every window. This surfaces that moment as a 🟢 in your Claude Code statusline
-and a `scorch` CLI / `/scorched-earth` skill readout.
+100% every window. It surfaces that moment as **🔥 BURN IT ALL** in your Claude Code
+statusline, plus a `scorch` CLI / `/scorched-earth` skill readout.
 
 ## The idea
 
@@ -26,11 +26,11 @@ remaining window, the light goes green. Pacing yourself just wastes credits.
 
 ## Two signals
 
-The **🟢 hard light** is the certain one. It turns green only when you can't spend your
+The **🟢 hard light** is the certain one. It goes green only when you can't spend your
 remaining weekly budget even by maxing every 5-hour window left before the reset. It fires
-late, and it's never wrong. Green means burn it all. Amber (**🟡 burn ~N%**) means you're
-close to that line but not over it. Any other time the bar stays empty: either you have
-budget to spare, or there's no live reading yet.
+late, and it's never wrong. In the default fire style that green reads **🔥 BURN IT ALL**.
+One notch back is amber, **🟡 burn ~N%**: close to the line, not over it. Any other time the
+bar stays empty, either you have budget to spare or there's no live reading yet.
 
 The **🔥 forecast nudge** comes earlier, and for most people it's the more useful of the two.
 Scorched Earth learns your day-of-week pattern and projects where the week is heading. If
