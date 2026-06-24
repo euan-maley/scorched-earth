@@ -15,6 +15,10 @@ class ROE:
     min_weekly_left: float = 0.0                    # don't propose unless weekly-left above this
     # task rules
     allowed_types: Optional[List[str]] = None       # None = all types allowed
+    # runner rules (Phase 2a — bound the autonomous executor)
+    unattended_types: Optional[List[str]] = None    # types allowed to run unattended; None = SAFE default
+    test_cmd: Optional[str] = None                  # post-job verification gate command
+    setup_cmd: Optional[str] = None                 # dependency pre-warm command (runner-run, with network)
     # goal rules
     exclude_paths: List[str] = field(default_factory=list)
     goals: List[str] = field(default_factory=list)

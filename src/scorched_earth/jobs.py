@@ -27,6 +27,7 @@ class Job:
     value: float                  # the scan agent's worth ranking, drives priority
     rationale: str = ""
     launch: str = ""              # prompt/command to run it (Phase 1 hands this to the user)
+    verify: str = ""              # per-job test-gate override (Phase 2 runner); falls back to ROE test_cmd
     status: str = "proposed"      # proposed | queued | done (Phase 2+ uses this)
 
     @property
@@ -52,6 +53,7 @@ def parse_jobs(data, repo: str = "") -> List[Job]:
             value=float(d["value"]),
             rationale=d.get("rationale", ""),
             launch=d.get("launch", ""),
+            verify=d.get("verify", ""),
             status=d.get("status", "proposed"),
         ))
     return out
