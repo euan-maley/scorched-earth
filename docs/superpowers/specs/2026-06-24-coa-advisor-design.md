@@ -43,6 +43,23 @@ to trust?** before building the risky autonomous executor.
 - **Phase 2:** the queue-runner. Drains the COA queue, re-checking remaining budget between
   jobs, with guardrails (worktree/branch isolation, commit-not-push, run tests after, a
   morning-after review surface). Local headless execution (path B).
+- **Phase 2:** the **`scorch coa --serve` bridge** (the COA HTML becomes the cockpit). Instead
+  of opening the report as a file, `--serve` runs a tiny localhost `http.server` (stdlib) that
+  serves the page and exposes two endpoints the in-page buttons call:
+  - **Queue** (`POST /queue`, low risk, build first): appends the job to `.scorched/queue.json`,
+    which the queue-runner drains. The button enqueues; it does not execute.
+  - **Run** (`POST /run`, full autonomous execution, build second): launches the job under the
+    same guardrails as the runner (worktree, ROE leash, tests after) and streams output back to
+    the page.
+  Security model (mandatory, because a localhost endpoint that runs commands is an attack
+  surface any browser tab can hit): bind `127.0.0.1` only; mint a one-time token at launch that
+  the served page carries and every request must present; accept only **job IDs from the COA the
+  server rendered**, never arbitrary command strings from the page; enforce ROE server-side
+  (refuse a disallowed job, respect the cost cap); short-lived (dies when the view closes). The
+  agent-supplied `launch` string is run by the server, not echoed from the request, so the page
+  cannot inject a different command.
+  The Phase-1 template already ships per-job **COPY** buttons (clipboard, no bridge, no risk);
+  `--serve` upgrades those into live Queue/Run actions.
 - **Phase 3:** scheduling (run at the last window, or a proactive earlier slot in the week)
   and the cloud-routine execution path (A).
 
