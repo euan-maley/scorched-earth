@@ -43,7 +43,8 @@ Multi-agent audit (correctness / safety / packaging / testing / arch / design+dx
 ## Backlog
 
 - [x] Pre-public prep: MIT `LICENSE` file added; `homepage`/`repository` in `plugin.json`; untracked `kivna/` + `.slainte` (gitignored, kept local — no second machine so the handoff loss is fine). Repo is publish-clean except for the deliberate choice to leave `TODO.md` tracked.
-- [ ] Flip to public when ready (no other blockers; logo intentionally skipped)
+- [x] **Published public** (2026-06-24). Logo + landscape banner, sitrep screenshots, embedded mp4 player in the README, `/sitrep` command. README skriv-passed.
+- [ ] Optional cleanup: strip dead demo binaries (old gif/webm, burn/poster PNGs) from git history to slim clones (force-push; no external clones yet, so the window is open)
 - [ ] `scorch --watch` live re-print (flag exists; field-test it)
 - [ ] Optional: surface the 🔥 forecast nudge on the statusline too (not just notify)
 - [ ] Let users tune "active hours" manually (currently learned only)
