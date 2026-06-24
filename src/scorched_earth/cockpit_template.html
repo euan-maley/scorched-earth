@@ -22,7 +22,7 @@ function render(state){
     '<h2>'+esc(r.name)+(state.busy?' · BUSY':'')+'</h2>' +
     [['PROPOSED','proposed'],['QUEUED','queued'],['RUNNING','running'],['DONE','finished']]
       .map(([lab,key])=>'<div class=col><b>'+lab+'</b>'+
-        ((key==='running'? (state.running&&state.running.repo===r.repo?[state.running]:[]) : r[key])||[])
+        ((key==='running'? (state.running&&state.running.repo===r.repo?[state.running]:[]) : (r[key]||[]))
           .map(j=>'<div class=card>'+esc(j.id||j.title||'')+'</div>').join('')+'</div>').join('')
   ).join('');
 }

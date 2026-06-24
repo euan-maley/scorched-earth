@@ -146,12 +146,6 @@ def render_cockpit(token, state):
     return html.encode("utf-8")
 
 
-def _default_render(token, state):
-    # Minimal page; Task 7 replaces this with the cockpit template renderer.
-    return ("<!doctype html><meta charset=utf-8><title>COA Cockpit</title>"
-            "<body>cockpit (token ok)</body>").encode("utf-8")
-
-
 def make_server(engine, token, *, render=None):
     """Build a ThreadingHTTPServer bound to 127.0.0.1 on an ephemeral port.
 
@@ -176,7 +170,7 @@ def make_server(engine, token, *, render=None):
     """
     if not token:
         raise ValueError("token required")
-    render = render or _default_render
+    render = render or render_cockpit
     clients = []                               # list[queue.Queue] for SSE subscribers
     clients_lock = threading.Lock()
 
