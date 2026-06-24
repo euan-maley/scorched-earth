@@ -99,9 +99,9 @@ ROE is the confines that bound the advisor (and later the executor). Three rule 
   to 80% coverage", "harden error handling"), and exclusions ("ignore `vendor/`, `legacy/`").
 
 **Storage:**
-- Per-repo ROE lives **inside the target repo** at `.scorched/roe.toml`. It travels with the
+- Per-repo ROE lives **inside the target repo** at `.scorched/roe.json`. It travels with the
   repo, is version-controlled there, and a team can share it.
-- A **global default ROE** lives centrally (`~/.claude/scorched-earth/roe.default.toml`);
+- A **global default ROE** lives centrally (`~/.claude/scorched-earth/roe.default.json`);
   per-repo files inherit and override it.
 - The central **linked-repos registry** (`repos.json`) tracks which paths are in scope.
 
@@ -112,9 +112,9 @@ Optionally scoped to a repo; default is all linked repos. For each repo:
 1. **Read the budget.** Pull the snapshot from `state.json` (windows left, % weekly
    remaining, active hours, verdict). No snapshot: refuse rather than guess (the `--report`
    honesty rule), or accept manual figures.
-2. **Load effective ROE.** Global default merged with the repo's `.scorched/roe.toml`.
+2. **Load effective ROE.** Global default merged with the repo's `.scorched/roe.json`.
 3. **Ensure a job list** (three modes):
-   - **Use found:** if `.scorched/jobs.toml` (or a backlog the ROE points to) exists, use it.
+   - **Use found:** if `.scorched/jobs.json` (or a backlog the ROE points to) exists, use it.
    - **Generate if missing:** no list, spawn the scan agent.
    - **Force regenerate:** `/coa --refresh` re-scans regardless.
    The scan is the **adversarial + constructive agent**, bounded by ROE (goals, exclusions,
@@ -136,15 +136,16 @@ repo         # which repo
 title        # short label
 type         # test | docs | refactor | perf | audit | ...
 tier         # S | M | L | XL   (human-readable compute size)
-est_windows  # rough cost in window-units (matcher input)
+est_windows  # rough cost in window-units, emitted by the scan agent (matcher input)
 value        # the agent's worth ranking (matcher input, drives priority)
 rationale    # why it's worth running (the adversarial/constructive finding)
 launch       # the prompt/command to run it (Phase 1 hands this to the user)
 status       # proposed | queued | done   (Phase 2+ uses this)
 ```
 
-`est_windows` + `value` are the matcher inputs; `tier` is the human rollup; `status` +
-`launch` are the seams Phase 2's queue-runner plugs into.
+The scan agent emits `est_windows` and `value` directly; `tier` is a derived human-readable
+label (a bucketing of `est_windows`), not a separate input. `status` + `launch` are the seams
+Phase 2's queue-runner plugs into.
 
 ### Matching (tier-and-fill)
 
@@ -201,11 +202,12 @@ All degrade honestly rather than fabricate:
 - Honesty rule preserved: the COA refuses to fabricate a plan with no budget data, exactly as
   `--report` refuses a zeros dashboard.
 
-## Open questions for implementation planning
+## Resolved decisions
 
-- Exact `tier` to `est_windows` default mapping (ROE-tunable), or have the agent emit
-  `est_windows` directly and treat `tier` as a derived label.
-- Config format: TOML (chosen here for ROE/jobs) vs JSON (used elsewhere in the project).
-  Confirm the project is fine adding a TOML reader, or use JSON for consistency.
-- Whether `/coa` and `/roe` are standalone commands or skill verbs (lean: standalone
-  commands, like `/sitrep`, with `scorch` CLI verbs underneath).
+- **Cost source:** the scan agent emits `est_windows` directly. `tier` is a derived label
+  (a bucketing of `est_windows`), not a separate matcher input.
+- **Config format:** JSON throughout, for consistency with the rest of the project
+  (`repos.json`, `roe.default.json`, `.scorched/roe.json`, `.scorched/jobs.json`). No new
+  format dependency.
+- **Surfaces:** `/coa` and `/roe` are standalone commands (like `/sitrep`), with `scorch`
+  CLI verbs underneath (`scorch link`, `scorch advise`, `scorch roe`).
