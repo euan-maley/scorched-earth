@@ -127,6 +127,14 @@ check("scorch advise refuses cleanly with no snapshot",
 _p3 = subprocess.run([sys.executable, _scorch, "roe", _r], capture_output=True, text=True, env=_env)
 check("scorch roe prints JSON", _p3.returncode == 0 and "max_windows" in _p3.stdout)
 
+# --- slash commands exist with frontmatter ---------------------------------------
+_cmds = os.path.join(os.path.dirname(__file__), "..", "commands")
+for _c in ("coa", "roe"):
+    _path = os.path.join(_cmds, f"{_c}.md")
+    _txt = open(_path).read() if os.path.exists(_path) else ""
+    check(f"/{_c} command exists with description frontmatter",
+          _txt.startswith("---") and "description:" in _txt)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
