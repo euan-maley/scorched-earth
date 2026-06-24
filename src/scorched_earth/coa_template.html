@@ -145,6 +145,12 @@
             border:1px solid var(--track-bd);padding:7px 11px;font-size:16px;letter-spacing:.5px;
             color:var(--primary);overflow:auto}
   .job__cmd .px{flex:none;color:var(--ember);font-weight:800}
+  .job__cmdtext{flex:1;min-width:0;overflow:auto;white-space:nowrap}
+  .job__copy{flex:none;cursor:pointer;font:inherit;font-size:12px;letter-spacing:1px;
+             background:transparent;color:var(--ember);border:1px solid var(--ember);
+             border-radius:3px;padding:3px 9px;transition:background .15s,color .15s}
+  .job__copy:hover{background:var(--ember);color:#190d05}
+  .job__copy.copied{background:#7cb342;border-color:#7cb342;color:#0b0705}
   .job__meta{align-self:center;text-align:right;flex:none;padding-left:6px;border-left:1px solid var(--mod-bd);
              min-width:104px}
   .job__cost{font-size:26px;color:var(--strong);line-height:1;font-weight:700}
@@ -246,7 +252,7 @@ const COA = __COA_JSON__;
           <span class="type">${esc(job.type)}</span>
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
-        <div class="job__cmd"><span class="px">&#9656;</span> ${esc(job.command)}</div>
+        <div class="job__cmd"><span class="px">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
       </div>
       <div class="job__meta">
         <div class="job__cost">${esc(job.cost)}</div>
@@ -367,6 +373,31 @@ const COA = __COA_JSON__;
 
   const root = document.getElementById("coa");
   root.insertAdjacentHTML("beforeend", html);
+
+  // Copy-command buttons. A static page can't run the command itself (browser sandbox), so the
+  // button copies it to the clipboard to paste into a session. Falls back to execCommand when the
+  // async Clipboard API is unavailable (e.g. opened as a file://, a non-secure context).
+  function copyText(text, done){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done, () => execCopy(text, done));
+    } else { execCopy(text, done); }
+  }
+  function execCopy(text, done){
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand("copy"); done(); } catch(_) {}
+    document.body.removeChild(ta);
+  }
+  root.addEventListener("click", function(e){
+    const b = e.target.closest(".job__copy");
+    if(!b) return;
+    copyText(b.getAttribute("data-cmd") || "", function(){
+      const old = b.textContent;
+      b.classList.add("copied"); b.textContent = "COPIED";
+      setTimeout(function(){ b.classList.remove("copied"); b.textContent = old; }, 1200);
+    });
+  });
 
   /* ---- procedural pixel-art DUSK landscape: charred field after the burn ---- */
   function buildScene(cv){
