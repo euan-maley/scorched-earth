@@ -48,6 +48,19 @@ it for them — that's the natural place for the install-time choice.
    scorch --weekly-left 62 --weekly-reset 11h --window 80 --window-reset 1h
    ```
 
+## The sitrep (HTML report)
+
+If the user wants the full visual dashboard — the 8-bit war / scorched-earth crop-field
+HUD with the pixel farm and burn-mode fire — generate it with the `/sitrep` command, or
+directly:
+
+```bash
+scorch --sitrep 2>/dev/null || ~/scorched-earth/bin/scorch --sitrep
+```
+
+It writes a self-contained HTML file and opens it in the browser. Same data source as the
+CLI; it just recomputes the verdict + forecast live and renders them.
+
 ## Notes
 
 - The 🟢 light is the *guaranteed* signal: you literally cannot spend your weekly budget

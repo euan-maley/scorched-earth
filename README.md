@@ -69,9 +69,9 @@ projected/recommended for the days ahead).
 ```
 
 Then it's automatic — a SessionStart hook wires the light into your statusline (wrapping
-any statusline you already have, never replacing it) and `/scorched-earth` + `scorch` are
-available in-session. Ask the assistant to set your preferred light style, or run
-`scorch --style <x>`.
+any statusline you already have, never replacing it) and `/scorched-earth`, `/sitrep`, and
+`scorch` are available in-session. `/sitrep` generates and opens the HTML field report. Ask
+the assistant to set your preferred light style, or run `scorch --style <x>`.
 
 **Manually (clone):**
 

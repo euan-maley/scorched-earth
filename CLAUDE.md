@@ -17,8 +17,9 @@ spent by maxing out every remaining 5-hour window.
 - `statusline-wrapper.sh` — plugin install path: runs the user's captured prior statusline + appends our token (so we wrap, never clobber).
 - `hooks/hooks.json` + `hooks/setup.sh` — SessionStart hook that idempotently wires the statusLine to the wrapper and seeds the style. Self-heals across plugin updates (version-stamped path) because it runs each session.
 - `skills/scorched-earth/SKILL.md` — `/scorched-earth` in-session readout + conversational style-setting.
+- `commands/sitrep.md` — `/sitrep` slash command: runs `scorch --sitrep` to generate + open the HTML report.
 - `install.sh` — manual (non-plugin) install: puts `scorch` on PATH, offers light styles, wires the segment.
-- `.claude-plugin/plugin.json` — plugin manifest. Skills/hooks/bin are auto-discovered by directory convention (no explicit declaration needed).
+- `.claude-plugin/plugin.json` — plugin manifest. Skills/commands/hooks/bin are auto-discovered by directory convention (no explicit declaration needed).
 
 ## Packaging facts (confirmed against installed plugins + docs)
 
