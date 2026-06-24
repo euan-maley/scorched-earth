@@ -25,6 +25,27 @@ scorch --style off       # no statusline light (CLI / skill only)
 When a user first installs the plugin, it's fine to ask which style they'd like and set
 it for them — that's the natural place for the install-time choice.
 
+## Other knobs
+
+These are occasional, so handle them conversationally here rather than as separate commands.
+
+- **Recalibrate R.** R (the fraction of the weekly cap one full 5h window burns) is
+  self-measured, but the user can pin it. If they ask to set or reset it:
+
+  ```bash
+  scorch --set-r 0.06        # persist a manual R into calibration and exit
+  scorch --r 0.06            # use an R for one readout only, without persisting
+  ```
+
+  Only do this if they ask. The measured value is usually better once it has data.
+
+- **Preview the fire gradient.** If they want to see the animated flame text without
+  waiting for a green verdict:
+
+  ```bash
+  scorch --fire-demo
+  ```
+
 ## What to do
 
 1. Run the CLI and show its output verbatim (it reads the live snapshot the statusline
