@@ -287,6 +287,25 @@ def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
                       outcome=disposition, est_windows=job.est_windows, note=note)
 
 
+def run_one(repo, job, roe, repo_disp, seq, *, execute, on_running=None):
+    """Execute one job and return its finished JobOutcome. Builds the 'running' outcome,
+    optionally surfaces it via on_running (live two-phase), runs the injected `execute`
+    (any raise -> 'fail' so one job never aborts a run), then fills the result. No I/O of
+    its own — the caller persists. Shared by the batch run_queue and the cockpit engine."""
+    oc = JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
+                    outcome="running", est_windows=job.est_windows, branch=branch_name(job.id))
+    if on_running:
+        on_running(oc)
+    try:
+        outcome, diff, note = execute(repo, job, roe)
+    except Exception as e:                  # noqa: BLE001 — never let one job abort the run
+        outcome, diff, note = "fail", None, "runner error: {}".format(e)
+    oc.outcome, oc.diff, oc.note = outcome, diff, note
+    oc.merge_cmd = merge_cmd(repo_disp, job.id)
+    oc.discard_cmd = discard_cmd(repo_disp, job.id)
+    return oc
+
+
 def run_queue(repo, state, *, now, date, execute=None, on_step=None):
     """Drain the queue under the full safety model. Returns the final RunResult, or None if it
     refuses (stale/absent snapshot). Persists the record + HTML after every job so the same
@@ -322,21 +341,10 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None):
             rr.jobs.append(_outcome_for(job, i, disp))
             _persist()
             continue
-        running = JobOutcome(seq=i, id=job.id, title=job.title, type=job.type, tier=job.tier,
-                             outcome="running", est_windows=job.est_windows,
-                             branch=branch_name(job.id))
-        rr.jobs.append(running)
-        _persist()                                    # live: this job is in progress
-        try:
-            outcome, diff, note = execute(repo, job, roe)
-        except Exception as e:          # noqa: BLE001 — never let one job abort the run
-            outcome, diff, note = "fail", None, "runner error: {}".format(e)
+        oc = run_one(repo, job, roe, repo_disp, i, execute=execute,
+                     on_running=lambda r: (rr.jobs.append(r), _persist()))
+        rr.jobs[-1] = oc                      # replace the 'running' outcome with the finished one
         spent += job.est_windows
-        running.outcome = outcome
-        running.diff = diff
-        running.note = note
-        running.merge_cmd = merge_cmd(repo_disp, job.id)
-        running.discard_cmd = discard_cmd(repo_disp, job.id)
         rr.spent_estimated = spent
         _persist()
 

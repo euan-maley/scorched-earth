@@ -258,6 +258,25 @@ check("scorch coa queue with no --all/ids refuses cleanly",
       and ("nothing specified" in _bare_queue.stdout.lower()
            or "no live budget" in _bare_queue.stdout.lower()))
 
+# --- Task 1 (2b): run_one extraction ----------------------------------------------
+from scorched_earth.runner import run_one  # noqa: E402
+
+_phase = []
+def _ex_ok(repo, job, roe):
+    return ("pass", {"files": 1, "insertions": 5, "deletions": 0}, "gate passed.")
+_oc = run_one(_repo, Job(id="z1", repo=_repo, title="Z", type="test", est_windows=1.0, value=5),
+              ROE(), _repo, 3, execute=_ex_ok, on_running=lambda oc: _phase.append(oc.outcome))
+check("run_one fires on_running with a 'running' outcome first", _phase == ["running"])
+check("run_one returns the finished outcome with branch + merge/discard",
+      _oc.outcome == "pass" and _oc.branch == "scorched/z1"
+      and "scorched/z1" in (_oc.merge_cmd or "") and _oc.diff["files"] == 1)
+
+def _ex_boom(repo, job, roe):
+    raise RuntimeError("died")
+_ocb = run_one(_repo, Job(id="z2", repo=_repo, title="Z2", type="test", est_windows=0.5, value=5),
+               ROE(), _repo, 4, execute=_ex_boom)
+check("run_one turns an executor raise into a fail outcome", _ocb.outcome == "fail")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
