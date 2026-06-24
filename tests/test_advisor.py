@@ -52,6 +52,29 @@ _merged = merge_roe(roe_from_dict({"max_windows": 9, "goals": ["a"]}),
 check("merge_roe: override wins where set, base kept otherwise",
       _merged.max_windows == 2 and _merged.goals == ["a"])
 
+# --- advisor.py (matcher) --------------------------------------------------------
+from scorched_earth.advisor import COA, match  # noqa: E402
+
+_jobs = [
+    Job(id="big", repo="r", title="big", type="audit", est_windows=3.0, value=6),
+    Job(id="cheap", repo="r", title="cheap", type="test", est_windows=1.0, value=5),  # best density
+    Job(id="docs", repo="r", title="docs", type="docs", est_windows=1.0, value=2),
+]
+_coa = match(2.5, _jobs, DEFAULT_ROE)
+check("match fills by value-per-window within envelope",
+      [j.id for j in _coa.queue] == ["cheap", "docs"] and _coa.spent_windows == 2.0)
+check("match records what spilled over", [j.id for j in _coa.skipped] == ["big"])
+
+_coa_cap = match(10, _jobs, roe_from_dict({"max_windows": 1.0}))
+check("match honors ROE max_windows", [j.id for j in _coa_cap.queue] == ["cheap"])
+
+_coa_type = match(10, _jobs, roe_from_dict({"allowed_types": ["docs"]}))
+check("match drops disallowed types", [j.id for j in _coa_type.queue] == ["docs"])
+
+_coa_empty = match(0.0, _jobs, DEFAULT_ROE)
+check("zero capacity yields empty queue with a note",
+      _coa_empty.queue == [] and "nothing to burn" in _coa_empty.note.lower())
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
