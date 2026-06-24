@@ -1,20 +1,27 @@
 # TODO
 
-## Current Session — sitrep + modeling fixes + fire
+## Current Session — COA advisor (Phase 1 BUILT, Phase 2 next) · branch `feat/burn-advisor` (LOCAL, unpushed)
 
-Sitrep (`scorch --sitrep`):
-- [x] HTML sitrep: 8-bit war / scorched crop-field HUD; THE FIELD = Stardew pixel farm (engine ported from the design handoff)
-- [x] Field view toggle: LAST WEEK / AVERAGE / THIS WEEK (this-week = actual-so-far + projected-ahead)
-- [x] Field ordered by reset cycle (left = fresh reset day, right = pre-reset) + START/RESET cycle labels
-- [x] THIS WEEK future days colored by projected burn STATUS (charred = scorched-earth, golden = fence, lush = no-limit)
-- [x] Plain-English explainer line under every stat; live "active hours" in the meta line
-- [x] Burn mode (green only): full-page pixel fire (Doom-fire, varied column heights), rising embers (asymmetric, jagged), thickening ember-lit smog up top, ember panel glow, "🔥 BURN IT ALL" fire-gradient
+New feature: the **COA advisor** — turns the budget signal into actionable work. Link repos →
+adversarial+constructive scan agent finds expensive jobs → pure-Python tier-and-fill matcher
+sizes them to the available burn → ranked Course of Action (MD record + war-HUD HTML). All on
+`feat/burn-advisor`, kept **local and unpushed** by choice so public `main` stays clean.
 
-Modeling fixes (apply to statusline + CLI + sitrep):
-- [x] Sleep-aware windows: usable windows = raw x (active hours / 24); active hours LEARNED from history (16h fallback)
-- [x] R calibration guardrails: plausible band (1–20%) + need >=3 clean pairs before trusting (fixed a noisy 0.25 flipping verdict)
-- [x] Forecast capped by physical capacity (projected leftover never understated); report recomputes rec + forecast live
-- [x] Canonical war-general HEADLINE moved to core.py, shared by CLI + sitrep (no drift)
+Phase 1 (advisor) — DONE, brainstormed → spec → plan → built via subagent-driven dev:
+- [x] Modules: `jobs.py` (schema), `roe.py` (rules of engagement), `advisor.py` (tier-and-fill matcher), `coa_report.py` (MD + HTML), `coa_io.py` (registry/ROE/jobs/COA I/O, JSON throughout)
+- [x] CLI verbs `scorch link|advise|roe`; standalone `/coa` + `/roe` commands
+- [x] War-HUD HTML template `coa_template.html` (from design handoff) wired into `render_html`; per-job **COPY** buttons (clipboard + execCommand fallback)
+- [x] Scan-agent **personality** defined (spec + `/coa`): fit-for-burn-window (compute-hungry, bounded/verifiable, low-coordination, batchable), ground in user intent first, adversarial fills gaps, additive-leaning for autonomy, size to tokens, skip trivia
+- [x] Dogfooded live vs `~/wake-up` (green, 1.4 win): grounded suggestions, tier-and-fill forfeits big high-value jobs that don't fit; **surfaced + fixed** the `.gitignore`-on-link gotcha
+- [x] 25 advisor checks + 57 existing, both green; final whole-branch review: Ready to merge
+- Spec: `docs/superpowers/specs/2026-06-24-coa-advisor-design.md`; plan: `docs/superpowers/plans/2026-06-24-coa-advisor-phase1.md`; SDD ledger + Phase-1 Minor findings: `.superpowers/sdd/progress.md`
+
+**What's next — Phase 2** (brainstorm was just initiated, resume there):
+- [ ] Queue-runner: drain the COA queue, autonomous local exec with guardrails (worktree/branch isolation, commit-not-push, tests-after, re-check budget between jobs, morning-after review surface). Execution path B.
+- [ ] `scorch coa --serve` bridge: localhost server, **Queue** then **Run** buttons; security model (bind 127.0.0.1, one-time token, accept only COA job-ids not raw commands, enforce ROE server-side) is in the spec's Phase-2 section.
+- Phase 3 (later): scheduling + cloud routine.
+
+Voice/approach decisions (don't lose): officer-briefs-you (not commander barking); additive-leaning for unsupervised runs (transformative = review-required); JSON config; standalone commands. Phase-1 Minors deferred to backlog (roe_from_dict null-clear; advisor epsilon side; render_md markdown-fidelity escaping; write_coa plain open).
 
 ## Earlier Session
 
