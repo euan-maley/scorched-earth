@@ -114,6 +114,19 @@ check("write_coa writes md + html under .scorched/coa",
       os.path.exists(_mdp) and os.path.exists(_htmlp) and "2026-06-24" in _mdp)
 os.environ.clear(); os.environ.update(_env_keys)
 
+# --- bin/scorch verbs (subprocess, temp HOME) ------------------------------------
+_env = dict(os.environ)
+_env["HOME"] = tempfile.mkdtemp()
+_scorch = os.path.join(os.path.dirname(__file__), "..", "bin", "scorch")
+_r = tempfile.mkdtemp()
+_p = subprocess.run([sys.executable, _scorch, "link", _r], capture_output=True, text=True, env=_env)
+check("scorch link exits 0", _p.returncode == 0)
+_p2 = subprocess.run([sys.executable, _scorch, "advise"], capture_output=True, text=True, env=_env)
+check("scorch advise refuses cleanly with no snapshot",
+      _p2.returncode == 0 and "no" in _p2.stdout.lower())
+_p3 = subprocess.run([sys.executable, _scorch, "roe", _r], capture_output=True, text=True, env=_env)
+check("scorch roe prints JSON", _p3.returncode == 0 and "max_windows" in _p3.stdout)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
