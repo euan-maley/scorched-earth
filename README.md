@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Scorched Earth — torch it all, leave them nothing behind" width="760">
+  <img src="assets/banner.png" alt="Scorched Earth: torch it all, leave them nothing behind" width="760">
 </p>
 
 # Scorched Earth
 
 A green light for your Claude usage. It tells you when your remaining **weekly**
 budget can no longer be spent unless you max out **every remaining 5-hour
-window** — so you never leave credits on the table at the weekly reset.
+window**, so you never leave credits on the table at the weekly reset.
 
 Unused weekly usage doesn't roll over. When you have lots of weekly budget left
 but few windows before the reset, the rational move is to go scorched earth: burn
@@ -22,19 +22,21 @@ rolling window and a **7-day** (weekly) window. Scorched Earth compares:
 - how many 5-hour windows remain before the weekly reset.
 
 If you couldn't possibly spend your remaining weekly budget even by maxing every
-remaining window, the light goes green — pacing yourself just wastes credits.
+remaining window, the light goes green. Pacing yourself just wastes credits.
 
 ## Two signals
 
-- **🟢 Hard light** — *certain*: you literally can't spend your weekly budget unless you
-  max every remaining window. Fires late, never wrong. It's the green end of a three-state
-  gauge: **🟢 green** "burn it all", **🟡 amber** "burn ~N% each window — you're near the
-  line", and nothing shown when you have slack (**off**) or there's no reading yet (**unknown**).
-- **🔥 Forecast nudge** — *earlier, habit-based*: Scorched Earth learns your day-of-week
-  usage pattern and, when it projects you're trending to leave budget unused at your
-  usual pace, gives a once-per-week preemptive heads-up. Starts rough and sharpens over
-  a few weeks (like the calibration). Because most people never use 100% of every window,
-  this is usually the more useful, earlier cue.
+The **🟢 hard light** is the certain one. It turns green only when you can't spend your
+remaining weekly budget even by maxing every 5-hour window left before the reset. It fires
+late, and it's never wrong. Green means burn it all. Amber (**🟡 burn ~N%**) means you're
+close to that line but not over it. Any other time the bar stays empty: either you have
+budget to spare, or there's no live reading yet.
+
+The **🔥 forecast nudge** comes earlier, and for most people it's the more useful of the two.
+Scorched Earth learns your day-of-week pattern and projects where the week is heading. If
+you're tracking to leave budget unused at your usual pace, it fires one desktop nudge per
+weekly cycle. It starts rough and sharpens over a few weeks, same as the calibration. Most
+people never max every window, so this usually lands well before the hard light would.
 
 See `docs/the-math.md` for the full derivation (both signals) and `docs/playbook.md`
 for how it's built.
@@ -55,7 +57,7 @@ actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual s
 projected/recommended for the days ahead).
 
 <p align="center">
-  <a href="assets/sitrep-demo.mp4"><img src="assets/sitrep-poster.png" alt="Scorched Earth sitrep — green / burn-mode (click to play the 15s clip)" width="640"></a>
+  <a href="assets/sitrep-demo.mp4"><img src="assets/sitrep-poster.png" alt="Scorched Earth sitrep, green / burn-mode (click to play the 15s clip)" width="640"></a>
 </p>
 
 <!-- Inline player: open this README in github.com's web editor and drag assets/sitrep-demo.mp4
@@ -67,9 +69,9 @@ When the verdict goes green, the whole sitrep catches fire. Toggle the field acr
 three views:
 
 <p align="center">
-  <img src="assets/sitrep-lastweek.png" alt="THE FIELD — last week" width="240">
-  <img src="assets/sitrep-average.png" alt="THE FIELD — average" width="240">
-  <img src="assets/sitrep-thisweek.png" alt="THE FIELD — this week (projected)" width="240">
+  <img src="assets/sitrep-lastweek.png" alt="THE FIELD: last week" width="240">
+  <img src="assets/sitrep-average.png" alt="THE FIELD: average" width="240">
+  <img src="assets/sitrep-thisweek.png" alt="THE FIELD: this week (projected)" width="240">
 </p>
 
 <sub><i>Sample data. The poster links to a 15s clip (<a href="assets/sitrep-demo.mp4">mp4, 1512×944</a>). Stills and footage rendered from the real report pipeline.</i></sub>
@@ -88,8 +90,8 @@ three views:
 /plugin install scorched-earth@scorched-earth
 ```
 
-Then it's automatic — a SessionStart hook wires the light into your statusline (wrapping
-any statusline you already have, never replacing it) and `/scorched-earth`, `/sitrep`, and
+Then it's automatic. A SessionStart hook wires the light into your statusline (wrapping
+any statusline you already have, never replacing it), and `/scorched-earth`, `/sitrep`, and
 `scorch` are available in-session. `/sitrep` generates and opens the HTML field report. Ask
 the assistant to set your preferred light style, or run `scorch --style <x>`.
 
@@ -104,7 +106,7 @@ Requires `python3` ≥ 3.8 (no pip deps). The light and CLI are cross-platform; 
 notification and `--sitrep` auto-open use macOS (`osascript`/`open`) with a Linux fallback
 (`notify-send`/`xdg-open`) and otherwise no-op.
 
-The three layers that make it work: a **statusline script** (the only surface Claude Code
-feeds live usage data to — the engine), the **`scorch` CLI / `/scorched-earth` skill**
-(read the cached state), and the **plugin** (bundles them + the install-time wiring). See
+The three layers that make it work: a **statusline script** (the engine, and the only
+surface Claude Code feeds live usage data to), the **`scorch` CLI / `/scorched-earth` skill**
+(read the cached state), and the **plugin** (bundles them plus the install-time wiring). See
 `docs/playbook.md`.
