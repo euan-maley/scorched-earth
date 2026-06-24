@@ -107,8 +107,7 @@ def _maybe_notify_forecast(fc, weekly_reset) -> None:
             pass
         left = fc.projected_leftover or 0
         end = fc.projected_end_used or 0
-        msg = (f"Reserves don't carry over, and the reset is coming for everything you "
-               f"didn't use. You're tracking to {end:.0f}% used, {left:.0f}% still in reserve. "
+        msg = (f"Tracking to {end:.0f}% used — {left:.0f}% left to burn before reset. "
                f"Deploy it.")
         if _notify("Scorched Earth", "Torch it all. Leave them nothing.", msg):
             with open(marker, "w") as f:
