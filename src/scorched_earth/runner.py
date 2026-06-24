@@ -248,8 +248,13 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
     root = os.path.realpath(os.path.expanduser(repo))
     wt = worktree_path(repo, job.id)
     br = branch_name(job.id)
-    _git(root, "worktree", "add", "-b", br, wt, "HEAD")
     try:
+        # Worktree add is INSIDE the try AND its return code is checked: _git never raises
+        # (no check=True), so a failed add (dup branch, full disk) must not silently proceed
+        # against a missing worktree, nor abort the whole run.
+        wadd = _git(root, "worktree", "add", "-b", br, wt, "HEAD")
+        if wadd.returncode != 0:
+            return "fail", None, "worktree add failed: " + (wadd.stderr or "").strip()[:200]
         # Write sandbox settings BEFORE any spawn so the agent starts confined.
         write_sandbox_settings(wt)
         if roe.setup_cmd:           # pre-warm deps with network (trusted, runner-run)

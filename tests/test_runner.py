@@ -157,6 +157,8 @@ _cmd = build_claude_cmd(_jb, worktree_path(_repo, "cov"))
 check("build_claude_cmd is a headless claude invocation carrying the launch",
       _cmd[0] == "claude" and "-p" in _cmd and any("Raise coverage" in a for a in _cmd))
 check("build_claude_cmd prelude forbids push", any("do not push" in a.lower() for a in _cmd))
+check("build_claude_cmd includes --dangerously-skip-permissions",
+      "--dangerously-skip-permissions" in _cmd)
 check("build_gate_cmd prefers per-job verify",
       build_gate_cmd(Job(id="x", repo="r", title="x", type="test", est_windows=1, value=1,
                          verify="make test"), _rfd({"test_cmd": "pytest"})) == "make test")
@@ -167,8 +169,7 @@ check("merge_cmd / discard_cmd reference the branch",
       "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
 
 # write_sandbox_settings: API-only network, sandbox enabled
-import tempfile as _tempfile  # noqa: E402
-_wt = _tempfile.mkdtemp()
+_wt = tempfile.mkdtemp()
 write_sandbox_settings(_wt)
 _settings_path = os.path.join(_wt, ".claude", "settings.json")
 with open(_settings_path) as _f:
@@ -178,6 +179,10 @@ check("write_sandbox_settings: sandbox.enabled is true",
 check("write_sandbox_settings: network allowedDomains is API-only (no npm/pypi)",
       set(_settings.get("sandbox", {}).get("network", {}).get("allowedDomains", [])) ==
       {"api.anthropic.com", "*.anthropic.com"})
+check("sandbox settings: failIfUnavailable is True",
+      _settings["sandbox"]["failIfUnavailable"] is True)
+check("sandbox settings: allowUnsandboxedCommands is False",
+      _settings["sandbox"]["allowUnsandboxedCommands"] is False)
 
 print(f"\n{passed} checks passed.")
 if failures:
