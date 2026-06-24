@@ -156,6 +156,29 @@ _eng3 = Engine([_r3], execute=_exec_stop, load_state=lambda: _STATE, now=lambda:
 _eng3.run(_r3)
 check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
 
+# busy guard under real concurrency: a second run() while a job is in flight must no-op
+import threading as _th
+_run_evt = _th.Event(); _gate = _th.Event(); _cstarted = []
+def _blocking_exec(repo, job, roe):
+    _cstarted.append(job.id)
+    if job.id == "c1":
+        _run_evt.set()
+        _gate.wait(2)
+    return ("pass", None, "ok")
+_rc = _mk_repo([Job(id="c1", repo=".", title="C1", type="test", est_windows=0.5, value=5),
+                Job(id="c2", repo=".", title="C2", type="test", est_windows=0.5, value=4)])
+_engc = Engine([_rc], execute=_blocking_exec, load_state=lambda: _STATE, now=lambda: 1)
+_t1 = _th.Thread(target=_engc.run, args=(_rc,), daemon=True); _t1.start()
+_run_evt.wait(2)                          # c1 is now executing (busy=True, lock free)
+_engc.run(_rc)                            # concurrent second run() must no-op (busy guard)
+check("engine busy guard: a concurrent run() no-ops while a job is in flight",
+      _cstarted == ["c1"] and _engc.state_json()["busy"] is True)
+_gate.set()                               # release c1; the loop then drains c2
+_t1.join(3)
+check("engine busy guard: after release the chain drains the rest and goes idle",
+      sorted(_cstarted) == ["c1", "c2"] and _engc.state_json()["busy"] is False
+      and _io.read_queue(_rc) == [])
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

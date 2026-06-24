@@ -35,7 +35,6 @@ class Engine:
 
     # ---- public mutations (called by HTTP handlers) ----
     def queue(self, repo, job_id):
-        from .jobs import parse_jobs
         # promote a proposed job into the queue by id
         jobs = {j.id: j for j in coa_io.load_jobs(repo)}
         if job_id in jobs:
@@ -69,49 +68,51 @@ class Engine:
     # ---- the event-driven step ----
     def advance(self, repo):
         repo = os.path.realpath(os.path.expanduser(repo))
-        # one-at-a-time guard + stop check, atomically
-        with self._lock:
-            if self._busy or self._stop:
+        while True:
+            # one-at-a-time guard + stop check, atomically
+            with self._lock:
+                if self._busy or self._stop:
+                    return
+                roe = coa_io.load_roe(repo)
+                tracker = self._trackers.get(repo)
+                if tracker is None:
+                    tracker = runner.EnvelopeTracker(roe)
+                    self._trackers[repo] = tracker
+                avail = tracker.available(self._load_state(), self._now())
+                if avail is None:
+                    return                              # stale/absent snapshot -> refuse
+                job = runner.pick_next(coa_io.read_queue(repo), avail, roe)
+                if job is None:
+                    return                              # idle: nothing eligible/affordable
+                self._busy = True
+                self._running = {"repo": repo, "id": job.id}
+                coa_io.unqueue(repo, job.id)            # remove-on-pick: can never run twice
+                rr = self._results.get(repo)
+                if rr is None:
+                    rr = runner.RunResult(
+                        generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
+                        state="running", repo=repo, verdict="unknown", note="",
+                        available_windows=avail, spent_estimated=0.0)
+                    self._results[repo] = rr
+                seq = len(rr.jobs) + 1
+            self._broadcast()
+
+            # execute OUTSIDE the lock (long-running, sandboxed)
+            oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
+
+            with self._lock:
+                tracker.charge(job.est_windows)
+                rr.jobs.append(oc)
+                rr.spent_estimated = tracker.spent
+                self._persist(repo, rr)
+                self._busy = False
+                self._running = None
+                stopped = self._stop
+            self._broadcast()
+
+            if stopped:
                 return
-            roe = coa_io.load_roe(repo)
-            tracker = self._trackers.get(repo)
-            if tracker is None:
-                tracker = runner.EnvelopeTracker(roe)
-                self._trackers[repo] = tracker
-            avail = tracker.available(self._load_state(), self._now())
-            if avail is None:
-                return                              # stale/absent snapshot -> refuse
-            job = runner.pick_next(coa_io.read_queue(repo), avail, roe)
-            if job is None:
-                return                              # idle: nothing eligible/affordable
-            self._busy = True
-            self._running = {"repo": repo, "id": job.id}
-            coa_io.unqueue(repo, job.id)            # remove-on-pick: can never run twice
-            rr = self._results.get(repo)
-            if rr is None:
-                rr = runner.RunResult(
-                    generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
-                    state="running", repo=repo, verdict="unknown", note="",
-                    available_windows=avail, spent_estimated=0.0)
-                self._results[repo] = rr
-            seq = len(rr.jobs) + 1
-        self._broadcast()
-
-        # execute OUTSIDE the lock (long-running, sandboxed)
-        oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
-
-        with self._lock:
-            tracker.charge(job.est_windows)
-            rr.jobs.append(oc)
-            rr.spent_estimated = tracker.spent
-            self._persist(repo, rr)
-            self._busy = False
-            self._running = None
-            stopped = self._stop
-        self._broadcast()
-
-        if not stopped:
-            self.advance(repo)                      # chain to the next card
+            # loop to the next card (chain) — O(1) stack
 
     def _persist(self, repo, rr):
         from . import review_report
