@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/scorched-earth.png" alt="Scorched Earth — burn it all" width="320">
+  <img src="assets/banner.png" alt="Scorched Earth — torch it all, leave them nothing behind" width="760">
 </p>
 
 # Scorched Earth
@@ -53,6 +53,21 @@ with THE FIELD: a Stardew-style pixel farm where each weekday plot grows lush wh
 burn light and chars when you burn heavy. Toggle the field between **LAST WEEK** (what you
 actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual so far plus
 projected/recommended for the days ahead).
+
+<p align="center">
+  <img src="assets/sitrep-burn.png" alt="Scorched Earth sitrep — green / burn-mode" width="560">
+</p>
+
+When the verdict goes green, the whole sitrep catches fire. Toggle the field across the
+three views:
+
+<p align="center">
+  <img src="assets/sitrep-lastweek.png" alt="THE FIELD — last week" width="240">
+  <img src="assets/sitrep-average.png" alt="THE FIELD — average" width="240">
+  <img src="assets/sitrep-thisweek.png" alt="THE FIELD — this week (projected)" width="240">
+</p>
+
+<sub><i>Screenshots use representative sample data.</i></sub>
 
 ## Install
 

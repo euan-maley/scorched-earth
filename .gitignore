@@ -9,3 +9,6 @@ kivna/
 __pycache__/
 *.pyc
 .venv/
+
+# Playwright MCP scratch
+.playwright-mcp/
