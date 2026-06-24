@@ -42,7 +42,8 @@ Multi-agent audit (correctness / safety / packaging / testing / arch / design+dx
 
 ## Backlog
 
-- [ ] Before public launch: untrack `kivna/` + `.slainte` (kept now to preserve the kerd git-handoff; they'd ship in the plugin clone once public)
+- [x] Pre-public prep: MIT `LICENSE` file added; `homepage`/`repository` in `plugin.json`; untracked `kivna/` + `.slainte` (gitignored, kept local — no second machine so the handoff loss is fine). Repo is publish-clean except for the deliberate choice to leave `TODO.md` tracked.
+- [ ] Flip to public when ready (no other blockers; logo intentionally skipped)
 - [ ] `scorch --watch` live re-print (flag exists; field-test it)
 - [ ] Optional: surface the 🔥 forecast nudge on the statusline too (not just notify)
 - [ ] Let users tune "active hours" manually (currently learned only)
