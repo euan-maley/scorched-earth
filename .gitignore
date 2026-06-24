@@ -1,6 +1,6 @@
-# Kerd
-kivna/input/
-kivna/output/
+# Kerd (local session/vault tooling — not shipped in the plugin)
+kivna/
+.slainte
 
 # OS
 .DS_Store

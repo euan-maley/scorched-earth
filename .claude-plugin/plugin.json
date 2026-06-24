@@ -5,6 +5,8 @@
   "author": {
     "name": "Euan Maley"
   },
+  "homepage": "https://github.com/euan-maley/scorched-earth",
+  "repository": "https://github.com/euan-maley/scorched-earth",
   "license": "MIT",
   "keywords": ["usage", "rate-limit", "statusline", "weekly-limit", "burn-rate", "forecast"]
 }
