@@ -243,6 +243,12 @@ _que = subprocess.run([sys.executable, _scorch, "coa", "queue", "--all", _cli_re
 check("scorch coa queue runs without error (empty COA -> nothing queued)",
       _que.returncode == 0)
 
+_merge_noid = subprocess.run([sys.executable, _scorch, "coa", "review", "--merge"],
+                             capture_output=True, text=True, env=_cli_env)
+check("scorch coa review --merge with no id refuses cleanly (no traceback)",
+      _merge_noid.returncode == 0 and "Traceback" not in _merge_noid.stderr
+      and "usage" in _merge_noid.stdout.lower())
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

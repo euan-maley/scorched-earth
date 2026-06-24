@@ -212,7 +212,7 @@ def _coa_cli(raw):
 def _coa_run_cli(rest):
     """`scorch coa <queue|run|review> …` — the Phase 2 queue-runner surface."""
     import time as _time
-    from scorched_earth import coa_io, advisor, runner, review_report
+    from scorched_earth import coa_io, advisor, runner
     sub = rest[0] if rest else "review"
     args = rest[1:]
     date = _time.strftime("%Y-%m-%d", _time.localtime())
@@ -262,7 +262,11 @@ def _coa_run_cli(rest):
             (coa_io.list_repos()[0] if coa_io.list_repos() else "."))
     if "--merge" in args or "--discard" in args:
         flag = "--merge" if "--merge" in args else "--discard"
-        jid = args[args.index(flag) + 1]
+        idx = args.index(flag)
+        if idx + 1 >= len(args):                       # no id after the flag: clean refusal
+            print(f"Usage: scorch coa review {flag} <job-id>")
+            return 0
+        jid = args[idx + 1]
         cmd = (runner.merge_cmd(repo, jid) if flag == "--merge"
                else runner.discard_cmd(repo, jid))
         print(f"Run this to {flag[2:]} {jid}:\n  {cmd}")
