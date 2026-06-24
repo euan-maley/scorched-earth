@@ -43,6 +43,21 @@ class Snapshot:
     def has_weekly(self) -> bool:
         return self.seven_day_pct is not None and self.seven_day_reset is not None
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "Snapshot":
+        """Build from a persisted/untrusted dict, ignoring unknown keys and filling gaps.
+
+        Lets the CLI and report read a state.json written by a different version (extra or
+        missing fields) without a TypeError crash.
+        """
+        return cls(
+            now=d.get("now") or 0,
+            five_hour_pct=d.get("five_hour_pct"),
+            five_hour_reset=d.get("five_hour_reset"),
+            seven_day_pct=d.get("seven_day_pct"),
+            seven_day_reset=d.get("seven_day_reset"),
+        )
+
 
 @dataclass
 class Recommendation:
@@ -72,6 +87,12 @@ def windows_left(snap: Snapshot, active_fraction: float = 1.0) -> Optional[float
     # Unused capacity of the *current* 5h window, in window-units (0..1).
     h = snap.five_hour_pct if snap.five_hour_pct is not None else 0.0
     current_remaining = max(0.0, (100.0 - h) / 100.0)
+    # ...but you can only spend it in the time left before the weekly reset, and capacity
+    # burns at most one window's worth per 5h. If the current window straddles the weekly
+    # reset (reset lands mid-window), cap the credit by the time actually remaining so we
+    # don't count next-week capacity as this week's.
+    secs_to_weekly = max(0, snap.seven_day_reset - snap.now)
+    current_remaining = min(current_remaining, secs_to_weekly / WINDOW_SECONDS)
     # Time from when the current window resets until the weekly reset -> further windows.
     if snap.five_hour_reset is not None:
         tail_seconds = max(0, snap.seven_day_reset - snap.five_hour_reset)

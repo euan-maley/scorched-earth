@@ -13,12 +13,16 @@ How to rebuild this project from scratch.
 ## Setup
 
 ```bash
-git clone <repo> ~/scorched-earth
+git clone https://github.com/euan-maley/scorched-earth ~/scorched-earth
 cd ~/scorched-earth
 ./install.sh        # links `scorch` onto PATH and wires the statusline light
 ```
 
-No pip dependencies. Requires `python3` (ships with macOS).
+No pip dependencies. Requires **`python3` ≥ 3.8** on PATH (ships with macOS; `apt install
+python3` / `dnf install python3` on Linux). Cross-platform note: the core light and CLI work
+anywhere Python does; the once-per-week desktop **notification** and the `--sitrep` auto-open
+use macOS (`osascript`/`open`) with a Linux fallback (`notify-send`/`xdg-open`), and silently
+no-op elsewhere — the sitrep file is still written either way.
 
 ## Architecture
 
@@ -87,9 +91,10 @@ plugin/skill; install flow asks the user how they want the light displayed.
 `report.py` and opens it. Aesthetic: 8-bit war / scorched-earth crop field. THE FIELD is a
 Stardew-style top-down pixel farm whose seven weekday plots grow lush when you burn light
 and char when you burn heavy. The procedural SVG pixel engine (sprites, palettes, soil
-states, scarecrow/trough/fence, motion) was ported 1:1 from an external design handoff
-(`~/Downloads/design_handoff_the_field`, React → vanilla JS). Python computes the data and
-HUD stats; a small JS layer renders the field and ticks the live countdowns.
+states, scarecrow/trough/fence, motion) was ported 1:1 from a standalone React design
+prototype to vanilla JS and vendored into `report.py` (no external dependency at runtime).
+Python computes the data and HUD stats; a small JS layer renders the field and ticks the live
+countdowns.
 
 The field has a three-way toggle: LAST WEEK (actual burn that week), AVERAGE (all-time
 day-of-week habit), THIS WEEK (actual for elapsed days + projected/recommended for days
@@ -100,5 +105,6 @@ ahead, with projected plots dimmed/"PLANNED" and today tagged "NOW").
 Working end-to-end. Core math + R self-calibration, `scorch` CLI, statusline light (fire
 gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast layer with
 a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
-marketplace + installer. War-general voice throughout. 25 unit checks passing. Forecast and
-R both start provisional and sharpen with real usage.
+marketplace + installer. War-general voice throughout. 57 unit checks passing (run
+`python3 tests/test_scorched.py`; also gated in CI via `.github/workflows/test.yml`). Forecast
+and R both start provisional and sharpen with real usage.

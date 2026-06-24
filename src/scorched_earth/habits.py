@@ -173,7 +173,17 @@ def forecast(history: List[dict], now: int, current_used: float, weekly_reset: i
     else:
         # Linear: average rate so far this week, projected to the reset.
         start_of_week = weekly_reset - WEEK_SECONDS
-        days_elapsed = max(0.25, (now - start_of_week) / DAY_SECONDS)
+        days_elapsed = (now - start_of_week) / DAY_SECONDS
+        if days_elapsed < 1.0:
+            # Too little of the cycle elapsed to extrapolate a daily rate (or a clock-skew /
+            # >7d reset that puts the cycle start in the future). Extrapolating here either
+            # inflates the rate ~N× or goes negative, so don't project a forfeit — assume the
+            # budget gets spent and hold the nudge until there's a real day of signal.
+            return Forecast(
+                projected_end_used=current_used, projected_leftover=weekly_left,
+                expected_remaining=weekly_left, preemptive=False, confidence="low",
+                basis="too early in the cycle to forecast", weeks_observed=weeks,
+            )
         rate_per_day = current_used / days_elapsed
         days_left = seconds_left / DAY_SECONDS
         expected_remaining = rate_per_day * days_left

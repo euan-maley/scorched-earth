@@ -46,8 +46,20 @@ hardcode it — we **measure** it from the user's own data: across two snapshots
 the 5h window didn't reset, `Δw / Δh` (with Δh in window-units) estimates R. A rolling
 median over clean samples is stable and self-correcting. See `calibrate.py`.
 
-Until enough samples exist, R is provisional; the readout says so and can ask the user
-for a starting value (their plan, or observed "windows per week at full burn" = 1/R).
+Until enough samples exist, R is provisional and falls back to **`DEFAULT_R = 0.05`** (a
+maxed window ≈ 5% of the week, ~20 windows/week); the readout marks it provisional and can
+ask the user for a starting value (their plan, or observed "windows per week at full burn" =
+1/R). The worked example below uses `R = 0.07` for round numbers, not the default.
+
+### Caveat: one bucket assumption
+
+The model treats the weekly `used_percentage` as a single budget with a single R. On plans
+with **multiple weekly limits** (e.g. Max's separate all-models and Sonnet-only caps, plus
+Opus budgets), the statusline reports one binding percentage that can switch which underlying
+cap it tracks (e.g. when you change models). If the binding bucket changes mid-week, `Δw/Δh`
+mixes two caps and R degrades. The guardrails (in-band filter + `MIN_PAIRS`) blunt this, and a
+wrong R surfaces as a provisional/odd readout rather than silent confidence, but treat the
+green light as advisory on multi-bucket plans rather than gospel.
 
 ## The recommendation
 

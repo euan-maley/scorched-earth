@@ -35,7 +35,7 @@ def _stats(state: dict, history: list, active_fraction: float = 1.0) -> dict:
     # projected numbers always reflect the current math (voice, sleep discount, capacity cap),
     # never values cached on disk by an earlier reading.
     if snap.get("seven_day_pct") is not None:
-        rec_obj = compute(Snapshot(**snap), cached.get("r"),
+        rec_obj = compute(Snapshot.from_dict(snap), cached.get("r"),
                           r_provisional=cached.get("r_provisional", False),
                           active_fraction=active_fraction)
         rec = asdict(rec_obj)
@@ -59,7 +59,7 @@ def _stats(state: dict, history: list, active_fraction: float = 1.0) -> dict:
     dash = "—"
     return {
         "statusLevel": level.upper(),
-        "statusColor": STATUS_COLOR[level],
+        "statusColor": STATUS_COLOR.get(level, STATUS_COLOR["unknown"]),
         "verdict": HEADLINE.get(level, "").upper(),
         "reason": (rec.get("reason") or "Recon's not in yet. Open a session and the field fills in."),
         "weeklyRemaining": weekly if weekly is not None else dash,
@@ -77,7 +77,7 @@ def _stats(state: dict, history: list, active_fraction: float = 1.0) -> dict:
         "projectedLeftover": (f"{round(fc['projected_leftover'])}%" if fc.get("projected_leftover") is not None else dash),
         "confidence": (fc.get("confidence") or "none").upper(),
         "preemptive": bool(fc.get("preemptive")),
-        "weeks": fc.get("weeks_observed") or len({o.get("seven_day_reset") for o in []}),
+        "weeks": fc.get("weeks_observed") or len({o.get("seven_day_reset") for o in history}),
     }
 
 
@@ -207,7 +207,7 @@ def render_html(state: dict | None, history: list, generated_at: int) -> str:
 
 def generate(state, history, path, generated_at) -> str:
     out = render_html(state, history, generated_at)
-    tmp = path + ".tmp"
+    tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         f.write(out)
     os.replace(tmp, path)

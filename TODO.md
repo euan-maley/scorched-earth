@@ -29,11 +29,22 @@ Modeling fixes (apply to statusline + CLI + sitrep):
 
 - [x] Marketplace entry (`.claude-plugin/marketplace.json`, single-repo `source: "./"`)
 
+## Readiness Audit (2026-06-24) — fixed before publish
+
+Multi-agent audit (correctness / safety / packaging / testing / arch / design+dx / concept):
+- [x] **Correctness:** windows_left straddle over-count (credited next-week capacity); forecast cold-start rate inflation + >7d-out reset; concurrent-statusline `.tmp` write race (now pid-unique); report dead-code weeks bug
+- [x] **Safety/robustness:** report KeyError on unknown level; tolerant `Snapshot.from_dict` (schema drift no longer crashes CLI/report); state files now `0600`
+- [x] **DX/UX honesty:** partial manual flags now error instead of silently ignoring; `--report` refuses to fabricate a zeros dashboard before any reading; cross-platform open (`xdg-open`) + notify (`notify-send`)
+- [x] **Docs truth:** SKILL.md "SCORCH"→"BURN IT ALL" + fire style listed; default-style clarified (fire seeded at install); the-math.md default-R note + multi-bucket caveat; playbook test count; README placeholders + platform note + light states
+- [x] **Tests/CI:** 33→57 checks (straddle, verdict-flip regression, cold-start, from_dict, report render, state round-trip + corruption recovery, statusline never-errors invariant); harness collects failures instead of aborting; GitHub Actions CI added
+- [x] **Packaging:** `pyproject.toml` (python ≥3.8 floor); gradient.py documented in CLAUDE.md
+- [x] **Add a git remote + push** (private GitHub)
+
 ## Backlog
 
-- [ ] **Add a git remote + push** (repo is local-only; needed before others can `/plugin marketplace add <user>/scorched-earth`)
+- [ ] Before public launch: untrack `kivna/` + `.slainte` (kept now to preserve the kerd git-handoff; they'd ship in the plugin clone once public)
 - [ ] `scorch --watch` live re-print (flag exists; field-test it)
 - [ ] Optional: surface the 🔥 forecast nudge on the statusline too (not just notify)
-- [ ] Cross-platform notification (Linux notify-send / Windows) — currently macOS only
 - [ ] Let users tune "active hours" manually (currently learned only)
 - [ ] Fire perf: it's canvas-animated; consider pausing when tab hidden (visibilitychange)
+- [ ] R/active-hours still learning on this machine (~2 readings); sharpen over a couple weeks

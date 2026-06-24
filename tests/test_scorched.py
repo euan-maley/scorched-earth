@@ -1,9 +1,13 @@
 """Plain-stdlib tests. Run: python3 tests/test_scorched.py"""
 
+import json
 import os
+import subprocess
 import sys
+import tempfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+_SRC = os.path.join(os.path.dirname(__file__), "..", "src")
+sys.path.insert(0, _SRC)
 
 from scorched_earth.core import Snapshot, compute, windows_left, WINDOW_SECONDS  # noqa: E402
 from scorched_earth import calibrate  # noqa: E402
@@ -11,13 +15,18 @@ from scorched_earth import calibrate  # noqa: E402
 NOW = 1_000_000
 HOUR = 3600
 passed = 0
+failures = []
 
 
 def check(name, cond):
+    """Record a check without aborting the run, so one failure doesn't hide the rest."""
     global passed
-    assert cond, f"FAIL: {name}"
-    passed += 1
-    print(f"  ok  {name}")
+    if cond:
+        passed += 1
+        print(f"  ok  {name}")
+    else:
+        failures.append(name)
+        print(f"  FAIL  {name}")
 
 
 # --- windows_left ---------------------------------------------------------------
@@ -171,4 +180,116 @@ ah, ah_prov = habits.active_hours([])
 check("active hours falls back to 16h provisional", ah == 16.0 and ah_prov is True)
 check("default active_fraction leaves windows unchanged", windows_left(snap) == windows_left(snap, 1.0))
 
+# --- straddle: current window crossing the weekly reset isn't over-counted -----
+# Fresh window (0% used) but the weekly reset is 30min away. Only ~0.1 window of capacity
+# is physically spendable, not a full window -> must read green, not amber.
+straddle = Snapshot(
+    now=NOW,
+    five_hour_pct=0, five_hour_reset=NOW + int(4.5 * HOUR),
+    seven_day_pct=85, seven_day_reset=NOW + 30 * 60,
+)
+wl_str = windows_left(straddle)
+check("straddle: current window credited by time-to-reset, not in full", wl_str < 0.2)
+check("straddle: still green (can't spend 15% in ~0.1 window)",
+      compute(straddle, r=0.20).level == "green")
+# Sanity: far-off weekly reset leaves the current-window credit untouched.
+check("no straddle when weekly reset is far off",
+      abs(windows_left(snap) - 2.2) < 1e-9)
+
+# --- verdict-flip regression: two noisy pairs must NOT swing the call --------------
+# The exact bug that bit us: a sparse R (~0.25 from few readings) flipping green<->off.
+# With < MIN_PAIRS clean pairs (and 0.25 out of band anyway) we must hold the default.
+flip = []
+for i in range(2):  # weekly +2.5pp per 10pp window -> R=0.25
+    flip = calibrate.append_sample(flip, {"now": NOW + i * 600, "five_hour_pct": i * 10.0,
+        "five_hour_reset": h_reset, "seven_day_pct": 10.0 + i * 2.5, "seven_day_reset": w_reset})
+r_flip, prov_flip = calibrate.estimate_r(flip)
+check("noisy R=0.25 from 2 pairs holds the provisional default",
+      r_flip == calibrate.DEFAULT_R and prov_flip is True)
+
+# --- forecast cold-start: don't extrapolate < 1 day in or a >7d-out reset ----------
+# 1h into the cycle, 3% used: the old max(0.25, elapsed) floor projected ~4x too high.
+fc_early = habits.forecast([], start + HOUR, current_used=3.0, weekly_reset=start + 7 * DAY)
+check("cold start <1 day: no fabricated forfeit", fc_early.preemptive is False)
+check("cold start <1 day: flagged too-early", fc_early.basis == "too early in the cycle to forecast")
+# A reset more than 7 days out (clock skew) must not produce a negative/garbage rate.
+fc_skew = habits.forecast([], NOW, current_used=20.0, weekly_reset=NOW + 8 * DAY)
+check("reset >7d out doesn't crash or over-warn", fc_skew.preemptive is False)
+
+# --- Snapshot.from_dict tolerates schema drift -------------------------------------
+check("from_dict ignores unknown keys",
+      Snapshot.from_dict({"now": NOW, "bogus": 1, "seven_day_pct": 50}).seven_day_pct == 50)
+check("from_dict fills missing now", Snapshot.from_dict({"seven_day_pct": 50}).now == 0)
+
+# --- report renders without leftover placeholders / crashes -------------------------
+from scorched_earth import report as rpt  # noqa: E402
+
+good_state = {
+    "snapshot": {"now": NOW, "five_hour_pct": 80, "five_hour_reset": NOW + HOUR,
+                 "seven_day_pct": 38, "seven_day_reset": NOW + 11 * HOUR},
+    "recommendation": {"r": 0.07, "r_provisional": False},
+    "forecast": {},
+}
+html = rpt.render_html(good_state, [], NOW)
+check("report substitutes all placeholders", "__DECK__" not in html and "__DATA__" not in html
+      and "__STAMP__" not in html and "__BURN__" not in html)
+check("report is non-trivial HTML", html.lstrip().startswith("<") and len(html) > 1000)
+# None state (never any reading) must not throw.
+check("report handles None state", isinstance(rpt.render_html(None, [], NOW), str))
+# A corrupted/unknown recommendation level must not KeyError.
+weird = {"snapshot": {}, "recommendation": {"level": "bogus_level"}, "forecast": {}}
+check("report tolerates an unknown status level", isinstance(rpt.render_html(weird, [], NOW), str))
+
+# --- state.py round-trip + corruption recovery (isolated temp dir) ------------------
+from scorched_earth import state as st  # noqa: E402
+
+_orig = (st.STATE_DIR, st.CALIB_PATH, st.STATE_PATH, st.HISTORY_PATH)
+_tmp = tempfile.mkdtemp()
+st.STATE_DIR = _tmp
+st.CALIB_PATH = os.path.join(_tmp, "calibration.json")
+st.STATE_PATH = os.path.join(_tmp, "state.json")
+st.HISTORY_PATH = os.path.join(_tmp, "habits.json")
+try:
+    payload = {"rate_limits": {
+        "five_hour": {"used_percentage": 80, "resets_at": NOW + HOUR},
+        "seven_day": {"used_percentage": 38, "resets_at": NOW + 11 * HOUR}}}
+    res = st.update_from_statusline(payload, at=NOW)
+    check("update_from_statusline parses the full payload", res.snap.seven_day_pct == 38)
+    reloaded = st.load_state()
+    check("state.json round-trips", reloaded["snapshot"]["seven_day_pct"] == 38)
+    check("state file is owner-only (0600)", (os.stat(st.STATE_PATH).st_mode & 0o777) == 0o600)
+    # Partial payloads must not raise and must not clobber the last good snapshot.
+    st.update_from_statusline({}, at=NOW + 1)
+    st.update_from_statusline({"rate_limits": None}, at=NOW + 2)
+    st.update_from_statusline({"rate_limits": {"five_hour": {"used_percentage": 5}}}, at=NOW + 3)
+    check("partial payloads don't clobber good state", st.load_state()["snapshot"]["seven_day_pct"] == 38)
+    # Corrupt JSON on disk recovers to defaults rather than crashing.
+    with open(st.STATE_PATH, "w") as f:
+        f.write("{ not valid json ]")
+    check("corrupt state.json recovers to None", st.load_state() is None)
+finally:
+    st.STATE_DIR, st.CALIB_PATH, st.STATE_PATH, st.HISTORY_PATH = _orig
+    __import__("shutil").rmtree(_tmp, ignore_errors=True)
+
+# --- statusline never errors: any input -> exit 0, valid-or-empty stdout -----------
+_env = {**os.environ, "PYTHONPATH": _SRC, "HOME": tempfile.mkdtemp()}
+for label, stdin in [
+    ("empty stdin", ""),
+    ("garbage", "not json at all"),
+    ("json array", "[]"),
+    ("null", "null"),
+    ("empty object", "{}"),
+    ("valid payload", json.dumps({"rate_limits": {
+        "five_hour": {"used_percentage": 80, "resets_at": NOW + HOUR},
+        "seven_day": {"used_percentage": 38, "resets_at": NOW + 11 * HOUR}}})),
+]:
+    proc = subprocess.run([sys.executable, "-m", "scorched_earth.statusline"],
+                          input=stdin, capture_output=True, text=True, env=_env)
+    check(f"statusline exits 0 on {label}", proc.returncode == 0)
+__import__("shutil").rmtree(_env["HOME"], ignore_errors=True)
+
+
 print(f"\n{passed} checks passed.")
+if failures:
+    print(f"{len(failures)} FAILED: " + ", ".join(failures))
+    raise SystemExit(1)

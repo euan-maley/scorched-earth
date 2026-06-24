@@ -41,10 +41,17 @@ def _read_json(path: str, default):
 
 def _write_json(path: str, obj) -> None:
     _ensure_dir()
-    tmp = path + ".tmp"
+    # Per-pid temp name so concurrent statuslines (one per open session/tab) don't write the
+    # same .tmp and interleave into a corrupt file. os.replace is atomic; last writer wins.
+    tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         json.dump(obj, f, indent=2)
     os.replace(tmp, path)
+    # Usage rhythm is mildly private; keep state owner-only on shared machines.
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 # --- statusline payload parsing -------------------------------------------------

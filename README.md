@@ -23,7 +23,9 @@ remaining window, the light goes green — pacing yourself just wastes credits.
 ## Two signals
 
 - **🟢 Hard light** — *certain*: you literally can't spend your weekly budget unless you
-  max every remaining window. Fires late, never wrong.
+  max every remaining window. Fires late, never wrong. It's the green end of a three-state
+  gauge: **🟢 green** "burn it all", **🟡 amber** "burn ~N% each window — you're near the
+  line", and nothing shown when you have slack (**off**) or there's no reading yet (**unknown**).
 - **🔥 Forecast nudge** — *earlier, habit-based*: Scorched Earth learns your day-of-week
   usage pattern and, when it projects you're trending to leave budget unused at your
   usual pace, gives a once-per-week preemptive heads-up. Starts rough and sharpens over
@@ -57,8 +59,8 @@ projected/recommended for the days ahead).
 /plugin marketplace add ~/scorched-earth
 /plugin install scorched-earth@scorched-earth
 
-# or, once it's pushed to GitHub, anyone can:
-/plugin marketplace add <github-user>/scorched-earth
+# or, from GitHub:
+/plugin marketplace add euan-maley/scorched-earth
 /plugin install scorched-earth@scorched-earth
 ```
 
@@ -70,9 +72,13 @@ available in-session. Ask the assistant to set your preferred light style, or ru
 **Manually (clone):**
 
 ```bash
-git clone <repo> ~/scorched-earth
+git clone https://github.com/euan-maley/scorched-earth ~/scorched-earth
 ~/scorched-earth/install.sh   # puts `scorch` on PATH, picks a style, wires the statusline
 ```
+
+Requires `python3` ≥ 3.8 (no pip deps). The light and CLI are cross-platform; the desktop
+notification and `--sitrep` auto-open use macOS (`osascript`/`open`) with a Linux fallback
+(`notify-send`/`xdg-open`) and otherwise no-op.
 
 The three layers that make it work: a **statusline script** (the only surface Claude Code
 feeds live usage data to — the engine), the **`scorch` CLI / `/scorched-earth` skill**

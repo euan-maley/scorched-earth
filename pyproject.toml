@@ -1,0 +1,17 @@
+[project]
+name = "scorched-earth"
+version = "0.1.0"
+description = "A green light for Claude usage: signals when remaining weekly budget can only be spent by maxing out every remaining 5-hour window, plus a habit-based preemptive forecast."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Euan Maley", email = "euan@maley.be" }]
+keywords = ["usage", "rate-limit", "statusline", "weekly-limit", "burn-rate", "forecast"]
+dependencies = []  # stdlib only — keeps the statusline hot path dependency-free
+
+[project.urls]
+Homepage = "https://github.com/euan-maley/scorched-earth"
+
+# No build backend / pip install: this ships as a Claude Code plugin (or via install.sh),
+# not as a PyPI package. `bin/scorch` puts src/ on sys.path directly. pyproject exists to
+# declare the runtime floor and metadata. Run the tests with: python3 tests/test_scorched.py

@@ -22,7 +22,9 @@ GREEN = "\033[1;32m"   # bold green
 AMBER = "\033[33m"
 RESET = "\033[0m"
 
-# Styles: emoji (default), text (colored words, no emoji), minimal (just a dot).
+# Styles: fire (animated flames, the installed default seeded by the hook/installer), emoji,
+# text (colored words, no emoji), minimal (just a dot). `_resolve_style` falls back to emoji
+# only if the style file is unset/missing.
 STYLES = {
     "emoji": {"green": f"🟢 {GREEN}BURN IT ALL{RESET}", "amber": "🟡 {amber}"},
     "text": {"green": f"{GREEN}BURN IT ALL{RESET}", "amber": "{amber}"},
@@ -69,16 +71,33 @@ def _resolve_style() -> str:
     return "emoji"
 
 
+def _notify(title: str, subtitle: str, msg: str) -> bool:
+    """Best-effort desktop notification. macOS via osascript, Linux via notify-send.
+
+    All strings come from our own formatted numbers/literals (no user/network input), and
+    every command is run via an argv list (no shell), so there's no injection surface.
+    Returns True if a notifier was invoked."""
+    if sys.platform == "darwin" and shutil.which("osascript"):
+        subprocess.run(
+            ["osascript", "-e",
+             f'display notification "{msg}" with title "{title}" subtitle "{subtitle}"'],
+            check=False, capture_output=True,
+        )
+        return True
+    if shutil.which("notify-send"):
+        subprocess.run(["notify-send", f"{title} — {subtitle}", msg],
+                       check=False, capture_output=True)
+        return True
+    return False
+
+
 def _maybe_notify_forecast(fc, weekly_reset) -> None:
     """Fire a single preemptive desktop nudge per weekly cycle when habits project that
     the user will leave meaningful budget unused — only once the profile is trustworthy.
-    Best-effort and macOS-only; never raises into the caller."""
+    Best-effort (macOS/Linux); never raises into the caller."""
     try:
         if not fc.preemptive or fc.confidence not in ("medium", "high"):
             return
-        if sys.platform != "darwin" or shutil.which("osascript") is None:
-            return
-        import os
         marker = os.path.expanduser("~/.claude/scorched-earth/fc-notified")
         try:
             with open(marker) as f:
@@ -91,14 +110,9 @@ def _maybe_notify_forecast(fc, weekly_reset) -> None:
         msg = (f"Reserves don't carry over, and the reset is coming for everything you "
                f"didn't use. You're tracking to {end:.0f}% used, {left:.0f}% still in reserve. "
                f"Deploy it.")
-        subprocess.run(
-            ["osascript", "-e",
-             f'display notification "{msg}" with title "Scorched Earth" '
-             f'subtitle "Torch it all. Leave them nothing."'],
-            check=False, capture_output=True,
-        )
-        with open(marker, "w") as f:
-            f.write(str(weekly_reset))
+        if _notify("Scorched Earth", "Torch it all. Leave them nothing.", msg):
+            with open(marker, "w") as f:
+                f.write(str(weekly_reset))
     except Exception:
         return
 

@@ -32,8 +32,30 @@ RESET = "\033[0m"
 # sitrep stay in lockstep.
 
 
+NO_DATA = (
+    "\n  Nothing to read yet.\n"
+    "  Open a Claude Code session so the statusline can grab a\n"
+    "  reading, or do the math by hand:\n\n"
+    "    scorch --weekly-left 62 --weekly-reset 11h --window 80 --window-reset 1h\n"
+)
+
+
 def c(s, level, on):
     return f"{COLOR.get(level,'')}{s}{RESET}" if on else s
+
+
+def _has_usable_snapshot(state) -> bool:
+    snap = (state or {}).get("snapshot") or {}
+    return snap.get("seven_day_pct") is not None
+
+
+def _open_file(path) -> None:
+    """Open a file in the OS default app. macOS `open`, Linux `xdg-open`; otherwise no-op."""
+    import shutil
+    import subprocess
+    opener = "open" if sys.platform == "darwin" else ("xdg-open" if shutil.which("xdg-open") else None)
+    if opener:
+        subprocess.run([opener, path], check=False)
 
 
 def parse_when(val):
@@ -171,20 +193,23 @@ def main(argv=None):
 
     if args.report is not None:
         from scorched_earth import report as rpt
+        state = st.load_state()
+        # Don't render a confident HUD full of fabricated 0%s before any real reading exists.
+        if not _has_usable_snapshot(state):
+            print(NO_DATA)
+            return 0
         path = os.path.expanduser(args.report or os.path.join(st.STATE_DIR, "report.html"))
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         # Refresh R from the calibration samples so the report uses the current (guard-railed)
         # estimate, not whatever was cached in state.json by an earlier reading.
-        state = st.load_state()
         r_fresh, prov_fresh = calibrate.estimate_r(st.load_calibration().get("samples", []))
         if state and isinstance(state.get("recommendation"), dict):
             state["recommendation"]["r"] = r_fresh
             state["recommendation"]["r_provisional"] = prov_fresh
         rpt.generate(state, st.load_history(), path, int(time.time()))
         print(f"Sitrep written to {path}")
-        if not args.no_open and sys.platform == "darwin":
-            import subprocess
-            subprocess.run(["open", path], check=False)
+        if not args.no_open:
+            _open_file(path)
         return 0
 
     if args.set_r is not None:
@@ -204,7 +229,14 @@ def main(argv=None):
         print(f"Light style set to '{args.style}'  ({shown}).")
         return 0
 
-    # Manual mode: enough overrides to build a snapshot ourselves.
+    # Manual mode: enough overrides to build a snapshot ourselves. If the user supplied some
+    # manual inputs but not the required pair, say so instead of silently ignoring them.
+    manual_given = any(v is not None for v in
+                       (args.weekly_left, args.weekly_reset, args.window, args.window_reset))
+    if manual_given and not (args.weekly_left is not None and args.weekly_reset is not None):
+        print("\n  Manual mode needs at least --weekly-left and --weekly-reset, e.g.:\n\n"
+              "    scorch --weekly-left 62 --weekly-reset 11h --window 80 --window-reset 1h\n")
+        return 2
     if args.weekly_left is not None and args.weekly_reset is not None:
         now = int(time.time())
         snap = Snapshot(
@@ -223,18 +255,14 @@ def main(argv=None):
 
     def show_cached():
         data = st.load_state()
-        if not data:
-            print(
-                "\n  Nothing to read yet.\n"
-                "  Open a Claude Code session so the statusline can grab a\n"
-                "  reading, or do the math by hand:\n\n"
-                "    scorch --weekly-left 62 --weekly-reset 11h --window 80 --window-reset 1h\n"
-            )
+        if not _has_usable_snapshot(data):
+            print(NO_DATA)
             return False
-        snap = Snapshot(**data["snapshot"])
+        snap = Snapshot.from_dict(data.get("snapshot") or {})
+        rced = data.get("recommendation") or {}
         af = habits.active_fraction(st.load_history())
-        rec = compute(snap, data["recommendation"].get("r"),
-                      r_provisional=data["recommendation"].get("r_provisional", False),
+        rec = compute(snap, rced.get("r"),
+                      r_provisional=rced.get("r_provisional", False),
                       active_fraction=af)
         print(render(snap, rec, on, fc=data.get("forecast")))
         return True

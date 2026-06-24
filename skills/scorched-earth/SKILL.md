@@ -15,8 +15,9 @@ If the user wants to change (or is choosing for the first time) how the 🟢 lig
 run one of these and confirm:
 
 ```bash
-scorch --style emoji     # 🟢 SCORCH / 🟡 burn N%   (default)
-scorch --style text      # SCORCH / burn N%         (colored words, no emoji)
+scorch --style fire      # 🔥 BURN IT ALL / 🟡 burn N%   (animated flames, default)
+scorch --style emoji     # 🟢 BURN IT ALL / 🟡 burn N%
+scorch --style text      # BURN IT ALL / burn N%         (colored words, no emoji)
 scorch --style minimal   # ● green dot / ● amber dot
 scorch --style off       # no statusline light (CLI / skill only)
 ```
