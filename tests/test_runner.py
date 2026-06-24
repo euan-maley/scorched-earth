@@ -206,7 +206,7 @@ check("run_queue executes the runnable additive job", _out["t1"] == "pass")
 check("run_queue blocks the refactor via ROE leash", _out["r1"] == "blocked-roe")
 check("run_queue marks the oversize audit skipped-budget", _out["a1"] == "skipped-budget")
 check("run_queue final state is done", _rr.state == "done")
-check("run_queue re-renders live (on_step fired per job)", len(_steps) >= 3)
+check("run_queue re-renders live (on_step fired every persist)", len(_steps) == 5)
 check("run_queue records estimated spend, not measured", _rr.spent_estimated == 1.0)
 check("run_queue attaches merge/discard to executed job",
       _rr.jobs[0].branch == "scorched/t1" and "scorched/t1" in (_rr.jobs[0].merge_cmd or ""))
@@ -248,6 +248,15 @@ _merge_noid = subprocess.run([sys.executable, _scorch, "coa", "review", "--merge
 check("scorch coa review --merge with no id refuses cleanly (no traceback)",
       _merge_noid.returncode == 0 and "Traceback" not in _merge_noid.stderr
       and "usage" in _merge_noid.stdout.lower())
+
+_bare_queue = subprocess.run([sys.executable, _scorch, "coa", "queue"],
+                             capture_output=True, text=True, env=_cli_env)
+# With no snapshot the budget guard fires first; with a snapshot the id/--all guard fires.
+# Either way: exit 0, no traceback, and the output contains a useful hint.
+check("scorch coa queue with no --all/ids refuses cleanly",
+      _bare_queue.returncode == 0 and "Traceback" not in _bare_queue.stderr
+      and ("nothing specified" in _bare_queue.stdout.lower()
+           or "no live budget" in _bare_queue.stdout.lower()))
 
 print(f"\n{passed} checks passed.")
 if failures:

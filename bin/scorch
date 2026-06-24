@@ -229,7 +229,10 @@ def _coa_run_cli(rest):
             return 0
         roe = coa_io.load_roe(repo)
         coa = advisor.match(wl, coa_io.load_jobs(repo), roe)
-        pick = coa.queue if (all_flag or not ids) else [j for j in coa.queue if j.id in ids]
+        if not all_flag and not ids:
+            print("Nothing specified. Use `scorch coa queue --all` or pass job ids.")
+            return 0
+        pick = coa.queue if all_flag else [j for j in coa.queue if j.id in ids]
         if not pick:
             print("Nothing to queue (the latest COA produced no eligible jobs).")
             return 0

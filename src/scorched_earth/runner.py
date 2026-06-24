@@ -160,6 +160,9 @@ def write_sandbox_settings(worktree: str) -> None:
             "failIfUnavailable": True,
             "allowUnsandboxedCommands": False,
             "network": {
+                # API-only allowlist is what actually prevents push/exfil: the prelude's
+                # "DO NOT push" is advisory. Loosening allowedDomains (e.g. to add a package
+                # registry) is a SECURITY CHANGE that could open a push or exfiltration path.
                 "allowedDomains": ["api.anthropic.com", "*.anthropic.com"],
             },
             "filesystem": {
@@ -214,8 +217,8 @@ def _git(repo_root: str, *args: str) -> "subprocess.CompletedProcess[str]":
                           capture_output=True, text=True)
 
 
-def _diffstat(worktree: str) -> Optional[dict]:
-    p = _git(worktree, "diff", "--numstat", "HEAD~1..HEAD")
+def _diffstat(worktree: str, base_sha: str) -> Optional[dict]:
+    p = _git(worktree, "diff", "--numstat", base_sha + "..HEAD")
     if p.returncode != 0 or not p.stdout.strip():
         return None
     files = ins = dele = 0
@@ -250,6 +253,8 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
     wt = worktree_path(repo, job.id)
     br = branch_name(job.id)
     try:
+        base = _git(root, "rev-parse", "HEAD")
+        base_sha = base.stdout.strip() if base.returncode == 0 else "HEAD~1"
         # Worktree add is INSIDE the try AND its return code is checked: _git never raises
         # (no check=True), so a failed add (dup branch, full disk) must not silently proceed
         # against a missing worktree, nor abort the whole run.
@@ -263,7 +268,7 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
                            capture_output=True, text=True)
         subprocess.run(build_claude_cmd(job, wt), cwd=wt,
                        capture_output=True, text=True)
-        diff = _diffstat(wt)
+        diff = _diffstat(wt, base_sha)
         gate = build_gate_cmd(job, roe)
         if gate is None:
             return "pass", diff, "no gate configured (ROE test_cmd unset) — review manually."
@@ -336,7 +341,6 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None):
         _persist()
 
     rr.state = "done"
-    rr.spent_estimated = spent
     _persist()
     return rr
 
