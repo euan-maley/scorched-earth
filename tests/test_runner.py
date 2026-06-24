@@ -117,6 +117,31 @@ check("write_run_record persists under .scorched/runs",
 check("read_run_record reads the latest record",
       _io.read_run_record(_repo)["jobs"][0]["id"] == "j1")
 
+# --- Task 5: review render --------------------------------------------------------
+from scorched_earth.review_report import aar_dict, render_review_md, render_review_html  # noqa: E402
+
+_running = RunResult(generated_at="2026-06-24 03:14", state="running", repo=_repo,
+                     verdict="green", note="1 working.", available_windows=2.5,
+                     spent_estimated=1.0,
+                     jobs=[JobOutcome(seq=1, id="t", title="Tests", type="test", tier="M",
+                                      outcome="running", est_windows=1.0, branch="scorched/t")])
+_d = aar_dict(_running)
+check("aar_dict camelCases the template contract",
+      _d["state"] == "running" and _d["envelope"]["spentEstimated"] == 1.0
+      and _d["jobs"][0]["estWindows"] == 1.0)
+_md = render_review_md(_running)
+check("render_review_md lists job + outcome + estimated label",
+      "Tests" in _md and "running" in _md.lower() and "estimated" in _md.lower())
+_html_run = render_review_html(_running)
+check("render_review_html substitutes the data token",
+      "__REVIEW_JSON__" not in _html_run and _html_run.lstrip().lower().startswith("<!doctype html"))
+check("render_review_html auto-refreshes while running",
+      "http-equiv" in _html_run.lower() and "refresh" in _html_run.lower())
+_done = RunResult(generated_at="2026-06-24 03:20", state="done", repo=_repo, verdict="green",
+                  note="done.", available_windows=2.5, spent_estimated=1.0, jobs=_running.jobs)
+check("render_review_html omits refresh when done",
+      "http-equiv" not in render_review_html(_done).lower())
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

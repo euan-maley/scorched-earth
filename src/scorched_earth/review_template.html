@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scorched Earth — After-Action Report</title>
+<!--
+  AFTER-ACTION REPORT (AAR) — the COA runner's live monitor + morning-after debrief.
+  STUB TEMPLATE: replace with the Claude-design HTML (see docs/design brief). Contract:
+  all data flows through `const AAR = __REVIEW_JSON__`. Python substitutes the token.
+  When AAR.state === "running", the renderer also injects an auto-refresh meta tag.
+-->
+<style>
+  body{background:#0b0705;color:#f4e4c8;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:24px}
+  h1{letter-spacing:.2em} .job{border:1px solid #6b4a2b;padding:8px;margin:6px 0}
+  .pass{color:#9fd36a}.fail{color:#ff6a1f}.running{color:#ffd24a}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head><body>
+<h1>AFTER-ACTION REPORT</h1>
+<div id="run"></div><div id="jobs"></div>
+<script>
+const AAR = __REVIEW_JSON__;
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+document.getElementById('run').textContent =
+  AAR.repo + ' · ' + AAR.note + ' · ~' + AAR.envelope.spentEstimated +
+  ' of ' + AAR.envelope.available + ' windows (estimated)';
+document.getElementById('jobs').innerHTML = AAR.jobs.map(j =>
+  '<div class="job '+esc(j.outcome)+'">#'+j.seq+' ['+esc(j.outcome)+'] '+esc(j.title)+
+  (j.branch?' — '+esc(j.branch):'')+'</div>').join('');
+</script>
+</body></html>

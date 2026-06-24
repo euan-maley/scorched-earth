@@ -1,0 +1,60 @@
+"""Render a RunResult to Markdown (the record) and HTML (the live monitor + final debrief),
+both from one structured source so they never disagree. The HTML fills the bundled
+review_template.html by injecting one JSON blob (same pattern as coa_report.py / report.py).
+While the run is in progress the page auto-refreshes; when done it settles, no refresh."""
+
+from __future__ import annotations
+
+import json
+import os
+
+from .runner import RunResult
+
+_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "review_template.html")
+
+
+def _job_obj(j) -> dict:
+    return {
+        "seq": j.seq, "id": j.id, "title": j.title, "type": (j.type or "").upper(),
+        "tier": j.tier, "outcome": j.outcome, "branch": j.branch,
+        "estWindows": round(j.est_windows, 1), "diff": j.diff, "note": j.note,
+        "mergeCmd": j.merge_cmd, "discardCmd": j.discard_cmd,
+    }
+
+
+def aar_dict(rr: RunResult) -> dict:
+    return {
+        "generatedAt": rr.generated_at,
+        "state": rr.state,
+        "refreshSeconds": rr.refresh_seconds,
+        "sector": rr.sector,
+        "repo": rr.repo,
+        "verdict": (rr.verdict or "unknown").upper(),
+        "note": rr.note,
+        "envelope": {"available": round(rr.available_windows, 1),
+                     "spentEstimated": round(rr.spent_estimated, 1)},
+        "jobs": [_job_obj(j) for j in rr.jobs],
+    }
+
+
+def render_review_md(rr: RunResult) -> str:
+    lines = [f"# After-Action Report — {rr.generated_at}", "",
+             f"{rr.repo} · {rr.note}",
+             f"~{rr.spent_estimated:.1f} of {rr.available_windows:.1f} windows (estimated)", "",
+             "| # | job | type | outcome | branch | diff |",
+             "|---|-----|------|---------|--------|------|"]
+    for j in rr.jobs:
+        d = (f"+{j.diff['insertions']}/-{j.diff['deletions']} ({j.diff['files']}f)"
+             if j.diff else "—")
+        lines.append(f"| {j.seq} | {j.title} | {j.type} | {j.outcome} | {j.branch or '—'} | {d} |")
+    return "\n".join(lines) + "\n"
+
+
+def render_review_html(rr: RunResult) -> str:
+    with open(_TEMPLATE_PATH, encoding="utf-8") as f:
+        template = f.read()
+    html = template.replace("__REVIEW_JSON__", json.dumps(aar_dict(rr)))
+    if rr.state == "running":
+        meta = f'<meta http-equiv="refresh" content="{rr.refresh_seconds}">'
+        html = html.replace("<head>", "<head>\n" + meta, 1)
+    return html
