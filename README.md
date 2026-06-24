@@ -55,7 +55,7 @@ actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual s
 projected/recommended for the days ahead).
 
 <p align="center">
-  <img src="assets/sitrep-demo.gif" alt="Scorched Earth sitrep — green / burn-mode animation" width="560">
+  <img src="assets/sitrep-demo.gif" alt="Scorched Earth sitrep — green / burn-mode animation" width="640">
 </p>
 
 When the verdict goes green, the whole sitrep catches fire. Toggle the field across the
