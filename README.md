@@ -55,8 +55,13 @@ actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual s
 projected/recommended for the days ahead).
 
 <p align="center">
-  <img src="assets/sitrep-demo.gif" alt="Scorched Earth sitrep — green / burn-mode animation" width="640">
+  <a href="assets/sitrep-demo.mp4"><img src="assets/sitrep-poster.png" alt="Scorched Earth sitrep — green / burn-mode (click to play the 15s clip)" width="640"></a>
 </p>
+
+<!-- Inline player: open this README in github.com's web editor and drag assets/sitrep-demo.mp4
+     onto this line. GitHub uploads it to user-attachments and renders an autoplaying HTML5
+     player. (A repo-relative <video> tag is stripped from rendered READMEs, so we link the
+     full-res poster to the mp4 instead.) -->
 
 When the verdict goes green, the whole sitrep catches fire. Toggle the field across the
 three views:
@@ -67,7 +72,7 @@ three views:
   <img src="assets/sitrep-thisweek.png" alt="THE FIELD — this week (projected)" width="240">
 </p>
 
-<sub><i>Sample data. Full-quality clip: <a href="assets/sitrep-demo.webm">webm</a>. Stills and animation rendered from the real report pipeline.</i></sub>
+<sub><i>Sample data. The poster links to a 15s clip (<a href="assets/sitrep-demo.mp4">mp4, 1512×944</a>). Stills and footage rendered from the real report pipeline.</i></sub>
 
 ## Install
 
