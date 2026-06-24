@@ -75,6 +75,16 @@ _coa_empty = match(0.0, _jobs, DEFAULT_ROE)
 check("zero capacity yields empty queue with a note",
       _coa_empty.queue == [] and "nothing to burn" in _coa_empty.note.lower())
 
+# --- coa_report.py ---------------------------------------------------------------
+from scorched_earth.coa_report import render_md, render_html  # noqa: E402
+
+_md = render_md(_coa, "2026-06-24")
+check("render_md lists queued jobs and the date",
+      "cheap" in _md and "2026-06-24" in _md and _md.lstrip().startswith("#"))
+_html = render_html(_coa, "2026-06-24")
+check("render_html is a self-contained doc with the title",
+      _html.lstrip().lower().startswith("<!doctype html") and "COURSE OF ACTION" in _html.upper())
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
