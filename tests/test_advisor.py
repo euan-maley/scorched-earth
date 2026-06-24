@@ -37,6 +37,20 @@ _parsed = parse_jobs([
 check("parse_jobs keeps valid, drops malformed", len(_parsed) == 2)
 check("parse_jobs fills repo + tier", _parsed[0].repo == "/tmp/r" and _parsed[0].tier == "L")
 
+# --- roe.py ----------------------------------------------------------------------
+from scorched_earth.roe import ROE, DEFAULT_ROE, roe_from_dict, merge_roe  # noqa: E402
+
+check("DEFAULT_ROE is permissive",
+      DEFAULT_ROE.max_windows is None and DEFAULT_ROE.allowed_types is None)
+
+_roe = roe_from_dict({"max_windows": 2, "allowed_types": ["test"]})
+check("roe_from_dict overlays only given keys",
+      _roe.max_windows == 2 and _roe.allowed_types == ["test"] and _roe.min_weekly_left == 0.0)
+
+_merged = merge_roe(roe_from_dict({"max_windows": 9, "goals": ["a"]}),
+                    roe_from_dict({"max_windows": 2}))
+check("merge_roe: override wins where set, base kept otherwise",
+      _merged.max_windows == 2 and _merged.goals == ["a"])
 
 print(f"\n{passed} checks passed.")
 if failures:
