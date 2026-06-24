@@ -470,7 +470,9 @@ def is_stale(state: Optional[dict], now: int) -> bool:
     if snap.get("seven_day_pct") is None:
         return True
     reset = snap.get("five_hour_reset")
-    return reset is not None and reset < now
+    if reset is None:                 # incomplete snapshot: can't verify freshness -> stale
+        return True
+    return reset < now
 
 
 def read_envelope(state: Optional[dict], roe: ROE, now: int) -> Optional[float]:
@@ -504,8 +506,7 @@ def write_run_record(repo_path: str, record: dict, date: str) -> str:
     os.makedirs(out, exist_ok=True)
     path = os.path.join(out, f"{date}.json")
     with open(path, "w") as f:
-        import json as _json
-        _json.dump(record, f, indent=2)
+        json.dump(record, f, indent=2)
     return path
 
 
@@ -602,7 +603,9 @@ Create `src/scorched_earth/review_template.html` (a valid, self-contained placeh
   AFTER-ACTION REPORT (AAR) — the COA runner's live monitor + morning-after debrief.
   STUB TEMPLATE: replace with the Claude-design HTML (see docs/design brief). Contract:
   all data flows through `const AAR = __REVIEW_JSON__`. Python substitutes the token.
-  When AAR.state === "running", the renderer also injects a <meta http-equiv="refresh">.
+  When AAR.state === "running", the renderer also injects an auto-refresh meta tag.
+  (Keep the literal string "http-equiv" out of this comment — a test asserts it is
+  absent from the rendered page when the run is done.)
 -->
 <style>
   body{background:#0b0705;color:#f4e4c8;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:24px}
@@ -640,6 +643,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from .runner import RunResult
 
@@ -689,7 +693,9 @@ def render_review_html(rr: RunResult) -> str:
     html = template.replace("__REVIEW_JSON__", json.dumps(aar_dict(rr)))
     if rr.state == "running":
         meta = f'<meta http-equiv="refresh" content="{rr.refresh_seconds}">'
-        html = html.replace("<head>", "<head>\n" + meta, 1)
+        # Inject after the <head> open tag, tolerating attributes (the design template may
+        # use <head ...>); a lambda replacement avoids re backref-escaping in `meta`.
+        html = re.sub(r"(<head[^>]*>)", lambda m: m.group(1) + "\n" + meta, html, count=1)
     return html
 ```
 
@@ -829,8 +835,14 @@ def execute_job(repo: str, job: Job, roe: ROE) -> Tuple[str, Optional[dict], str
     root = os.path.realpath(os.path.expanduser(repo))
     wt = worktree_path(repo, job.id)
     br = branch_name(job.id)
-    _git(root, "worktree", "add", "-b", br, wt, "HEAD")
     try:
+        # Worktree add is INSIDE the try AND its return code is checked: _git never raises
+        # (no check=True), so a failed add (dup branch, full disk) must not silently proceed
+        # against a missing worktree, nor abort the whole run.
+        wadd = _git(root, "worktree", "add", "-b", br, wt, "HEAD")
+        if wadd.returncode != 0:
+            return "fail", None, "worktree add failed: " + (wadd.stderr or "").strip()[:200]
+        write_sandbox_settings(wt)                          # confine BEFORE any spawn
         if roe.setup_cmd:                                   # pre-warm with network (trusted, runner-run)
             subprocess.run(roe.setup_cmd, cwd=wt, shell=True, capture_output=True, text=True)
         subprocess.run(build_claude_cmd(job, wt), cwd=wt, capture_output=True, text=True)
@@ -985,8 +997,11 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None):
                              branch=branch_name(job.id))
         rr.jobs.append(running)
         _persist()                                    # live: this job is in progress
-        outcome, diff, note = execute(repo, job, roe)
-        spent += job.est_windows
+        try:
+            outcome, diff, note = execute(repo, job, roe)
+        except Exception as e:                        # an INJECTED executor may raise; the
+            outcome, diff, note = "fail", None, f"runner error: {e}"  # default execute_job
+        spent += job.est_windows                      # catches its own, but the seam must too
         running.outcome = outcome
         running.diff = diff
         running.note = note
@@ -1095,7 +1110,7 @@ Add the new handler near `_coa_cli`:
 def _coa_run_cli(rest):
     """`scorch coa <queue|run|review> …` — the Phase 2 queue-runner surface."""
     import time as _time
-    from scorched_earth import coa_io, advisor, runner, review_report
+    from scorched_earth import coa_io, advisor, runner
     sub = rest[0] if rest else "review"
     args = rest[1:]
     date = _time.strftime("%Y-%m-%d", _time.localtime())
@@ -1145,7 +1160,11 @@ def _coa_run_cli(rest):
             (coa_io.list_repos()[0] if coa_io.list_repos() else "."))
     if "--merge" in args or "--discard" in args:
         flag = "--merge" if "--merge" in args else "--discard"
-        jid = args[args.index(flag) + 1]
+        idx = args.index(flag)
+        if idx + 1 >= len(args):                       # no id after the flag: clean refusal
+            print(f"Usage: scorch coa review {flag} <job-id>")
+            return 0
+        jid = args[idx + 1]
         cmd = (runner.merge_cmd(repo, jid) if flag == "--merge"
                else runner.discard_cmd(repo, jid))
         print(f"Run this to {flag[2:]} {jid}:\n  {cmd}")
