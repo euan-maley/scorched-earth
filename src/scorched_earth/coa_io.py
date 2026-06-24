@@ -83,3 +83,42 @@ def write_coa(repo_path: str, md: str, html: str, date: str) -> Tuple[str, str]:
     with open(html_path, "w") as f:
         f.write(html)
     return md_path, html_path
+
+
+def _queue_path(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "queue.json")
+
+
+def _job_to_dict(j: Job) -> dict:
+    return {
+        "id": j.id, "repo": j.repo, "title": j.title, "type": j.type,
+        "est_windows": j.est_windows, "value": j.value, "rationale": j.rationale,
+        "launch": j.launch, "verify": j.verify, "status": j.status,
+    }
+
+
+def read_queue(repo_path: str) -> List[Job]:
+    data = st._read_json(_queue_path(repo_path), [])
+    return parse_jobs(data, repo=os.path.realpath(os.path.expanduser(repo_path)))
+
+
+def write_queue(repo_path: str, jobs: List[Job]) -> str:
+    os.makedirs(_repo_dir(repo_path), exist_ok=True)
+    path = _queue_path(repo_path)
+    for j in jobs:
+        j.status = "queued"
+    with open(path, "w") as f:
+        import json as _json
+        _json.dump([_job_to_dict(j) for j in jobs], f, indent=2)
+    return path
+
+
+def enqueue(repo_path: str, jobs: List[Job]) -> List[Job]:
+    existing = read_queue(repo_path)
+    seen = {j.id for j in existing}
+    for j in jobs:
+        if j.id not in seen:
+            existing.append(j)
+            seen.add(j.id)
+    write_queue(repo_path, existing)
+    return existing
