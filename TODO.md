@@ -1,6 +1,22 @@
 # TODO
 
-## Current Session (2026-06-25, pt.3) — "no rush" statusline tier + first-run setup, both MERGED to local main
+## Current Session (2026-06-25, pt.4) — DEFCON stack PUBLISHED (v1.6.9); public docs aligned + skriv
+
+**DONE this session:**
+- [x] **v1.6.9 published to public `origin/main`** (`d719659`, the user's release commit, pushed externally between pt.3 and pt.4). DEFCON COA + `⚪ no rush` tier + first-run setup are now LIVE publicly. Release bumped plugin.json/pyproject 1.6.7→1.6.9 and stripped `docs/superpowers/` planning docs (incl. the pt.3 specs) from the public tree.
+- [x] **Audited + aligned all public-facing writing** to current capabilities (`7787033`, pushed). README gained a "Burn it on something" COA section + first-run-setup note + `/coa` `/roe` `/war-room` in the install list; plugin.json + both marketplace.json descriptions now name the DEFCON COA layer. **skriv:** fixed 3 dash-as-punctuation in public copy (README no-rush line, coa.md + war-room.md descriptions); command *bodies* left as-is (technical instructions, skriv-exempt).
+- [x] **Verified every cited capability is real & working** before writing: live `scorch advise` (9-job DEFCON COA), `/war-room` cockpit boots on 127.0.0.1 w/ one-time token, `scorch roe`/`coa review` respond, JSON re-validated.
+
+**RESOLVED:** the long-standing "decide whether to push" question — published as **v1.6.9**; local `main` == `origin/main` (in sync).
+
+**RESUME / open:**
+1. **Demo-video DEFCON COA swap** (open since pt.2, now fully unblocked — the COA render exists AND is public): re-record CRT-framed, swap into the tour in place of `coa_t_crt`, relock the 3 COA captions + `scorch advise` divider to the DEFCON wording. Pipeline at `~/Downloads/scorched-earth-captures/_pipeline/`.
+2. Optional polish: a real `scorch list` subcommand (first-run setup confirms repos via `cat repos.json`).
+3. Confirm the two stripped specs (first-run-setup, no-rush-tier) are backed up locally if wanted — v1.6.9 removed them from the repo tree.
+
+---
+
+## Prior Session (2026-06-25, pt.3) — "no rush" statusline tier + first-run setup, both MERGED to local main
 
 **DONE this session** (subagent-driven-development, lean: spec→implementer→task-review→fix per feature; each single-task branch's review doubled as the whole-branch gate):
 - [x] **Visible "no rush" tier** (`bd7945f`, `4265242`; branch `feat/no-rush-tier`, merged FF). Split `compute()`'s overloaded `off` into **`low`** (deep reserves → statusline shows **`⚪ no rush`**, dim) and **`off`** (weekly budget exhausted). Ladder is now `low → amber → green`; amber/green and the thresholds (GREEN 1.0, AMBER 0.70) untouched. Also fixed a latent bug — the exhausted case used to print `HEADLINE["off"]` = *"Well stocked…"*; each state now gets its true banner. Touched `core.py` · `statusline.py` · `report.py` · `bin/scorch` + the-math/README; 8 new checks (`test_scorched` 57→65). Review caught 2 doc gaps the spec mandated + a loose test assert — all fixed.
