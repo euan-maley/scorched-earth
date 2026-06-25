@@ -75,4 +75,4 @@ what burns first, hit Run, and watch cards advance in place as work completes. T
 event-driven (one job at a time; no background loop). Security: binds 127.0.0.1, a one-time token
 is required on every request, the server runs only the agent-supplied launch for a queued job-id
 (never a command from the page), ROE is enforced server-side, and it dies when you Ctrl-C. The access token is embedded in the cockpit URL (e.g. `http://127.0.0.1:PORT/?t=TOKEN`), so treat the URL as a credential — never paste it into chat, screenshots, or shared terminals. Every
-job still runs under the Phase 2a sandbox. Closing the window or Ctrl-C stops it.
+job still runs under the Phase 2a sandbox. Closing the window or Ctrl-C stops it. A running job can be **killed** from its card — this aborts it, **discards its work** (you lose the partial output and the tokens already spent), and returns the card to Proposed; the next queued job takes over.

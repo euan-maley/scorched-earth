@@ -306,6 +306,8 @@ const STATE = __COCKPIT_JSON__;
     } else if(kind==="running"){
       foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
       if(job.est_windows!=null) foot.appendChild(html('<span class="cwin" style="margin-left:auto">EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+      const kb = html('<button class="btn btn--stop" data-kill="'+esc(job.id)+'" style="margin-left:auto;padding:4px 11px 3px;font-size:11px">\u2715 KILL</button>');
+      foot.appendChild(kb);
     } else { // finished
       const pass = job.outcome!=="fail";
       const badge = pass
@@ -455,6 +457,12 @@ const STATE = __COCKPIT_JSON__;
   document.getElementById("btnStop").addEventListener("click", ()=>{
     state.busy = false; renderHeader(); renderStatus(activeRepoObj());  // optimistic
     post("/stop", {});
+  });
+
+  root.addEventListener("click", e=>{
+    const k = e.target.closest("[data-kill]"); if(!k) return;
+    const repo = activeRepoObj(); if(!repo) return;
+    post("/kill", { repo: repo.repo, id: k.getAttribute("data-kill") });
   });
 
   /* ---------- drag: Proposed → Queued, and reorder within Queued ---------- */

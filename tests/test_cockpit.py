@@ -342,6 +342,10 @@ check("POST /kill with token + known repo is 200 (no-op when nothing running)",
       _kpost({"repo": _rkill, "id": "z"}, "k-tok") == 200)
 _hk.shutdown()
 
+# --- Phase 2c: cockpit Kill button wiring -----------------------------------------
+_kh = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
+check("cockpit template wires a /kill POST", '"/kill"' in _kh or "/kill" in _kh)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
