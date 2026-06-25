@@ -14,11 +14,18 @@ from .runner import RunResult
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "review_template.html")
 
 
+_OUTCOME_LABELS = {
+    "blocked-roe": "BLOCKED (ROE)",
+    "blocked-approval": "NEEDS APPROVAL",
+}
+
+
 def _job_obj(j) -> dict:
     return {
         "seq": j.seq, "id": j.id, "title": j.title, "type": (j.type or "").upper(),
-        "tier": j.tier, "outcome": j.outcome, "branch": j.branch,
-        "estWindows": round(j.est_windows, 1), "depth": j.depth, "diff": j.diff,
+        "defcon": j.defcon, "outcome": j.outcome,
+        "outcomeLabel": _OUTCOME_LABELS.get(j.outcome, (j.outcome or "").upper()),
+        "branch": j.branch, "diff": j.diff,
         "note": j.note, "mergeCmd": j.merge_cmd, "discardCmd": j.discard_cmd,
     }
 
@@ -32,22 +39,20 @@ def aar_dict(rr: RunResult) -> dict:
         "repo": rr.repo,
         "verdict": (rr.verdict or "unknown").upper(),
         "note": rr.note,
-        "envelope": {"available": round(rr.available_windows, 1),
-                     "spentEstimated": round(rr.spent_estimated, 1)},
         "jobs": [_job_obj(j) for j in rr.jobs],
     }
 
 
 def render_review_md(rr: RunResult) -> str:
     lines = [f"# After-Action Report — {rr.generated_at}", "",
-             f"{rr.repo} · {rr.note}",
-             f"~{rr.spent_estimated:.1f} of {rr.available_windows:.1f} windows (estimated)", "",
-             "| # | job | type | outcome | branch | diff |",
-             "|---|-----|------|---------|--------|------|"]
+             f"{rr.repo} · {rr.note}", "",
+             "| # | job | type | DEFCON | outcome | branch | diff |",
+             "|---|-----|------|--------|---------|--------|------|"]
     for j in rr.jobs:
         d = (f"+{j.diff['insertions']}/-{j.diff['deletions']} ({j.diff['files']}f)"
              if j.diff else "—")
-        lines.append(f"| {j.seq} | {j.title} | {j.type} | {j.outcome} | {j.branch or '—'} | {d} |")
+        lines.append(f"| {j.seq} | {j.title} | {j.type} | {j.defcon} | {j.outcome} "
+                     f"| {j.branch or '—'} | {d} |")
     return "\n".join(lines) + "\n"
 
 

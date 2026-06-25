@@ -35,9 +35,9 @@ check("ROE carries runner fields",
 check("ROE runner fields default to None",
       ROE().test_cmd is None and ROE().setup_cmd is None and ROE().unattended_types is None)
 
-_j = parse_jobs([{"id": "a", "est_windows": 1, "value": 5, "verify": "make test"}])[0]
+_j = parse_jobs([{"id": "a", "defcon": 2, "value": 5, "verify": "make test"}])[0]
 check("Job carries per-job verify override", _j.verify == "make test")
-check("Job verify defaults empty", parse_jobs([{"id": "b", "est_windows": 1, "value": 5}])[0].verify == "")
+check("Job verify defaults empty", parse_jobs([{"id": "b", "defcon": 2, "value": 5}])[0].verify == "")
 
 # --- Task 2: queue I/O ------------------------------------------------------------
 import importlib  # noqa: E402
@@ -51,43 +51,58 @@ import scorched_earth.coa_io as _io  # noqa: E402
 importlib.reload(_io)
 from scorched_earth.jobs import Job  # noqa: E402
 
-_q = [Job(id="j1", repo=_repo, title="One", type="test", est_windows=1.0, value=5),
-      Job(id="j2", repo=_repo, title="Two", type="docs", est_windows=0.5, value=3)]
+_q = [Job(id="j1", repo=_repo, title="One", type="test", defcon=3, value=5),
+      Job(id="j2", repo=_repo, title="Two", type="docs", defcon=4, value=3)]
 _io.write_queue(_repo, _q)
 check("read_queue round-trips written jobs",
       [j.id for j in _io.read_queue(_repo)] == ["j1", "j2"])
 check("write_queue marks jobs queued",
       all(j.status == "queued" for j in _io.read_queue(_repo)))
 
-_io.enqueue(_repo, [Job(id="j2", repo=_repo, title="dup", type="docs", est_windows=0.5, value=3),
-                    Job(id="j3", repo=_repo, title="Three", type="audit", est_windows=2.0, value=7)])
+_io.enqueue(_repo, [Job(id="j2", repo=_repo, title="dup", type="docs", defcon=4, value=3),
+                    Job(id="j3", repo=_repo, title="Three", type="audit", defcon=3, value=7)])
 check("enqueue appends new and dedups by id, preserving order",
       [j.id for j in _io.read_queue(_repo)] == ["j1", "j2", "j3"])
 
-# --- Task 3: predictive planner ---------------------------------------------------
-from scorched_earth.runner import plan_run, SAFE_UNATTENDED  # noqa: E402
+# --- Task 3: DEFCON planner (no budget) -------------------------------------------
+from scorched_earth.runner import plan_run, pick_next, SAFE_UNATTENDED  # noqa: E402
 from scorched_earth.roe import roe_from_dict as _rfd  # noqa: E402
 
 _pjobs = [
-    Job(id="t", repo="r", title="t", type="test", est_windows=1.0, value=5),
-    Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.5, value=9),  # not in SAFE
-    Job(id="d", repo="r", title="d", type="docs", est_windows=1.0, value=4),
-    Job(id="a", repo="r", title="a", type="audit", est_windows=2.0, value=8),
+    Job(id="t", repo="r", title="t", type="test", defcon=3, value=5),
+    Job(id="ref", repo="r", title="ref", type="refactor", defcon=3, value=9),  # not in SAFE
+    Job(id="d", repo="r", title="d", type="docs", defcon=3, value=4),
+    Job(id="a", repo="r", title="a", type="audit", defcon=3, value=8),
 ]
-_disp, _spent = plan_run(_pjobs, envelope=2.5, roe=ROE())
+_disp = plan_run(_pjobs, ROE())
 _by_id = {j.id: d for j, d in _disp}
-check("plan_run runs additive jobs that fit, in order",
+check("plan_run runs ROE-allowed additive jobs, in order",
       _by_id["t"] == "run" and _by_id["d"] == "run")
-check("plan_run blocks non-SAFE types regardless of budget", _by_id["ref"] == "blocked-roe")
-check("plan_run runs all ROE-allowed jobs regardless of envelope", _by_id["a"] == "run")
-check("plan_run predicted spend counts all run jobs (no budget gate)", _spent == 4.0)
+check("plan_run blocks non-SAFE types via the ROE leash", _by_id["ref"] == "blocked-roe")
+check("plan_run runs all ROE-allowed jobs (no budget gate)", _by_id["a"] == "run")
 check("SAFE_UNATTENDED is additive-only",
       set(SAFE_UNATTENDED) == {"test", "docs", "perf", "audit"})
 check("explicit unattended_types widens the leash",
-      {j.id: d for j, d in plan_run([_pjobs[1]], 5.0, _rfd({"unattended_types": ["refactor"]}))[0]}["ref"] == "run")
+      {j.id: d for j, d in plan_run([_pjobs[1]], _rfd({"unattended_types": ["refactor"]}))}["ref"] == "run")
 
-# --- Task 4: RunResult + envelope/staleness + run-record I/O ----------------------
-from scorched_earth.runner import JobOutcome, RunResult, read_envelope, is_stale  # noqa: E402
+# approval gate: defcon below auto_run_min_defcon needs explicit approval to run unattended
+_aq = [Job(id="a", repo="r", title="A", type="test", defcon=4),
+       Job(id="b", repo="r", title="B", type="audit", defcon=1)]  # approval-required by default
+_adisp = plan_run(_aq, ROE())                       # unattended: not approved
+check("plan_run blocks approval-required jobs unattended",
+      dict((j.id, d) for j, d in _adisp) == {"a": "run", "b": "blocked-approval"})
+_adisp2 = plan_run(_aq, ROE(), approved=True)
+check("plan_run runs everything once approved",
+      all(d == "run" for _, d in _adisp2))
+check("pick_next picks the ungated job first, regardless of approval",
+      pick_next(_aq, ROE()).id == "a" and pick_next(_aq, ROE(), approved=True).id == "a")
+# an approval-required job alone is skipped unless approved
+_bq = [Job(id="b", repo="r", title="B", type="audit", defcon=1)]
+check("pick_next skips an approval-required job unless approved",
+      pick_next(_bq, ROE()) is None and pick_next(_bq, ROE(), approved=True).id == "b")
+
+# --- Task 4: RunResult + staleness + run-record I/O -------------------------------
+from scorched_earth.runner import JobOutcome, RunResult, is_stale  # noqa: E402
 from dataclasses import asdict as _asdict  # noqa: E402
 
 _now = 1_000_000
@@ -98,47 +113,41 @@ _stale = {"snapshot": {"five_hour_reset": _now - 10, "seven_day_pct": 40},
 check("is_stale: fresh snapshot is usable", not is_stale(_fresh, _now))
 check("is_stale: elapsed-window snapshot is stale", is_stale(_stale, _now))
 check("is_stale: missing snapshot is stale", is_stale(None, _now))
-check("read_envelope returns windows_left when fresh", read_envelope(_fresh, ROE(), _now) == 3.0)
-check("read_envelope caps at ROE max_windows",
-      read_envelope(_fresh, _rfd({"max_windows": 2.0}), _now) == 2.0)
-check("read_envelope refuses (None) on stale snapshot", read_envelope(_stale, ROE(), _now) is None)
 _noreset = {"snapshot": {"seven_day_pct": 40},  # has weekly but no five_hour_reset
             "recommendation": {"windows_left": 3.0, "level": "green"}}
 check("is_stale: snapshot missing five_hour_reset is stale", is_stale(_noreset, _now))
-check("read_envelope refuses (None) when reset is missing", read_envelope(_noreset, ROE(), _now) is None)
 
 _rr = RunResult(generated_at="2026-06-24", state="done", repo=_repo, verdict="green",
-                note="1 secured.", available_windows=3.0, spent_estimated=1.0,
-                jobs=[JobOutcome(seq=1, id="j1", title="One", type="test", tier="M",
-                                 outcome="pass", est_windows=1.0, branch="scorched/j1")])
+                note="1 secured.",
+                jobs=[JobOutcome(seq=1, id="j1", title="One", type="test", defcon=3,
+                                 outcome="pass", branch="scorched/j1")])
 _path = _io.write_run_record(_repo, _asdict(_rr), "2026-06-24")
 check("write_run_record persists under .scorched/runs",
       os.path.exists(_path) and "runs" in _path and "2026-06-24" in _path)
 check("read_run_record reads the latest record",
       _io.read_run_record(_repo)["jobs"][0]["id"] == "j1")
 
-# --- Task 5: review render --------------------------------------------------------
+# --- Task 5: review render (DEFCON, no budget gauge) -------------------------------
 from scorched_earth.review_report import aar_dict, render_review_md, render_review_html  # noqa: E402
 
 _running = RunResult(generated_at="2026-06-24 03:14", state="running", repo=_repo,
-                     verdict="green", note="1 working.", available_windows=2.5,
-                     spent_estimated=1.0,
-                     jobs=[JobOutcome(seq=1, id="t", title="Tests", type="test", tier="M",
-                                      outcome="running", est_windows=1.0, branch="scorched/t")])
+                     verdict="green", note="1 working.",
+                     jobs=[JobOutcome(seq=1, id="t", title="Tests", type="test", defcon=2,
+                                      outcome="running", branch="scorched/t")])
 _d = aar_dict(_running)
-check("aar_dict camelCases the template contract",
-      _d["state"] == "running" and _d["envelope"]["spentEstimated"] == 1.0
-      and _d["jobs"][0]["estWindows"] == 1.0)
+check("aar_dict camelCases the template contract + carries DEFCON",
+      _d["state"] == "running" and _d["jobs"][0]["defcon"] == 2
+      and "envelope" not in _d)
 _md = render_review_md(_running)
-check("render_review_md lists job + outcome + estimated label",
-      "Tests" in _md and "running" in _md.lower() and "estimated" in _md.lower())
+check("render_review_md lists job + outcome",
+      "Tests" in _md and "running" in _md.lower())
 _html_run = render_review_html(_running)
 check("render_review_html substitutes the data token",
       "__REVIEW_JSON__" not in _html_run and _html_run.lstrip().lower().startswith("<!doctype html"))
 check("render_review_html auto-refreshes while running",
       "http-equiv" in _html_run.lower() and "refresh" in _html_run.lower())
 _done = RunResult(generated_at="2026-06-24 03:20", state="done", repo=_repo, verdict="green",
-                  note="done.", available_windows=2.5, spent_estimated=1.0, jobs=_running.jobs)
+                  note="done.", jobs=_running.jobs)
 check("render_review_html omits refresh when done",
       "http-equiv" not in render_review_html(_done).lower())
 check("render_review_html refresh injection survives running state",
@@ -149,7 +158,7 @@ from scorched_earth.runner import (worktree_path, branch_name, build_claude_cmd,
                                     build_gate_cmd, merge_cmd, discard_cmd,
                                     write_sandbox_settings)
 
-_jb = Job(id="cov", repo=_repo, title="Coverage", type="test", est_windows=1.0, value=5,
+_jb = Job(id="cov", repo=_repo, title="Coverage", type="test", defcon=3, value=5,
           launch="Raise coverage to 90%, TDD.")
 check("branch_name namespaces under scorched/", branch_name("cov") == "scorched/cov")
 check("worktree_path lives under .scorched/wt", worktree_path(_repo, "cov").endswith("/.scorched/wt/cov"))
@@ -160,7 +169,7 @@ check("build_claude_cmd prelude forbids push", any("do not push" in a.lower() fo
 check("build_claude_cmd includes --dangerously-skip-permissions",
       "--dangerously-skip-permissions" in _cmd)
 check("build_gate_cmd prefers per-job verify",
-      build_gate_cmd(Job(id="x", repo="r", title="x", type="test", est_windows=1, value=1,
+      build_gate_cmd(Job(id="x", repo="r", title="x", type="test", defcon=3, value=1,
                          verify="make test"), _rfd({"test_cmd": "pytest"})) == "make test")
 check("build_gate_cmd falls back to ROE test_cmd",
       build_gate_cmd(_jb, _rfd({"test_cmd": "pytest -q"})) == "pytest -q")
@@ -187,12 +196,12 @@ check("sandbox settings: allowUnsandboxedCommands is False",
 # --- Task 7: run_queue orchestration (hermetic, stub executor) --------------------
 from scorched_earth.runner import run_queue  # noqa: E402
 
-# queue: a runnable test job, a refactor (ROE-blocked), a big audit (won't fit 1.5 envelope)
+# queue: a runnable test job, a refactor (ROE-blocked), an audit (runs — no budget gate)
 _io.write_queue(_repo, [
-    Job(id="t1", repo=_repo, title="Tests", type="test", est_windows=1.0, value=5,
+    Job(id="t1", repo=_repo, title="Tests", type="test", defcon=3, value=5,
         launch="add tests"),
-    Job(id="r1", repo=_repo, title="Refactor", type="refactor", est_windows=0.2, value=9),
-    Job(id="a1", repo=_repo, title="Audit", type="audit", est_windows=3.0, value=8),
+    Job(id="r1", repo=_repo, title="Refactor", type="refactor", defcon=3, value=9),
+    Job(id="a1", repo=_repo, title="Audit", type="audit", defcon=3, value=8),
 ])
 _steps = []
 def _stub_exec(repo, job, roe):
@@ -204,10 +213,9 @@ _rr = run_queue(_repo, _state_ok, now=1, date="2026-06-24",
 _out = {j.id: j.outcome for j in _rr.jobs}
 check("run_queue executes the runnable additive job", _out["t1"] == "pass")
 check("run_queue blocks the refactor via ROE leash", _out["r1"] == "blocked-roe")
-check("run_queue runs all ROE-allowed jobs (audit now runs, no budget gate)", _out["a1"] == "pass")
+check("run_queue runs all ROE-allowed jobs (audit runs, no budget gate)", _out["a1"] == "pass")
 check("run_queue final state is done", _rr.state == "done")
 check("run_queue re-renders live (on_step fired every persist)", len(_steps) == 6)
-check("run_queue records estimated spend, not measured", _rr.spent_estimated == 2.0)
 check("run_queue attaches merge/discard to executed job",
       _rr.jobs[0].branch == "scorched/t1" and "scorched/t1" in (_rr.jobs[0].merge_cmd or ""))
 check("run_queue persisted a run record + html",
@@ -219,7 +227,7 @@ check("run_queue refuses on a stale snapshot", _refused is None)
 
 def _boom_exec(repo, job, roe):
     raise RuntimeError("claude died")
-_io.write_queue(_repo, [Job(id="t2", repo=_repo, title="T2", type="test", est_windows=0.5, value=5)])
+_io.write_queue(_repo, [Job(id="t2", repo=_repo, title="T2", type="test", defcon=3, value=5)])
 _rr2 = run_queue(_repo, _state_ok, now=1, date="2026-06-25", execute=_boom_exec)
 check("run_queue turns an executor crash into a failed job, not an abort",
       _rr2 is not None and _rr2.jobs[0].outcome == "fail")
@@ -264,7 +272,7 @@ from scorched_earth.runner import run_one  # noqa: E402
 _phase = []
 def _ex_ok(repo, job, roe):
     return ("pass", {"files": 1, "insertions": 5, "deletions": 0}, "gate passed.")
-_oc = run_one(_repo, Job(id="z1", repo=_repo, title="Z", type="test", est_windows=1.0, value=5),
+_oc = run_one(_repo, Job(id="z1", repo=_repo, title="Z", type="test", defcon=3, value=5),
               ROE(), _repo, 3, execute=_ex_ok, on_running=lambda oc: _phase.append(oc.outcome))
 check("run_one fires on_running with a 'running' outcome first", _phase == ["running"])
 check("run_one returns the finished outcome with branch + merge/discard",
@@ -273,7 +281,7 @@ check("run_one returns the finished outcome with branch + merge/discard",
 
 def _ex_boom(repo, job, roe):
     raise RuntimeError("died")
-_ocb = run_one(_repo, Job(id="z2", repo=_repo, title="Z2", type="test", est_windows=0.5, value=5),
+_ocb = run_one(_repo, Job(id="z2", repo=_repo, title="Z2", type="test", defcon=3, value=5),
                ROE(), _repo, 4, execute=_ex_boom)
 check("run_one turns an executor raise into a fail outcome", _ocb.outcome == "fail")
 
@@ -334,17 +342,17 @@ check("_run_killable returns returncode 0 on a clean exit (no kill_event)", _rc_
 _rc_bad = _run_killable([sys.executable, "-c", "import sys; sys.exit(7)"], None, _kt.Event())
 check("_run_killable surfaces a nonzero child returncode", _rc_bad[2] == 7)
 
-# --- Task 3 (new): pick_next no-budget-gate, detect_rate_limit, read_headroom, ROE caps ---
+# --- pick_next no-budget-gate, detect_rate_limit, ROE caps ------------------------
 from scorched_earth import runner as _rn  # noqa: E402
 from scorched_earth.jobs import Job as _RJ  # noqa: E402
 from scorched_earth.roe import ROE as _RROE  # noqa: E402
 
 # pick_next no longer gates on budget — returns the next ROE-allowed job regardless of size
-_q = [_RJ(id="big", repo=".", title="B", type="docs", est_windows=3.5, value=9, depth=10)]
-check("pick_next returns an over-headroom job (no budget gate)",
+_q = [_RJ(id="big", repo=".", title="B", type="docs", defcon=3, value=9)]
+check("pick_next returns the next ROE-allowed job (no budget gate)",
       _rn.pick_next(_q, _RROE()) is not None and _rn.pick_next(_q, _RROE()).id == "big")
 check("pick_next still skips ROE-disallowed types",
-      _rn.pick_next([_RJ(id="x", repo=".", title="X", type="refactor", est_windows=0.5, value=5, depth=3)],
+      _rn.pick_next([_RJ(id="x", repo=".", title="X", type="refactor", defcon=3, value=5)],
                     _RROE()) is None)
 
 # detect_rate_limit keys on the stream-json rate_limit signal, not normal failures
@@ -354,18 +362,11 @@ check("detect_rate_limit false on a normal job failure",
       _rn.detect_rate_limit('{"type":"result","is_error":true,"error":"server_error"}') is False)
 check("detect_rate_limit false on empty output", _rn.detect_rate_limit("") is False)
 
-# read_headroom mirrors the current-window-free model (fresh snapshot)
-_fresh = {"snapshot": {"five_hour_pct": 5, "seven_day_pct": 81, "five_hour_reset": 9_999_999_999},
-          "recommendation": {"windows_left": 0.2}}
-check("read_headroom = current-window free on a fresh snapshot",
-      abs(_rn.read_headroom(_fresh, 1) - 0.95) < 1e-9)
-
-# ROE gains optional caps, default off
-check("ROE caps default to None (off)", _RROE().max_jobs is None and _RROE().max_est_windows is None)
+# ROE gains an optional run cap, default off (window cost caps are gone)
+check("ROE max_jobs defaults to None (off)", _RROE().max_jobs is None)
 
 # plan_run no longer forfeits for budget
-_disp, _ = _rn.plan_run([_RJ(id="d", repo=".", title="D", type="docs", est_windows=3.5, value=9, depth=10)],
-                        999, _RROE())
+_disp = _rn.plan_run([_RJ(id="d", repo=".", title="D", type="docs", defcon=3, value=9)], _RROE())
 check("plan_run never emits skipped-budget",
       all(d != "skipped-budget" for _, d in _disp))
 
@@ -376,8 +377,8 @@ def _mk_runner_repo(jobs):
     r = _tf.mkdtemp(); _os.makedirs(_os.path.join(r, ".scorched"), exist_ok=True)
     from scorched_earth import coa_io as _cio
     _cio.write_queue(r, jobs); return r
-_lim_repo = _mk_runner_repo([_RJ(id="j1", repo=".", title="1", type="docs", est_windows=0.5, value=9, depth=3),
-                             _RJ(id="j2", repo=".", title="2", type="docs", est_windows=0.5, value=8, depth=3)])
+_lim_repo = _mk_runner_repo([_RJ(id="j1", repo=".", title="1", type="docs", defcon=3, value=9),
+                             _RJ(id="j2", repo=".", title="2", type="docs", defcon=3, value=8)])
 _calls = []
 def _lim_exec(repo, job, roe):
     _calls.append(job.id)

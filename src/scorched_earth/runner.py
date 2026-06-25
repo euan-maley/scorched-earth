@@ -1,7 +1,8 @@
-"""The COA queue-runner: drains .scorched/queue.json, executes each job headless in a
-sandboxed git worktree under the ROE leash, and emits a live After-Action Report. I/O tier
-(subprocess + git); never imported by the statusline hot path. The budget/planning core
-(`plan_run`) is pure and unit-tested; the per-job real-world work is one injected callable."""
+"""The COA queue-runner: drains .scorched/queue.json in DEFCON order, executes each job headless
+in a sandboxed git worktree under the ROE leash, and emits a live After-Action Report. I/O tier
+(subprocess + git); never imported by the statusline hot path. The pre-run disposition core
+(`plan_run`) is pure and unit-tested; the per-job real-world work is one injected callable. There
+is no budget layer — execution stops on the real usage-limit, not a predicted envelope."""
 
 from __future__ import annotations
 
@@ -29,19 +30,20 @@ def _allowed_unattended(roe: ROE, job_type: str) -> bool:
     return job_type in allowed
 
 
-def plan_run(jobs: List[Job], envelope: float, roe: ROE) -> Tuple[List[Tuple[Job, str]], float]:
-    """Pure pre-run disposition. ROE-blocked jobs are 'blocked-roe'; everything else is 'run'
-    (no budget forfeiting — execution stops on a real usage-limit, not a predicted envelope).
-    `envelope` is kept in the signature for back-compat but no longer gates."""
+def plan_run(jobs: List[Job], roe: ROE, *, approved: bool = False) -> List[Tuple[Job, str]]:
+    """Pure pre-run disposition: 'blocked-roe' (type not unattended), 'blocked-approval'
+    (defcon below the gate and not approved), else 'run'. No budget — execution stops on a
+    real usage-limit, not a predicted envelope."""
+    from .advisor import approval_required
     out: List[Tuple[Job, str]] = []
-    spent = 0.0
     for j in jobs:
         if not _allowed_unattended(roe, j.type):
             out.append((j, "blocked-roe"))
-            continue
-        out.append((j, "run"))
-        spent += j.est_windows
-    return out, spent
+        elif approval_required(j, roe) and not approved:
+            out.append((j, "blocked-approval"))
+        else:
+            out.append((j, "run"))
+    return out
 
 
 @dataclass
@@ -50,10 +52,8 @@ class JobOutcome:
     id: str
     title: str
     type: str
-    tier: str
-    outcome: str                      # running|pass|fail|blocked-roe|killed|pending
-    est_windows: float
-    depth: int = 5                    # 1-10 agent-rated cost/depth (mirrors Job.depth)
+    outcome: str                      # running|pass|fail|blocked-roe|blocked-approval|killed|limit
+    defcon: int = 3                   # 1..5 criticality (mirrors Job.defcon)
     branch: Optional[str] = None
     diff: Optional[dict] = None       # {"files":int,"insertions":int,"deletions":int} or None
     note: str = ""
@@ -64,12 +64,10 @@ class JobOutcome:
 @dataclass
 class RunResult:
     generated_at: str
-    state: str                        # running | done
+    state: str                        # running | done | halted
     repo: str
     verdict: str
     note: str
-    available_windows: float
-    spent_estimated: float
     jobs: List[JobOutcome] = field(default_factory=list)
     refresh_seconds: int = 6
     sector: str = "SECTOR 07"
@@ -87,41 +85,12 @@ def is_stale(state: Optional[dict], now: int) -> bool:
     return reset < now
 
 
-def read_headroom(state, now):
-    """COA execution headroom: unused capacity of the CURRENT 5-hour window, in window-units.
-    None when the snapshot is stale/missing (same honesty rule as read_envelope)."""
-    if is_stale(state, now):
-        return None
-    snap = (state or {}).get("snapshot") or {}
-    five = snap.get("five_hour_pct")
-    if five is None:
-        return None
-    return max(0.0, (100.0 - float(five)) / 100.0)
-
-
 def detect_rate_limit(output):
     """True when headless `claude -p --output-format stream-json` output carries the rate-limit
     signal (429 api_retry). Substring match on the stable error value; exit code alone can't tell
     a usage-limit from a normal failure. Conservative: only the rate_limit value, not 'overloaded'."""
     s = output or ""
     return '"error":"rate_limit"' in s or '"error": "rate_limit"' in s or '"rate_limit_error"' in s
-
-
-def read_envelope(state: Optional[dict], roe: ROE, now: int) -> Optional[float]:
-    """The window envelope for this run, from the cached snapshot's windows_left, capped by
-    ROE max_windows. Returns None (refuse) when the snapshot is stale/missing — the same
-    honesty rule `scorch --report` enforces. Staleness is delegated to is_stale (needs `now`),
-    so the runner never plans against an elapsed window."""
-    if is_stale(state, now):
-        return None
-    rec = (state or {}).get("recommendation") or {}
-    wl = rec.get("windows_left")
-    if wl is None:
-        return None
-    env = max(0.0, float(wl))
-    if roe.max_windows is not None:
-        env = min(env, roe.max_windows)
-    return env
 
 
 # ---------------------------------------------------------------------------
@@ -363,11 +332,12 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
 def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
     if disposition == "blocked-roe":
         note = f"type '{job.type}' not in unattended leash — not run."
+    elif disposition == "blocked-approval":
+        note = f"DEFCON {job.defcon} needs approval — not run unattended."
     else:
         note = ""
-    return JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
-                      outcome=disposition, est_windows=job.est_windows, depth=job.depth,
-                      note=note)
+    return JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, defcon=job.defcon,
+                      outcome=disposition, note=note)
 
 
 def run_one(repo, job, roe, repo_disp, seq, *, execute, on_running=None):
@@ -375,9 +345,8 @@ def run_one(repo, job, roe, repo_disp, seq, *, execute, on_running=None):
     optionally surfaces it via on_running (live two-phase), runs the injected `execute`
     (any raise -> 'fail' so one job never aborts a run), then fills the result. No I/O of
     its own — the caller persists. Shared by the batch run_queue and the cockpit engine."""
-    oc = JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
-                    outcome="running", est_windows=job.est_windows, depth=job.depth,
-                    branch=branch_name(job.id))
+    oc = JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, defcon=job.defcon,
+                    outcome="running", branch=branch_name(job.id))
     if on_running:
         on_running(oc)
     try:
@@ -390,25 +359,22 @@ def run_one(repo, job, roe, repo_disp, seq, *, execute, on_running=None):
     return oc
 
 
-def run_queue(repo, state, *, now, date, execute=None, on_step=None):
-    """Drain the queue under the full safety model. Returns the final RunResult, or None if it
-    refuses (stale/absent snapshot). Persists the record + HTML after every job so the same
-    artifact is the live monitor and the final debrief. `execute` is injected for testing."""
+def run_queue(repo, state, *, now, date, execute=None, on_step=None, approved=False):
+    """Drain the queue in DEFCON order under the ROE + approval leash. Returns the final
+    RunResult, or None if it refuses (stale/absent snapshot). Persists the record + HTML after
+    every job so the same artifact is the live monitor and the final debrief. No budget gate:
+    execution halts only on a real usage-limit. `execute` is injected for testing; `approved`
+    lets gated (high-DEFCON-criticality) jobs run."""
     from . import review_report as _rev   # lazy: avoid import cycle at module load
     execute = execute or execute_job
-
-    roe = coa_io.load_roe(repo)
-    envelope = read_envelope(state, roe, now)
-    if envelope is None:
+    if is_stale(state, now):
         return None
-
+    roe = coa_io.load_roe(repo)
     queue = coa_io.read_queue(repo)
-    dispositions, predicted = plan_run(queue, envelope, roe)
+    dispositions = plan_run(queue, roe, approved=approved)
     verdict = ((state or {}).get("recommendation") or {}).get("level", "unknown")
     repo_disp = os.path.realpath(os.path.expanduser(repo))
-
-    rr = RunResult(generated_at=date, state="running", repo=repo_disp, verdict=verdict,
-                   note="", available_windows=envelope, spent_estimated=0.0)
+    rr = RunResult(generated_at=date, state="running", repo=repo_disp, verdict=verdict, note="")
 
     def _persist():
         rr.note = _summary(rr)
@@ -419,7 +385,6 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None):
         if on_step:
             on_step(rr)
 
-    spent = 0.0
     for i, (job, disp) in enumerate(dispositions, start=1):
         if disp != "run":
             rr.jobs.append(_outcome_for(job, i, disp))
@@ -432,10 +397,7 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None):
             rr.state = "halted"
             _persist()
             return rr
-        spent += job.est_windows
-        rr.spent_estimated = spent
         _persist()
-
     rr.state = "done"
     _persist()
     return rr
@@ -446,13 +408,13 @@ def _summary(rr: RunResult) -> str:
     for j in rr.jobs:
         n[j.outcome] = n.get(j.outcome, 0) + 1
     parts = []
-    if n.get("pass"):           parts.append(f"{n['pass']} secured")
-    if n.get("fail"):           parts.append(f"{n['fail']} cratered")
-    if n.get("blocked-roe"):    parts.append(f"{n['blocked-roe']} blocked")
-    if n.get("killed"):         parts.append(f"{n['killed']} killed")
-    if n.get("running"):        parts.append(f"{n['running']} working")
-    head = ", ".join(parts) if parts else "no jobs"
-    return f"{head}. ~{rr.spent_estimated:.1f} of {rr.available_windows:.1f} windows (estimated)."
+    if n.get("pass"):              parts.append(f"{n['pass']} secured")
+    if n.get("fail"):              parts.append(f"{n['fail']} cratered")
+    if n.get("blocked-roe"):       parts.append(f"{n['blocked-roe']} blocked (ROE)")
+    if n.get("blocked-approval"):  parts.append(f"{n['blocked-approval']} need approval")
+    if n.get("killed"):            parts.append(f"{n['killed']} killed")
+    if n.get("running"):           parts.append(f"{n['running']} working")
+    return (", ".join(parts) if parts else "no jobs") + "."
 
 
 def _dataclass_dict(rr: RunResult) -> dict:
@@ -460,35 +422,11 @@ def _dataclass_dict(rr: RunResult) -> dict:
     return asdict(rr)
 
 
-def pick_next(queue, roe):
-    """First queued job that is ROE-allowed to run unattended. No budget gate — the cockpit/runner
-    drain whatever is queued and stop only on a real usage-limit (or an optional ROE cap)."""
+def pick_next(queue, roe, *, approved=False):
+    """First queued job ROE-allowed to run unattended and not gated behind approval (unless
+    approved). Drains in given order; the queue is already DEFCON-sorted by the matcher."""
+    from .advisor import approval_required
     for j in queue:
-        if _allowed_unattended(roe, j.type):
+        if _allowed_unattended(roe, j.type) and (approved or not approval_required(j, roe)):
             return j
     return None
-
-
-class EnvelopeTracker:
-    """Refreshing budget envelope for the cockpit. Predicts spend between snapshots and
-    re-syncs to ground truth whenever an interactive session advances state.json's snapshot
-    timestamp (the new windows_left already reflects the engine's real headless burn)."""
-
-    def __init__(self, roe):
-        self.roe = roe
-        self._synced_ts = object()      # sentinel: forces a re-sync on first call
-        self.spent = 0.0
-
-    def available(self, state, now):
-        snap = (state or {}).get("snapshot") or {}
-        ts = snap.get("now")
-        if ts != self._synced_ts:       # snapshot advanced -> re-sync to ground truth
-            self._synced_ts = ts
-            self.spent = 0.0
-        base = read_envelope(state, self.roe, now)
-        if base is None:
-            return None
-        return max(0.0, base - self.spent)
-
-    def charge(self, est):
-        self.spent += est
