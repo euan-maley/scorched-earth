@@ -165,6 +165,8 @@ _dj = parse_jobs([{"id": "a", "title": "A", "type": "test", "depth": 7, "value":
 check("parse_jobs: depth job derives est_windows", _dj.depth == 7 and _dj.est_windows == 2.0)
 _lj = parse_jobs([{"id": "b", "title": "B", "type": "test", "est_windows": 1.0, "value": 5}])[0]
 check("parse_jobs: legacy est_windows job derives a display depth", _lj.est_windows == 1.0 and _lj.depth == 6)
+check("parse_jobs: when both depth and est_windows given, depth wins",
+      parse_jobs([{"id": "x", "depth": 5, "est_windows": 99, "value": 1}])[0].est_windows == 1.0)
 check("parse_jobs: a dict with neither depth nor est_windows is skipped",
       parse_jobs([{"id": "c", "value": 3}]) == [])
 

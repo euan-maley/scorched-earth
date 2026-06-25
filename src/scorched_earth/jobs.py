@@ -61,7 +61,8 @@ class Job:
 def parse_jobs(data, repo: str = "") -> List[Job]:
     """Build Jobs from a list of dicts. Each needs id + value + at least one cost field
     (depth, 1-10, or legacy est_windows). Fills both: depth-> est_windows (windows_for_depth),
-    or legacy est_windows -> a display depth (depth_for_windows)."""
+    or legacy est_windows -> a display depth (depth_for_windows). If both `depth` and
+    `est_windows` are given, `depth` wins (est_windows is re-derived from it)."""
     out: List[Job] = []
     for d in (data or []):
         if not isinstance(d, dict):
