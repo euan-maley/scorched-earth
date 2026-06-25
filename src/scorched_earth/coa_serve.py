@@ -21,10 +21,11 @@ from .roe import DEFAULT_ROE
 
 
 class Engine:
-    """Event-driven cockpit engine. `advance` runs ONE eligible affordable job and chains on
-    completion. Re-entrancy is blocked by a global BUSY flag (one job at a time across all
-    repos, since budget is one pool). Terminates by default: empty/over-budget/ROE-blocked
-    queue or stop -> idle. A crashing job is recorded fail, dropped, and the chain continues."""
+    """Cockpit engine with parallel per-repo workers sharing one global budget. Each armed repo
+    gets its own drain worker thread; a single EnvelopeTracker reserves (charges) a job's cost
+    at pick time under the lock so concurrent workers can't overspend the shared weekly budget.
+    Terminates by default: empty/over-budget/ROE-blocked queue or stop -> idle per repo.
+    A crashing job is recorded fail, dropped, and the worker continues."""
 
     def __init__(self, repos, *, execute=None, broadcast=None, load_state=None, now=None):
         self.repos = [os.path.realpath(os.path.expanduser(r)) for r in repos]
@@ -33,30 +34,42 @@ class Engine:
         self._load_state = load_state or st.load_state
         self._now = now or (lambda: int(time.time()))
         self._lock = threading.Lock()
-        self._busy = False
         self._stop = False
-        self._running = None                       # {"repo","id"} or None
-        self._kill_event = None                    # threading.Event or None (when idle)
-        self._tracker = None                       # one global EnvelopeTracker (budget is one pool)
-        self._active = []                          # repos armed for the current run
-        self._results = {}                         # repo -> RunResult (accumulating)
+        self._tracker = None                       # one global shared-budget EnvelopeTracker
+        self._running = {}                         # repo -> {"repo","id"} (one in-flight job per repo)
+        self._kill_events = {}                     # repo -> threading.Event
+        self._workers = set()                      # repos with a live drain worker
+        self._results = {}                         # repo -> RunResult
 
     # ---- public mutations (called by HTTP handlers) ----
+    def _ensure_worker(self, repo):
+        """Register a worker for repo if none is live and we're not stopped. Returns True if the
+        CALLER should spawn the thread (registration happened here)."""
+        with self._lock:
+            if self._stop or repo in self._workers:
+                return False
+            self._workers.add(repo)
+            return True
+
+    def run(self, repos):
+        if isinstance(repos, str):
+            repos = [repos]
+        repos = [os.path.realpath(os.path.expanduser(r)) for r in repos]
+        with self._lock:
+            self._stop = False
+        for rp in repos:
+            if self._ensure_worker(rp):
+                threading.Thread(target=self._drain_repo, args=(rp,), daemon=True).start()
+
     def queue(self, repo, job_id):
-        # promote a proposed job into the queue by id. The queue.json read-modify-write
-        # runs under the lock so concurrent /queue|/unqueue|/reorder POSTs (and advance's
-        # own unqueue) can't race and lose updates. Lock is released before advance (the
-        # lock is non-reentrant and advance re-acquires it).
         jobs = {j.id: j for j in coa_io.load_jobs(repo)}
         if job_id in jobs:
             with self._lock:
                 coa_io.enqueue(repo, [jobs[job_id]])
         rp = os.path.realpath(os.path.expanduser(repo))
-        with self._lock:
-            if rp not in self._active:
-                self._active = self._active + [rp]   # a dragged-in card joins the active run
         self._broadcast()
-        self.advance()
+        if self._ensure_worker(rp):                # a dragged-in card starts/continues this repo's worker
+            threading.Thread(target=self._drain_repo, args=(rp,), daemon=True).start()
 
     def unqueue(self, repo, job_id):
         with self._lock:
@@ -68,90 +81,81 @@ class Engine:
             coa_io.reorder(repo, ids)
         self._broadcast()
 
-    def run(self, repos):
-        if isinstance(repos, str):
-            repos = [repos]
-        active = [os.path.realpath(os.path.expanduser(r)) for r in repos]
-        with self._lock:
-            self._active = active
-            self._stop = False                     # Run = go/resume
-        self.advance()
-
     def stop(self):
         with self._lock:
-            self._stop = True
+            self._stop = True                      # halts every worker after its current job
 
     def kill(self, repo, job_id):
         target = os.path.realpath(os.path.expanduser(repo))
         with self._lock:
-            if (self._running and self._running == {"repo": target, "id": job_id}
-                    and self._kill_event is not None):
-                self._kill_event.set()
+            r = self._running.get(target)
+            ke = self._kill_events.get(target)
+            if r and r.get("id") == job_id and ke is not None:
+                ke.set()
 
     # ---- state ----
     def state_json(self):
         with self._lock:
-            running = dict(self._running) if self._running else None
-            busy = self._busy
+            running = [dict(v) for v in self._running.values()]
+            busy = bool(running) or bool(self._workers)
         return {"repos": [coa_io.board_state(r) for r in self.repos],
                 "running": running, "busy": busy}
 
-    # ---- the event-driven step ----
-    def advance(self):
+    # ---- per-repo drain worker ----
+    def _drain_repo(self, repo):
         while True:
             with self._lock:
-                if self._busy or self._stop:
-                    return
-                if self._tracker is None:
-                    self._tracker = runner.EnvelopeTracker(DEFAULT_ROE)  # global budget, no per-repo cap
-                avail = self._tracker.available(self._load_state(), self._now())
-                if avail is None:
-                    return                          # stale/absent snapshot -> refuse the run
-                picked = None
-                for rp in self._active:             # first active repo (in order) with eligible work
-                    roe = coa_io.load_roe(rp)
-                    job = runner.pick_next(coa_io.read_queue(rp), avail, roe)
-                    if job is not None:
-                        picked = (rp, roe, job)
-                        break
-                if picked is None:
-                    return                          # idle: nothing eligible/affordable anywhere
-                rp, roe, job = picked
-                self._busy = True
-                self._running = {"repo": rp, "id": job.id}
-                self._kill_event = threading.Event()
-                kill_event = self._kill_event
-                coa_io.unqueue(rp, job.id)          # remove-on-pick
-                rr = self._results.get(rp)
-                if rr is None:
-                    rr = runner.RunResult(
-                        generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
-                        state="running", repo=rp, verdict="unknown", note="",
-                        available_windows=avail, spent_estimated=0.0)
-                    self._results[rp] = rr
-                seq = len(rr.jobs) + 1
+                if self._stop:
+                    self._workers.discard(repo)
+                    done = True
+                else:
+                    if self._tracker is None:
+                        self._tracker = runner.EnvelopeTracker(DEFAULT_ROE)   # global shared budget
+                    avail = self._tracker.available(self._load_state(), self._now())
+                    roe = coa_io.load_roe(repo)
+                    job = None if avail is None else runner.pick_next(coa_io.read_queue(repo), avail, roe)
+                    if job is None:
+                        self._workers.discard(repo)                            # this repo: nothing to do
+                        done = True
+                    else:
+                        done = False
+                        self._tracker.charge(job.est_windows)                  # RESERVE under the lock
+                        self._running[repo] = {"repo": repo, "id": job.id}
+                        ke = threading.Event()
+                        self._kill_events[repo] = ke
+                        coa_io.unqueue(repo, job.id)
+                        rr = self._results.get(repo)
+                        if rr is None:
+                            rr = runner.RunResult(
+                                generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
+                                state="running", repo=repo, verdict="unknown", note="",
+                                available_windows=avail, spent_estimated=0.0)
+                            self._results[repo] = rr
+                        rr.spent_estimated = rr.spent_estimated + job.est_windows
+                        seq = len(rr.jobs) + 1
             self._broadcast()
+            if done:
+                return
 
-            runner._kill_ctx.event = kill_event
+            runner._kill_ctx.event = ke              # per-worker-thread kill handle (thread-local)
             try:
-                oc = runner.run_one(rp, job, roe, rp, seq, execute=self._execute)
+                oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
             finally:
                 runner._kill_ctx.event = None
 
             with self._lock:
                 if oc.outcome in ("pass", "fail"):
-                    self._tracker.charge(job.est_windows)           # global budget
                     rr.jobs.append(oc)
-                    rr.spent_estimated = rr.spent_estimated + job.est_windows   # this repo's own spend
-                    self._persist(rp, rr)
-                self._kill_event = None
-                self._busy = False
-                self._running = None
-                stopped = self._stop
+                    self._persist(repo, rr)          # killed: not appended (board -> proposed); budget already reserved
+                self._running.pop(repo, None)
+                self._kill_events.pop(repo, None)
+                if self._stop:
+                    self._workers.discard(repo)
+                    done = True
             self._broadcast()
-
-            if stopped:
+            if done:
                 return
+            # loop: drain the next job in THIS repo
 
     def _persist(self, repo, rr):
         from . import review_report

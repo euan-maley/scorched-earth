@@ -107,6 +107,13 @@ check("board_state with no run record yields empty finished + the job proposed",
 
 # --- Task 5: Engine (event-driven advance) ----------------------------------------
 from scorched_earth.coa_serve import Engine  # noqa: E402
+import time as _time5  # noqa: E402
+
+def _wait_idle(eng, timeout=5):
+    """Wait up to `timeout` seconds for the engine to go idle (busy=False)."""
+    end = _time5.time() + timeout
+    while _time5.time() < end and eng.state_json()["busy"]:
+        _time5.sleep(0.01)
 
 def _mk_repo(jobs):
     r = tempfile.mkdtemp()
@@ -130,7 +137,7 @@ _r = _mk_repo([Job(id="t1", repo=".", title="T1", type="test", est_windows=1.0, 
 _beats = []
 _eng = Engine([_r], execute=_exec, broadcast=lambda: _beats.append(1),
               load_state=lambda: _STATE, now=lambda: 1)
-_eng.run(_r)
+_eng.run(_r); _wait_idle(_eng)
 check("engine drains the affordable additive cards in order", _ran == ["t1", "t2"])
 check("engine skips the ROE-blocked card (refactor never ran)", "r1" not in _ran)
 check("engine stops when the next card is over budget (t3 left queued)",
@@ -148,7 +155,7 @@ def _boom(repo, job, roe):
 _r2 = _mk_repo([Job(id="x1", repo=".", title="X1", type="test", est_windows=0.5, value=5),
                 Job(id="x2", repo=".", title="X2", type="test", est_windows=0.5, value=4)])
 _eng2 = Engine([_r2], execute=_boom, load_state=lambda: _STATE, now=lambda: 1)
-_eng2.run(_r2)
+_eng2.run(_r2); _wait_idle(_eng2)
 check("engine: a crashing job is dropped (not retried) and the chain continues",
       _ran2 == ["x1", "x2"] and _io.read_queue(_r2) == [])
 
@@ -161,31 +168,8 @@ def _exec_stop(repo, job, roe):
 _r3 = _mk_repo([Job(id="s1", repo=".", title="S1", type="test", est_windows=0.5, value=5),
                 Job(id="s2", repo=".", title="S2", type="test", est_windows=0.5, value=4)])
 _eng3 = Engine([_r3], execute=_exec_stop, load_state=lambda: _STATE, now=lambda: 1)
-_eng3.run(_r3)
+_eng3.run(_r3); _wait_idle(_eng3)
 check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
-
-# busy guard under real concurrency: a second run() while a job is in flight must no-op
-import threading as _th
-_run_evt = _th.Event(); _gate = _th.Event(); _cstarted = []
-def _blocking_exec(repo, job, roe):
-    _cstarted.append(job.id)
-    if job.id == "c1":
-        _run_evt.set()
-        _gate.wait(2)
-    return ("pass", None, "ok")
-_rc = _mk_repo([Job(id="c1", repo=".", title="C1", type="test", est_windows=0.5, value=5),
-                Job(id="c2", repo=".", title="C2", type="test", est_windows=0.5, value=4)])
-_engc = Engine([_rc], execute=_blocking_exec, load_state=lambda: _STATE, now=lambda: 1)
-_t1 = _th.Thread(target=_engc.run, args=(_rc,), daemon=True); _t1.start()
-_run_evt.wait(2)                          # c1 is now executing (busy=True, lock free)
-_engc.run(_rc)                            # concurrent second run() must no-op (busy guard)
-check("engine busy guard: a concurrent run() no-ops while a job is in flight",
-      _cstarted == ["c1"] and _engc.state_json()["busy"] is True)
-_gate.set()                               # release c1; the loop then drains c2
-_t1.join(3)
-check("engine busy guard: after release the chain drains the rest and goes idle",
-      sorted(_cstarted) == ["c1", "c2"] and _engc.state_json()["busy"] is False
-      and _io.read_queue(_rc) == [])
 
 # Run clears a prior Stop (Stop is a pause, not a permanent kill)
 _ran_sr = []
@@ -195,7 +179,7 @@ _rs = _mk_repo([Job(id="p1", repo=".", title="P1", type="test", est_windows=0.5,
                 Job(id="p2", repo=".", title="P2", type="test", est_windows=0.5, value=4)])
 _engsr = Engine([_rs], execute=_exec_sr, load_state=lambda: _STATE, now=lambda: 1)
 _engsr.stop()                         # pre-stopped
-_engsr.run(_rs)                        # Run must clear the stop flag and drain
+_engsr.run(_rs); _wait_idle(_engsr)   # Run must clear the stop flag and drain
 check("engine: Run resumes after a prior Stop (clears the stop flag)",
       sorted(_ran_sr) == ["p1", "p2"] and _io.read_queue(_rs) == []
       and _engsr.state_json()["busy"] is False)
@@ -321,7 +305,7 @@ _engk = Engine([_rk], execute=_exec_killable, load_state=lambda: _STATE, now=lam
 _tk = _k2th.Thread(target=_engk.run, args=(_rk,), daemon=True); _tk.start()
 _k2_started.wait(3)                                  # kill-me is now "running"
 _engk.kill(_rk, "kill-me")                           # operator kills it
-_tk.join(5)
+_tk.join(5); _wait_idle(_engk)       # wait for kill-me to die and next-up to complete
 _fin = [j["id"] for j in _io.board_state(_rk)["finished"]]
 _prop = [j["id"] for j in _io.board_state(_rk)["proposed"]]
 check("engine.kill ends the running job (not left busy)", _engk.state_json()["busy"] is False)
@@ -363,7 +347,7 @@ _engp.stop()                          # cockpit starts paused (as bin/scorch --s
 _engp.queue(_rp, "s1"); _engp.queue(_rp, "s2")     # drag cards in while paused
 check("paused cockpit: dragging cards in stages them without running",
       _ran_p == [] and [j.id for j in _io.read_queue(_rp)] == ["s1", "s2"])
-_engp.run(_rp)                        # press Run
+_engp.run(_rp); _wait_idle(_engp)    # press Run
 check("paused cockpit: Run then drains the staged queue in order",
       _ran_p == ["s1", "s2"] and _io.read_queue(_rp) == [])
 
@@ -377,42 +361,67 @@ check("board_state brief carries depth", _io.board_state(_rb2)["proposed"][0]["d
 _hk2 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
 check("cockpit template renders job depth", "depth" in _hk2.lower())
 
-# --- multi-repo run: one job at a time across repos, shared budget --------------
-# NOTE: jobs use depth=3 (-> 0.5 windows each) so the depth-wins rule in parse_jobs
-# round-trips est_windows correctly.  Repos are created with prefix "A"/"B"/"C" so
-# os.path.basename matches the sweep-order assertion.
-from scorched_earth.roe import DEFAULT_ROE as _DR  # noqa: E402
-_mr_ran = []
-def _mr_exec(repo, job, roe):
-    _mr_ran.append((os.path.basename(repo)[0], job.id))
+# --- parallel per-repo execution -------------------------------------------------
+import threading as _pth, time as _ptime  # noqa: E402
+# two repos run CONCURRENTLY (both jobs in flight at once)
+_pgate = _pth.Event()
+def _par_exec(repo, job, roe):
+    _pgate.wait(3)                                   # hold each job until the test releases
     return ("pass", None, "ok")
-_mr_base = tempfile.mkdtemp()
-_mrA = _mk_repo([Job(id="a1", repo=".", title="A1", type="test", est_windows=0.5, value=5, depth=3),
-                 Job(id="a2", repo=".", title="A2", type="test", est_windows=0.5, value=4, depth=3)])
-os.rename(_mrA, os.path.join(_mr_base, "A")); _mrA = os.path.join(_mr_base, "A")
-_mrB = _mk_repo([Job(id="b1", repo=".", title="B1", type="test", est_windows=0.5, value=5, depth=3)])
-os.rename(_mrB, os.path.join(_mr_base, "B")); _mrB = os.path.join(_mr_base, "B")
-_mrC = _mk_repo([Job(id="c1", repo=".", title="C1", type="test", est_windows=0.5, value=5, depth=3)])
-os.rename(_mrC, os.path.join(_mr_base, "C")); _mrC = os.path.join(_mr_base, "C")
-_mr_eng = Engine([_mrA, _mrB, _mrC], execute=_mr_exec, load_state=lambda: _STATE, now=lambda: 1)
-_mr_eng.run([_mrA, _mrB, _mrC])
-check("multi-repo run drains all checked repos (sweeps A then B then C)",
-      [r for r, _ in _mr_ran] == ["A", "A", "B", "C"][:len(_mr_ran)] and
-      sorted(j for _, j in _mr_ran) == ["a1", "a2", "b1", "c1"])
-check("multi-repo run leaves every queue empty",
-      _io.read_queue(_mrA) == [] and _io.read_queue(_mrB) == [] and _io.read_queue(_mrC) == [])
-check("multi-repo run ends idle", _mr_eng.state_json()["busy"] is False)
+_pA = _mk_repo([Job(id="pa", repo=".", title="PA", type="test", est_windows=0.5, value=5, depth=3)])
+_pB = _mk_repo([Job(id="pb", repo=".", title="PB", type="test", est_windows=0.5, value=5, depth=3)])
+_par = Engine([_pA, _pB], execute=_par_exec, load_state=lambda: _STATE, now=lambda: 1)  # 2.5 windows
+_par.run([_pA, _pB])
+_end = _ptime.time() + 3
+while _ptime.time() < _end and len(_par.state_json()["running"]) < 2:
+    _ptime.sleep(0.02)
+check("two armed repos run CONCURRENTLY (2 jobs in flight at once)",
+      len(_par.state_json()["running"]) == 2)
+_pgate.set()
+_end = _ptime.time() + 3
+while _ptime.time() < _end and _par.state_json()["busy"]:
+    _ptime.sleep(0.02)
+check("both repos drain after release (queues empty, idle)",
+      _par.state_json()["busy"] is False and _io.read_queue(_pA) == [] and _io.read_queue(_pB) == [])
 
-# shared global budget: 2.5 windows, 6 jobs @1.0 across two repos -> only ~2 run, rest wait
-_mr_ran2 = []
-def _mr_exec2(repo, job, roe):
-    _mr_ran2.append(job.id); return ("pass", None, "ok")
-_bgA = _mk_repo([Job(id="A"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5) for i in range(3)])
-_bgB = _mk_repo([Job(id="B"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5) for i in range(3)])
-_bg_eng = Engine([_bgA, _bgB], execute=_mr_exec2, load_state=lambda: _STATE, now=lambda: 1)  # windows_left 2.5
-_bg_eng.run([_bgA, _bgB])
-check("shared budget caps the whole run (2 jobs of 6 fit 2.5 windows, not 2-per-repo)",
-      len(_mr_ran2) == 2)
+# shared budget via reservation: 2 repos x 3 jobs @1.0, 2.5 windows -> only 2 run total
+_sb_ran = []
+def _sb_exec(repo, job, roe):
+    _sb_ran.append(job.id); return ("pass", None, "ok")
+_sbA = _mk_repo([Job(id="A"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5, depth=5) for i in range(3)])
+_sbB = _mk_repo([Job(id="B"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5, depth=5) for i in range(3)])
+_sb = Engine([_sbA, _sbB], execute=_sb_exec, load_state=lambda: _STATE, now=lambda: 1)
+_sb.run([_sbA, _sbB])
+_end = _ptime.time() + 3
+while _ptime.time() < _end and _sb.state_json()["busy"]:
+    _ptime.sleep(0.02)
+check("shared budget caps the WHOLE parallel run (2 of 6 jobs, not 3-per-repo)", len(_sb_ran) == 2)
+
+# per-repo kill targets one repo's in-flight job; the other keeps running
+import scorched_earth.runner as _krun  # noqa: E402
+_kgate = _pth.Event(); _kstarted = _pth.Event()
+def _k_exec(repo, job, roe):
+    ev = getattr(_krun._kill_ctx, "event", None)
+    _kstarted.set()
+    if ev is not None and ev.wait(3):
+        return ("killed", None, "killed")
+    _kgate.wait(3)
+    return ("pass", None, "ok")
+_kA = _mk_repo([Job(id="ka", repo=".", title="x", type="test", est_windows=0.5, value=5, depth=3)])
+_kB = _mk_repo([Job(id="kb", repo=".", title="x", type="test", est_windows=0.5, value=5, depth=3)])
+_keng = Engine([_kA, _kB], execute=_k_exec, load_state=lambda: _STATE, now=lambda: 1)
+_keng.run([_kA, _kB])
+_end = _ptime.time() + 3
+while _ptime.time() < _end and len(_keng.state_json()["running"]) < 2:
+    _ptime.sleep(0.02)
+_keng.kill(_kA, "ka")                                # kill only repo A's job
+_kgate.set()                                         # let B finish
+_end = _ptime.time() + 6                             # B may still be in ev.wait(3); allow full drain
+while _ptime.time() < _end and _keng.state_json()["busy"]:
+    _ptime.sleep(0.02)
+check("per-repo kill: killed repo's job returns to proposed, the other repo completes",
+      "ka" in [j["id"] for j in _io.board_state(_kA)["proposed"]]
+      and "kb" in [j["id"] for j in _io.board_state(_kB)["finished"]])
 
 # /run accepts a repos list; every repo validated
 _rrA = _mk_repo([Job(id="z", repo=".", title="Z", type="test", est_windows=0.5, value=5)])
