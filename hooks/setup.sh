@@ -47,4 +47,37 @@ with open(tmp, "w") as f:
 os.replace(tmp, settings)
 PY
 
+# --- bare (unprefixed) command aliases --------------------------------------
+# Plugin commands are always namespaced (/scorched-earth:coa). To give users the bare forms
+# (/coa, /sitrep, /roe, /war-room, /scorched-earth) we install standalone copies into their
+# personal command dir. Collision-safe: only writes files WE manage (tagged with $SENTINEL);
+# never clobbers a command the user already has. Re-runs each session so copies track updates.
+CMD_DIR="$HOME/.claude/commands"
+SENTINEL="managed-by: scorched-earth-plugin"
+if mkdir -p "$CMD_DIR" 2>/dev/null; then
+  for src in "$PLUGIN_ROOT"/commands/*.md; do
+    [ -f "$src" ] || continue
+    name="$(basename "$src")"; dest="$CMD_DIR/$name"
+    if [ ! -e "$dest" ] || grep -q "$SENTINEL" "$dest" 2>/dev/null; then
+      if { cat "$src"; printf '\n<!-- %s: bare alias of /scorched-earth:%s; overwritten on update -->\n' "$SENTINEL" "${name%.md}"; } > "$dest.tmp" 2>/dev/null; then
+        mv "$dest.tmp" "$dest" 2>/dev/null || rm -f "$dest.tmp" 2>/dev/null
+      fi
+    fi
+  done
+  # bare /scorched-earth -> the in-session readout skill
+  dest="$CMD_DIR/scorched-earth.md"
+  if [ ! -e "$dest" ] || grep -q "$SENTINEL" "$dest" 2>/dev/null; then
+    if cat > "$dest.tmp" <<EOF 2>/dev/null
+---
+description: Scorched Earth — weekly burn-rate readout + forecast (in-session signal)
+---
+Use the \`scorched-earth\` skill to give the weekly burn-rate readout (the hard green/amber/off
+signal plus the day-of-week forecast). Pass through any argument (e.g. a light style like \`fire\`).
+
+<!-- $SENTINEL: bare alias of the scorched-earth skill; overwritten on update -->
+EOF
+    then mv "$dest.tmp" "$dest" 2>/dev/null || rm -f "$dest.tmp" 2>/dev/null; fi
+  fi
+fi
+
 exit 0
