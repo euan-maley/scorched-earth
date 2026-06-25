@@ -1,10 +1,18 @@
 # TODO
 
-## Current Session (2026-06-25) — DEFCON COA refactor landed; full sweep + docs
+## Current Session (2026-06-25, pt.2) — DEFCON COA refactor COMPLETE + MERGED to local main
 
 **DONE this session:**
-- [x] **DEFCON COA refactor** (Tasks 1-10): budget estimation removed entirely. Jobs rated by DEFCON 1-5 criticality (1 = most critical); `auto_run_min_defcon` approval gate replaces budget threshold; `max_jobs` caps the run. Runner drains in DEFCON order, halts on real usage-limit (no predicted envelope). Scan hunts overnight DEFCON-1 campaigns. All four reports (COA HTML/MD, After-Action HTML/MD) carry DEFCON badges; no budget columns.
-- [x] **Task 11 (sweep + docs):** straggler grep clean; dead code removed (`_EPS`, `board_state` dead advisor import, `.cdepth` CSS, redundant test assertions); `render_md` markdown spacing fixed; CLAUDE.md, playbook, TODO updated. Test counts: 57 + 34 + 78 + 70 = 239 all green.
+- [x] **DEFCON COA refactor** (full SDD run: 11 tasks + opus whole-branch final review + fix wave, every gate reviewed clean): budget/effort estimation removed entirely from the COA layer. Jobs rated by **DEFCON 1-5** criticality (1 = most critical / biggest blast radius); `auto_run_min_defcon` approval gate (DEFCON 1-2 need approval; batch `scorch coa run --approve`, cockpit auto-approves as operator-driven); `max_jobs` caps the run. Runner/cockpit drain in DEFCON order, halt on the **real** usage-limit (predictive EnvelopeTracker/headroom deleted; `_run_killable` untouched). Scan prompt hunts **overnight DEFCON-1 campaigns** alongside knockouts. All HUDs (COA, After-Action, cockpit) render DEFCON badges + approval markers; no budget UI.
+- [x] **New COA HTML render DONE** (this was the demo-swap blocker — now cleared). Preview script pattern at `/tmp/coa-defcon-preview.html`.
+- [x] **UI tweaks** (`coa_template.html`): ROE header now reads "RULES OF ENGAGEMENT *(as set by user)*"; each command box carries a dim **`RUN CMD`** label + hover tooltip clarifying it's a run/execute command.
+- [x] **Merged to LOCAL `main`** (fast-forward → `e8a8881`); `feat/defcon-coa` branch deleted. Suites green on merged main: **57 + 34 + 78 + 70 = 239**.
+
+**NOT pushed (user said "not for now"):** local `main` is **17 commits ahead of `origin/main`** (`8779732`, still the 1.6.7 version bump). The DEFCON refactor + this close-out are LOCAL only. `origin/main` still serves the older budget-model COA.
+
+**RESUME HERE next session:**
+1. **Decide whether to push** the DEFCON work to public `origin/main` (it supersedes the just-published budget model). If yes: `git push origin main`.
+2. **Demo-video swap** (now unblocked — the new COA page exists): re-record the DEFCON COA HTML in the CRT capture rig, swap into the tour in place of `coa_t_crt`, update the `scorch advise` divider + 3 COA captions to the locked DEFCON wording (see the Prior Session block below + `_pipeline/HANDOFF.md`).
 
 ---
 
