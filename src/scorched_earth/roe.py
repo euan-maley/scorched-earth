@@ -13,6 +13,8 @@ class ROE:
     max_windows: Optional[float] = None             # cap total burn per COA (window-units)
     per_job_max_windows: Optional[float] = None     # reject any single job bigger than this
     min_weekly_left: float = 0.0                    # don't propose unless weekly-left above this
+    max_jobs: Optional[int] = None                  # optional run cap: stop after N jobs (off by default)
+    max_est_windows: Optional[float] = None         # optional run cap: stop after ~this much est spend
     # task rules
     allowed_types: Optional[List[str]] = None       # None = all types allowed
     # runner rules (Phase 2a — bound the autonomous executor)

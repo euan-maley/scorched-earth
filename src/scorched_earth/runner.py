@@ -30,27 +30,17 @@ def _allowed_unattended(roe: ROE, job_type: str) -> bool:
 
 
 def plan_run(jobs: List[Job], envelope: float, roe: ROE) -> Tuple[List[Tuple[Job, str]], float]:
-    """Pure: classify each queued job's pre-run disposition without executing anything.
-
-    Walks the queue in its existing (ranked) order. ROE-blocked jobs are skipped and consume
-    no budget. The first eligible job that won't fit the envelope — and every eligible job
-    after it — is skipped-budget (the queue is already best-first, so we don't backfill).
-    Returns (dispositions, predicted_spend) where predicted_spend sums est_windows of every
-    'run' job (the work spends budget whether or not its gate later passes).
-    """
+    """Pure pre-run disposition. ROE-blocked jobs are 'blocked-roe'; everything else is 'run'
+    (no budget forfeiting — execution stops on a real usage-limit, not a predicted envelope).
+    `envelope` is kept in the signature for back-compat but no longer gates."""
     out: List[Tuple[Job, str]] = []
     spent = 0.0
-    budget_gone = False
     for j in jobs:
         if not _allowed_unattended(roe, j.type):
             out.append((j, "blocked-roe"))
             continue
-        if budget_gone or spent + j.est_windows > envelope + _EPS:
-            budget_gone = True
-            out.append((j, "skipped-budget"))
-            continue
-        spent += j.est_windows
         out.append((j, "run"))
+        spent += j.est_windows
     return out, spent
 
 
@@ -61,7 +51,7 @@ class JobOutcome:
     title: str
     type: str
     tier: str
-    outcome: str                      # running|pass|fail|blocked-roe|skipped-budget|pending
+    outcome: str                      # running|pass|fail|blocked-roe|killed|pending
     est_windows: float
     depth: int = 5                    # 1-10 agent-rated cost/depth (mirrors Job.depth)
     branch: Optional[str] = None
@@ -95,6 +85,26 @@ def is_stale(state: Optional[dict], now: int) -> bool:
     if reset is None:                 # incomplete snapshot: can't verify freshness -> stale
         return True
     return reset < now
+
+
+def read_headroom(state, now):
+    """COA execution headroom: unused capacity of the CURRENT 5-hour window, in window-units.
+    None when the snapshot is stale/missing (same honesty rule as read_envelope)."""
+    if is_stale(state, now):
+        return None
+    snap = (state or {}).get("snapshot") or {}
+    five = snap.get("five_hour_pct")
+    if five is None:
+        return None
+    return max(0.0, (100.0 - float(five)) / 100.0)
+
+
+def detect_rate_limit(output):
+    """True when headless `claude -p --output-format stream-json` output carries the rate-limit
+    signal (429 api_retry). Substring match on the stable error value; exit code alone can't tell
+    a usage-limit from a normal failure. Conservative: only the rate_limit value, not 'overloaded'."""
+    s = output or ""
+    return '"error":"rate_limit"' in s or '"error": "rate_limit"' in s or '"rate_limit_error"' in s
 
 
 def read_envelope(state: Optional[dict], roe: ROE, now: int) -> Optional[float]:
@@ -326,8 +336,7 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
 
 
 def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
-    note = {"blocked-roe": f"type '{job.type}' not in unattended leash — not run.",
-            "skipped-budget": "no budget left when reached."}[disposition]
+    note = {"blocked-roe": f"type '{job.type}' not in unattended leash — not run."}[disposition]
     return JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
                       outcome=disposition, est_windows=job.est_windows, depth=job.depth,
                       note=note)
@@ -408,7 +417,7 @@ def _summary(rr: RunResult) -> str:
     if n.get("pass"):           parts.append(f"{n['pass']} secured")
     if n.get("fail"):           parts.append(f"{n['fail']} cratered")
     if n.get("blocked-roe"):    parts.append(f"{n['blocked-roe']} blocked")
-    if n.get("skipped-budget"): parts.append(f"{n['skipped-budget']} forfeit")
+    if n.get("killed"):         parts.append(f"{n['killed']} killed")
     if n.get("running"):        parts.append(f"{n['running']} working")
     head = ", ".join(parts) if parts else "no jobs"
     return f"{head}. ~{rr.spent_estimated:.1f} of {rr.available_windows:.1f} windows (estimated)."
@@ -419,14 +428,11 @@ def _dataclass_dict(rr: RunResult) -> dict:
     return asdict(rr)
 
 
-def pick_next(queue, available, roe):
-    """First queued job that is ROE-allowed and fits `available` (window-units). Skips
-    ahead past a too-big or ROE-blocked card — the interactive cockpit runs what fits
-    rather than stalling the whole queue on the top card. None if nothing is eligible."""
+def pick_next(queue, roe):
+    """First queued job that is ROE-allowed to run unattended. No budget gate — the cockpit/runner
+    drain whatever is queued and stop only on a real usage-limit (or an optional ROE cap)."""
     for j in queue:
-        if not _allowed_unattended(roe, j.type):
-            continue
-        if j.est_windows <= available + _EPS:
+        if _allowed_unattended(roe, j.type):
             return j
     return None
 

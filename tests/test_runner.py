@@ -79,8 +79,8 @@ _by_id = {j.id: d for j, d in _disp}
 check("plan_run runs additive jobs that fit, in order",
       _by_id["t"] == "run" and _by_id["d"] == "run")
 check("plan_run blocks non-SAFE types regardless of budget", _by_id["ref"] == "blocked-roe")
-check("plan_run marks the overflow job skipped-budget", _by_id["a"] == "skipped-budget")
-check("plan_run predicted spend counts only run jobs", _spent == 2.0)
+check("plan_run runs all ROE-allowed jobs regardless of envelope", _by_id["a"] == "run")
+check("plan_run predicted spend counts all run jobs (no budget gate)", _spent == 4.0)
 check("SAFE_UNATTENDED is additive-only",
       set(SAFE_UNATTENDED) == {"test", "docs", "perf", "audit"})
 check("explicit unattended_types widens the leash",
@@ -204,10 +204,10 @@ _rr = run_queue(_repo, _state_ok, now=1, date="2026-06-24",
 _out = {j.id: j.outcome for j in _rr.jobs}
 check("run_queue executes the runnable additive job", _out["t1"] == "pass")
 check("run_queue blocks the refactor via ROE leash", _out["r1"] == "blocked-roe")
-check("run_queue marks the oversize audit skipped-budget", _out["a1"] == "skipped-budget")
+check("run_queue runs all ROE-allowed jobs (audit now runs, no budget gate)", _out["a1"] == "pass")
 check("run_queue final state is done", _rr.state == "done")
-check("run_queue re-renders live (on_step fired every persist)", len(_steps) == 5)
-check("run_queue records estimated spend, not measured", _rr.spent_estimated == 1.0)
+check("run_queue re-renders live (on_step fired every persist)", len(_steps) == 6)
+check("run_queue records estimated spend, not measured", _rr.spent_estimated == 2.0)
 check("run_queue attaches merge/discard to executed job",
       _rr.jobs[0].branch == "scorched/t1" and "scorched/t1" in (_rr.jobs[0].merge_cmd or ""))
 check("run_queue persisted a run record + html",
@@ -305,6 +305,41 @@ check("_run_killable with no kill_event waits to completion",
 _pre = _kt.Event(); _pre.set()
 check("_run_killable: a kill requested before the child exits still returns 'killed'",
       _run_killable([sys.executable, "-c", "pass"], None, _pre) == "killed")
+
+# --- Task 3 (new): pick_next no-budget-gate, detect_rate_limit, read_headroom, ROE caps ---
+from scorched_earth import runner as _rn  # noqa: E402
+from scorched_earth.jobs import Job as _RJ  # noqa: E402
+from scorched_earth.roe import ROE as _RROE  # noqa: E402
+
+# pick_next no longer gates on budget — returns the next ROE-allowed job regardless of size
+_q = [_RJ(id="big", repo=".", title="B", type="docs", est_windows=3.5, value=9, depth=10)]
+check("pick_next returns an over-headroom job (no budget gate)",
+      _rn.pick_next(_q, _RROE()) is not None and _rn.pick_next(_q, _RROE()).id == "big")
+check("pick_next still skips ROE-disallowed types",
+      _rn.pick_next([_RJ(id="x", repo=".", title="X", type="refactor", est_windows=0.5, value=5, depth=3)],
+                    _RROE()) is None)
+
+# detect_rate_limit keys on the stream-json rate_limit signal, not normal failures
+check("detect_rate_limit true on the stream-json rate_limit event",
+      _rn.detect_rate_limit('{"type":"system","subtype":"api_retry","error":"rate_limit"}') is True)
+check("detect_rate_limit false on a normal job failure",
+      _rn.detect_rate_limit('{"type":"result","is_error":true,"error":"server_error"}') is False)
+check("detect_rate_limit false on empty output", _rn.detect_rate_limit("") is False)
+
+# read_headroom mirrors the current-window-free model (fresh snapshot)
+_fresh = {"snapshot": {"five_hour_pct": 5, "seven_day_pct": 81, "five_hour_reset": 9_999_999_999},
+          "recommendation": {"windows_left": 0.2}}
+check("read_headroom = current-window free on a fresh snapshot",
+      abs(_rn.read_headroom(_fresh, 1) - 0.95) < 1e-9)
+
+# ROE gains optional caps, default off
+check("ROE caps default to None (off)", _RROE().max_jobs is None and _RROE().max_est_windows is None)
+
+# plan_run no longer forfeits for budget
+_disp, _ = _rn.plan_run([_RJ(id="d", repo=".", title="D", type="docs", est_windows=3.5, value=9, depth=10)],
+                        999, _RROE())
+check("plan_run never emits skipped-budget",
+      all(d != "skipped-budget" for _, d in _disp))
 
 print(f"\n{passed} checks passed.")
 if failures:
