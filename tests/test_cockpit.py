@@ -27,14 +27,14 @@ from scorched_earth.jobs import Job  # noqa: E402
 from scorched_earth.roe import ROE, roe_from_dict  # noqa: E402
 from scorched_earth.runner import pick_next  # noqa: E402
 
-_q = [Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.2, value=9),  # ROE-blocked
-      Job(id="ok",  repo="r", title="ok",  type="docs", est_windows=1.0, value=4)]
+_q = [Job(id="ref", repo="r", title="ref", type="refactor", value=9),  # ROE-blocked
+      Job(id="ok",  repo="r", title="ok",  type="docs", value=4)]
 check("pick_next skips ROE-blocked, returns the first ROE-allowed job (no budget gate)",
       pick_next(_q, ROE()).id == "ok")
 check("pick_next returns None when nothing is ROE-allowed",
-      pick_next([Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.2, value=9)], ROE()) is None)
+      pick_next([Job(id="ref", repo="r", title="ref", type="refactor", value=9)], ROE()) is None)
 check("pick_next returns an over-headroom job (no budget gate)",
-      pick_next([Job(id="big", repo="r", title="big", type="docs", est_windows=9.0, value=5)], ROE()).id == "big")
+      pick_next([Job(id="big", repo="r", title="big", type="docs", value=5)], ROE()).id == "big")
 
 
 # --- Task 3: queue ops ------------------------------------------------------------
@@ -46,21 +46,21 @@ importlib.reload(_st)
 import scorched_earth.coa_io as _io  # noqa: E402
 importlib.reload(_io)
 
-_io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", est_windows=1, value=5),
-                        Job(id="b", repo=_repo, title="B", type="docs", est_windows=1, value=4),
-                        Job(id="c", repo=_repo, title="C", type="perf", est_windows=1, value=3)])
+_io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", value=5),
+                        Job(id="b", repo=_repo, title="B", type="docs", value=4),
+                        Job(id="c", repo=_repo, title="C", type="perf", value=3)])
 check("unqueue removes by id", [j.id for j in _io.unqueue(_repo, "b")] == ["a", "c"])
 check("unqueue persisted", [j.id for j in _io.read_queue(_repo)] == ["a", "c"])
-_io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", est_windows=1, value=5),
-                        Job(id="b", repo=_repo, title="B", type="docs", est_windows=1, value=4),
-                        Job(id="c", repo=_repo, title="C", type="perf", est_windows=1, value=3)])
+_io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", value=5),
+                        Job(id="b", repo=_repo, title="B", type="docs", value=4),
+                        Job(id="c", repo=_repo, title="C", type="perf", value=3)])
 check("reorder applies the given order", [j.id for j in _io.reorder(_repo, ["c", "a", "b"])] == ["c", "a", "b"])
 check("reorder appends un-named queued jobs after",
       [j.id for j in _io.reorder(_repo, ["b"])] == ["b", "c", "a"])
 # depth must survive the queue.json round-trip (was lost: 9 -> re-derived 10)
-_io.write_queue(_repo, [Job(id="d9", repo=_repo, title="D9", type="test", est_windows=3.5, value=8, depth=9)])
-check("queue round-trip preserves depth (no re-derivation)",
-      _io.read_queue(_repo)[0].depth == 9)
+_io.write_queue(_repo, [Job(id="d9", repo=_repo, title="D9", type="test", value=8)])
+check("queue round-trip preserves defcon (no re-derivation)",
+      _io.read_queue(_repo)[0].defcon == 3)
 
 
 # --- Task 4: board_state assembler ------------------------------------------------
@@ -69,7 +69,7 @@ with open(os.path.join(_repo, ".scorched", "jobs.json"), "w") as f:
     json.dump([{"id": "p1", "title": "Prop1", "type": "test", "est_windows": 1, "value": 5},
                {"id": "q1", "title": "Queued1", "type": "docs", "est_windows": 1, "value": 4},
                {"id": "d1", "title": "Done1", "type": "perf", "est_windows": 1, "value": 3}], f)
-_io.write_queue(_repo, [Job(id="q1", repo=_repo, title="Queued1", type="docs", est_windows=1, value=4)])
+_io.write_queue(_repo, [Job(id="q1", repo=_repo, title="Queued1", type="docs", value=4)])
 _io.write_run_record(_repo, {"generated_at": "2026-06-24", "state": "done", "repo": _repo,
                              "jobs": [{"id": "d1", "title": "Done1", "type": "perf", "tier": "M",
                                        "outcome": "pass", "est_windows": 1.0, "branch": "scorched/d1"},
@@ -116,7 +116,7 @@ def _mk_repo(jobs):
     os.makedirs(os.path.join(r, ".scorched"), exist_ok=True)
     with open(os.path.join(r, ".scorched", "jobs.json"), "w") as f:
         json.dump([{"id": j.id, "title": j.title, "type": j.type,
-                    "est_windows": j.est_windows, "value": j.value} for j in jobs], f)
+                    "defcon": j.defcon, "value": j.value} for j in jobs], f)
     _io.write_queue(r, jobs)
     return r
 
@@ -126,10 +126,10 @@ def _exec(repo, job, roe):
     return ("pass", {"files": 1, "insertions": 3, "deletions": 0}, "ok")
 _STATE = {"snapshot": {"now": 1, "five_hour_reset": 9_999_999_999, "seven_day_pct": 50},
           "recommendation": {"windows_left": 2.5, "level": "green"}}
-_r = _mk_repo([Job(id="t1", repo=".", title="T1", type="test", est_windows=1.0, value=5),
-               Job(id="r1", repo=".", title="R1", type="refactor", est_windows=0.2, value=9),  # ROE block
-               Job(id="t2", repo=".", title="T2", type="test", est_windows=1.0, value=4),
-               Job(id="t3", repo=".", title="T3", type="test", est_windows=1.0, value=3)])  # over headroom (runs anyway)
+_r = _mk_repo([Job(id="t1", repo=".", title="T1", type="test", value=5),
+               Job(id="r1", repo=".", title="R1", type="refactor", value=9),  # ROE block
+               Job(id="t2", repo=".", title="T2", type="test", value=4),
+               Job(id="t3", repo=".", title="T3", type="test", value=3)])  # runs regardless (no budget gate)
 _beats = []
 _eng = Engine([_r], execute=_exec, broadcast=lambda: _beats.append(1),
               load_state=lambda: _STATE, now=lambda: 1)
@@ -149,8 +149,8 @@ def _boom(repo, job, roe):
     if job.id == "x1":
         raise RuntimeError("died")
     return ("pass", None, "ok")
-_r2 = _mk_repo([Job(id="x1", repo=".", title="X1", type="test", est_windows=0.5, value=5),
-                Job(id="x2", repo=".", title="X2", type="test", est_windows=0.5, value=4)])
+_r2 = _mk_repo([Job(id="x1", repo=".", title="X1", type="test", value=5),
+                Job(id="x2", repo=".", title="X2", type="test", value=4)])
 _eng2 = Engine([_r2], execute=_boom, load_state=lambda: _STATE, now=lambda: 1)
 _eng2.run(_r2); _wait_idle(_eng2)
 check("engine: a crashing job is dropped (not retried) and the chain continues",
@@ -162,8 +162,8 @@ def _exec_stop(repo, job, roe):
     _ran3.append(job.id)
     _eng3.stop()                     # request stop after the first job
     return ("pass", None, "ok")
-_r3 = _mk_repo([Job(id="s1", repo=".", title="S1", type="test", est_windows=0.5, value=5),
-                Job(id="s2", repo=".", title="S2", type="test", est_windows=0.5, value=4)])
+_r3 = _mk_repo([Job(id="s1", repo=".", title="S1", type="test", value=5),
+                Job(id="s2", repo=".", title="S2", type="test", value=4)])
 _eng3 = Engine([_r3], execute=_exec_stop, load_state=lambda: _STATE, now=lambda: 1)
 _eng3.run(_r3); _wait_idle(_eng3)
 check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
@@ -172,8 +172,8 @@ check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
 _ran_sr = []
 def _exec_sr(repo, job, roe):
     _ran_sr.append(job.id); return ("pass", None, "ok")
-_rs = _mk_repo([Job(id="p1", repo=".", title="P1", type="test", est_windows=0.5, value=5),
-                Job(id="p2", repo=".", title="P2", type="test", est_windows=0.5, value=4)])
+_rs = _mk_repo([Job(id="p1", repo=".", title="P1", type="test", value=5),
+                Job(id="p2", repo=".", title="P2", type="test", value=4)])
 _engsr = Engine([_rs], execute=_exec_sr, load_state=lambda: _STATE, now=lambda: 1)
 _engsr.stop()                         # pre-stopped
 _engsr.run(_rs); _wait_idle(_engsr)   # Run must clear the stop flag and drain
@@ -186,7 +186,7 @@ import http.client  # noqa: E402
 import threading as _threading  # noqa: E402
 from scorched_earth.coa_serve import make_server  # noqa: E402
 
-_r6 = _mk_repo([Job(id="g1", repo=".", title="G1", type="test", est_windows=1.0, value=5)])
+_r6 = _mk_repo([Job(id="g1", repo=".", title="G1", type="test", value=5)])
 _eng6 = Engine([_r6], execute=_exec, load_state=lambda: _STATE, now=lambda: 1)
 _TOKEN = "secret-token-xyz"
 _httpd, _port = make_server(_eng6, _TOKEN)
@@ -218,7 +218,7 @@ check("POST with raw command/launch fields executes no command (job-ids only)",
 _st6, _b6 = _get(f"/state?t={_TOKEN}")
 check("GET /state returns board json", _st6 == 200 and b"repos" in _b6)
 # /queue mutates the queue file
-_io.write_queue(_r6, [Job(id="g1", repo=".", title="G1", type="test", est_windows=1.0, value=5)])
+_io.write_queue(_r6, [Job(id="g1", repo=".", title="G1", type="test", value=5)])
 _post("/reorder", {"repo": _r6, "ids": ["g1"]}, _TOKEN)
 check("POST /reorder returns ok", _post("/reorder", {"repo": _r6, "ids": ["g1"]}, _TOKEN)[0] == 200)
 
@@ -296,8 +296,8 @@ def _exec_killable(repo, job, roe):
     if ev is not None and ev.wait(3):
         return ("killed", None, "killed by operator — work discarded.")
     return ("pass", None, "ran to completion")
-_rk = _mk_repo([Job(id="kill-me", repo=".", title="Kill me", type="test", est_windows=1.0, value=5),
-                Job(id="next-up", repo=".", title="Next", type="test", est_windows=0.5, value=4)])
+_rk = _mk_repo([Job(id="kill-me", repo=".", title="Kill me", type="test", value=5),
+                Job(id="next-up", repo=".", title="Next", type="test", value=4)])
 _engk = Engine([_rk], execute=_exec_killable, load_state=lambda: _STATE, now=lambda: 1)
 _tk = _k2th.Thread(target=_engk.run, args=(_rk,), daemon=True); _tk.start()
 _k2_started.wait(3)                                  # kill-me is now "running"
@@ -311,7 +311,7 @@ check("killed job returns to proposed (re-queueable)", "kill-me" in _prop)
 check("after a kill the chain continues to the next job (next-up ran)", "next-up" in _fin)
 
 # /kill: token-guarded, repo-validated, job-ids only
-_rkill = _mk_repo([Job(id="z", repo=".", title="Z", type="test", est_windows=1.0, value=5)])
+_rkill = _mk_repo([Job(id="z", repo=".", title="Z", type="test", value=5)])
 _engkill = Engine([_rkill], execute=lambda *a: ("pass", None, "ok"), load_state=lambda: _STATE, now=lambda: 1)
 _hk, _pk = make_server(_engkill, "k-tok")
 import threading as _k3
@@ -335,8 +335,8 @@ check("cockpit template wires a /kill POST", '"/kill"' in _kh or "/kill" in _kh)
 _rp = tempfile.mkdtemp()
 os.makedirs(os.path.join(_rp, ".scorched"), exist_ok=True)
 with open(os.path.join(_rp, ".scorched", "jobs.json"), "w") as _f:
-    json.dump([{"id": "s1", "title": "S1", "type": "test", "est_windows": 0.5, "value": 5},
-               {"id": "s2", "title": "S2", "type": "test", "est_windows": 0.5, "value": 4}], _f)
+    json.dump([{"id": "s1", "title": "S1", "type": "test", "value": 5},
+               {"id": "s2", "title": "S2", "type": "test", "value": 4}], _f)
 _ran_p = []
 _engp = Engine([_rp], execute=lambda repo, job, roe: (_ran_p.append(job.id), ("pass", None, "ok"))[1],
                load_state=lambda: _STATE, now=lambda: 1)
@@ -348,15 +348,16 @@ _engp.run(_rp); _wait_idle(_engp)    # press Run
 check("paused cockpit: Run then drains the staged queue in order",
       _ran_p == ["s1", "s2"] and _io.read_queue(_rp) == [])
 
-# --- board_state job briefs carry depth ------------------------------------------
+# --- board_state job briefs carry defcon + approval_required ----------------------
 _rb2 = tempfile.mkdtemp(); os.makedirs(os.path.join(_rb2, ".scorched"), exist_ok=True)
 with open(os.path.join(_rb2, ".scorched", "jobs.json"), "w") as _f:
-    json.dump([{"id": "g", "title": "G", "type": "test", "depth": 9, "value": 6}], _f)
-check("board_state brief carries depth", _io.board_state(_rb2)["proposed"][0]["depth"] == 9)
+    json.dump([{"id": "g", "title": "G", "type": "test", "defcon": 2, "value": 6}], _f)
+check("board_state brief carries defcon", _io.board_state(_rb2)["proposed"][0]["defcon"] == 2)
+check("board_state brief carries approval_required", "approval_required" in _io.board_state(_rb2)["proposed"][0])
 
-# cockpit cards render depth (and no per-card window-cost label "EST ~")
+# cockpit cards render DEFCON (template updated in Task 9; verify no EST ~ window-cost label)
 _hk2 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
-check("cockpit template renders job depth", "depth" in _hk2.lower())
+check("cockpit template has no per-card EST window-cost label", "EST ~" not in _hk2)
 
 # --- parallel per-repo execution -------------------------------------------------
 import threading as _pth, time as _ptime  # noqa: E402
@@ -365,9 +366,9 @@ _pgate = _pth.Event()
 def _par_exec(repo, job, roe):
     _pgate.wait(3)                                   # hold each job until the test releases
     return ("pass", None, "ok")
-_pA = _mk_repo([Job(id="pa", repo=".", title="PA", type="test", est_windows=0.5, value=5, depth=3)])
-_pB = _mk_repo([Job(id="pb", repo=".", title="PB", type="test", est_windows=0.5, value=5, depth=3)])
-_par = Engine([_pA, _pB], execute=_par_exec, load_state=lambda: _STATE, now=lambda: 1)  # 2.5 windows
+_pA = _mk_repo([Job(id="pa", repo=".", title="PA", type="test", value=5)])
+_pB = _mk_repo([Job(id="pb", repo=".", title="PB", type="test", value=5)])
+_par = Engine([_pA, _pB], execute=_par_exec, load_state=lambda: _STATE, now=lambda: 1)
 _par.run([_pA, _pB])
 _end = _ptime.time() + 3
 while _ptime.time() < _end and len(_par.state_json()["running"]) < 2:
@@ -388,8 +389,8 @@ def _hl_exec(repo, job, roe):
         return ("limit", None, "usage limit")     # first job in each repo trips the limit
     _hl_gate.wait(2)
     return ("pass", None, "ok")
-_hlA = _mk_repo([Job(id="A1", repo=".", title="x", type="docs", est_windows=0.5, value=9, depth=3),
-                 Job(id="A2", repo=".", title="x", type="docs", est_windows=0.5, value=8, depth=3)])
+_hlA = _mk_repo([Job(id="A1", repo=".", title="x", type="docs", value=9),
+                 Job(id="A2", repo=".", title="x", type="docs", value=8)])
 _hl = Engine([_hlA], execute=_hl_exec, load_state=lambda: _STATE, now=lambda: 1)
 _hl.run([_hlA])
 _end = _ptime.time() + 3
@@ -399,20 +400,23 @@ check("a usage-limit halts the engine; the limit job is re-queued (resumable)",
       "A1" in [j["id"] for j in _io.board_state(_hlA)["queued"]]
       and "A1" not in [j["id"] for j in _io.board_state(_hlA)["finished"]])
 
-# state_json carries headroom context + per-job fit flags
-_sjs = _hl.state_json()
-check("state_json exposes headroom + weekly reserve context",
-      "headroom" in _sjs and "weekly_reserve_pct" in _sjs)
+# state_json drops headroom/fit, keeps weekly_reserve_pct; board briefs carry defcon + approval_required
+_sj = _hl.state_json()
+check("state_json drops headroom/fit", "headroom" not in _sj)
+check("state_json exposes weekly reserve context", "weekly_reserve_pct" in _sj)
+check("board briefs carry defcon + approval_required",
+      all("defcon" in jb and "approval_required" in jb
+          for r in _sj["repos"] for jb in r["proposed"] + r["queued"]))
 
 # optional ROE max_jobs cap stops the drain after N jobs (off by default)
 _capdir = tempfile.mkdtemp(); os.makedirs(os.path.join(_capdir, ".scorched"), exist_ok=True)
 with open(os.path.join(_capdir, ".scorched", "roe.json"), "w") as _f:
     json.dump({"max_jobs": 1}, _f)
 with open(os.path.join(_capdir, ".scorched", "jobs.json"), "w") as _f:
-    json.dump([{"id": "c1", "title": "C1", "type": "test", "est_windows": 0.5, "value": 5},
-               {"id": "c2", "title": "C2", "type": "test", "est_windows": 0.5, "value": 4}], _f)
-_io.write_queue(_capdir, [Job(id="c1", repo=".", title="C1", type="test", est_windows=0.5, value=5),
-                          Job(id="c2", repo=".", title="C2", type="test", est_windows=0.5, value=4)])
+    json.dump([{"id": "c1", "title": "C1", "type": "test", "value": 5},
+               {"id": "c2", "title": "C2", "type": "test", "value": 4}], _f)
+_io.write_queue(_capdir, [Job(id="c1", repo=".", title="C1", type="test", value=5),
+                          Job(id="c2", repo=".", title="C2", type="test", value=4)])
 _cap_ran = []
 _capeng = Engine([_capdir], execute=lambda repo, job, roe: (_cap_ran.append(job.id), ("pass", None, "ok"))[1],
                  load_state=lambda: _STATE, now=lambda: 1)
@@ -430,8 +434,8 @@ def _k_exec(repo, job, roe):
         return ("killed", None, "killed")
     _kgate.wait(3)
     return ("pass", None, "ok")
-_kA = _mk_repo([Job(id="ka", repo=".", title="x", type="test", est_windows=0.5, value=5, depth=3)])
-_kB = _mk_repo([Job(id="kb", repo=".", title="x", type="test", est_windows=0.5, value=5, depth=3)])
+_kA = _mk_repo([Job(id="ka", repo=".", title="x", type="test", value=5)])
+_kB = _mk_repo([Job(id="kb", repo=".", title="x", type="test", value=5)])
 _keng = Engine([_kA, _kB], execute=_k_exec, load_state=lambda: _STATE, now=lambda: 1)
 _keng.run([_kA, _kB])
 _end = _ptime.time() + 3
@@ -447,8 +451,8 @@ check("per-repo kill: killed repo's job returns to proposed, the other repo comp
       and "kb" in [j["id"] for j in _io.board_state(_kB)["finished"]])
 
 # /run accepts a repos list; every repo validated
-_rrA = _mk_repo([Job(id="z", repo=".", title="Z", type="test", est_windows=0.5, value=5)])
-_rrB = _mk_repo([Job(id="y", repo=".", title="Y", type="test", est_windows=0.5, value=5)])
+_rrA = _mk_repo([Job(id="z", repo=".", title="Z", type="test", value=5)])
+_rrB = _mk_repo([Job(id="y", repo=".", title="Y", type="test", value=5)])
 _run_eng = Engine([_rrA, _rrB], execute=lambda *a: ("pass", None, "ok"),
                   load_state=lambda: _STATE, now=lambda: 1)
 _run_eng.stop()                                   # paused so the POST just validates/dispatches
@@ -487,8 +491,8 @@ check("cockpit handles a running LIST (renders without error, references running
 _fgate = _pth.Event()
 def _flick_exec(repo, job, roe):
     _fgate.wait(3); return ("pass", None, "ok")
-_fr = _mk_repo([Job(id="f1", repo=".", title="F1", type="test", est_windows=0.5, value=5, depth=3),
-                Job(id="f2", repo=".", title="F2", type="test", est_windows=0.5, value=5, depth=3)])
+_fr = _mk_repo([Job(id="f1", repo=".", title="F1", type="test", value=5),
+                Job(id="f2", repo=".", title="F2", type="test", value=5)])
 _feng = Engine([_fr], execute=_flick_exec, load_state=lambda: _STATE, now=lambda: 1)
 _feng.run([_fr])
 _end = _ptime.time() + 3

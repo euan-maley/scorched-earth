@@ -96,28 +96,15 @@ class Engine:
         from . import advisor
         state = self._load_state()
         snap = (state or {}).get("snapshot") or {}
-        headroom = advisor.window_headroom(snap)
         wrp = advisor.weekly_reserve_pct(snap)
         with self._lock:
             running = [dict(v) for v in self._running.values()]
             busy = bool(running) or bool(self._workers)
-            # group in-flight ids by repo so board_state can keep each running job out of its
-            # repo's proposed column (it's been unqueued but not yet recorded as finished).
             running_by_repo = {}
             for v in self._running.values():
                 running_by_repo.setdefault(v["repo"], []).append(v["id"])
-        repos = []
-        for r in self.repos:
-            board = coa_io.board_state(r, running_by_repo.get(r, ()))
-            roe = coa_io.load_roe(r)
-            coa = advisor.match(headroom or 0.0, coa_io.read_queue(r) + coa_io.load_jobs(r), roe)
-            fits = {j.id for j in coa.queue}
-            for col in ("proposed", "queued"):
-                for jb in board[col]:
-                    jb["fit"] = "fits" if jb["id"] in fits else "over"
-            repos.append(board)
+        repos = [coa_io.board_state(r, running_by_repo.get(r, ())) for r in self.repos]
         return {"repos": repos, "running": running, "busy": busy,
-                "headroom": round(headroom, 2) if headroom is not None else None,
                 "weekly_reserve_pct": round(wrp, 0) if wrp is not None else None}
 
     # ---- per-repo drain worker ----
@@ -131,10 +118,9 @@ class Engine:
                     roe = coa_io.load_roe(repo)
                     rr = self._results.get(repo)
                     done_n = len(rr.jobs) if rr else 0
-                    spent_w = sum(j.est_windows for j in rr.jobs) if rr else 0.0
-                    capped = ((roe.max_jobs is not None and done_n >= roe.max_jobs) or
-                              (roe.max_est_windows is not None and spent_w >= roe.max_est_windows))
-                    job = None if capped else runner.pick_next(coa_io.read_queue(repo), roe)
+                    capped = roe.max_jobs is not None and done_n >= roe.max_jobs
+                    job = None if capped else runner.pick_next(
+                        coa_io.read_queue(repo), roe, approved=True)
                     if job is None:
                         self._workers.discard(repo)                            # this repo: nothing to do
                         done = True
@@ -147,8 +133,7 @@ class Engine:
                         if rr is None:
                             rr = runner.RunResult(
                                 generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
-                                state="running", repo=repo, verdict="unknown", note="",
-                                available_windows=0.0, spent_estimated=0.0)
+                                state="running", repo=repo, verdict="unknown", note="")
                             self._results[repo] = rr
                         seq = len(rr.jobs) + 1
             self._broadcast()
