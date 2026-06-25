@@ -115,7 +115,9 @@ gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast 
 a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
 marketplace + installer. War-general voice throughout. Phase 2a (COA queue-runner) is built:
 queue/run/review flow wired, live After-Action Report rendering, predictive budget accounting,
-ROE-gated sandbox execution. 57 unit checks passing (`python3 tests/test_scorched.py`) + 25
-advisor checks (`python3 tests/test_advisor.py`) + 56 runner checks (`python3 tests/test_runner.py`);
-all gated in CI via `.github/workflows/test.yml`. Forecast and R both start provisional and
+ROE-gated sandbox execution. Phase 2b (live cockpit) is built: localhost kanban board with
+per-repo tabs, drag/queue/reorder/run, event-driven runner, SSE board updates. 57 unit checks passing
+(`python3 tests/test_scorched.py`) + 25 advisor checks (`python3 tests/test_advisor.py`) + 60 runner
+checks (`python3 tests/test_runner.py`) + 36 cockpit checks (`python3 tests/test_cockpit.py`) = 178
+total; all gated in CI via `.github/workflows/test.yml`. Forecast and R both start provisional and
 sharpen with real usage.

@@ -26,6 +26,7 @@ spent by maxing out every remaining 5-hour window.
 - `src/scorched_earth/coa_io.py` — advisor I/O: the linked-repos registry, ROE/jobs loaders, COA output writers (central config + per-repo `.scorched/`).
 - `src/scorched_earth/runner.py` — COA queue-runner (Phase 2a): drains `.scorched/queue.json`, runs each job headless in a sandboxed worktree under the ROE leash (`plan_run` is the pure predictive-budget core; the per-job work is the injected `execute_job`). I/O tier; never on the statusline hot path.
 - `src/scorched_earth/review_report.py` + `review_template.html` — renders the live After-Action Report (md + HTML) from one `RunResult`; auto-refreshes while running, settles when done.
+- `src/scorched_earth/coa_serve.py` + `cockpit_template.html` — COA live cockpit (Phase 2b): a 127.0.0.1 `ThreadingHTTPServer` (one-time token, job-ids-not-commands, ROE server-side) hosting an event-driven `Engine.advance` step (no background loop) that drives the Phase 2a runner; SSE pushes board state to a kanban cockpit. `scorch coa --serve`.
 - `commands/coa.md` / `commands/roe.md` — `/coa` (generate a Course of Action) and `/roe` (edit the Rules of Engagement).
 
 ## Packaging facts (confirmed against installed plugins + docs)

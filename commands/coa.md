@@ -66,3 +66,13 @@ nothing is pushed or merged without you. Set `test_cmd` and `setup_cmd` in the r
 worktree's `.claude/settings.json`: API-only network, filesystem confined). On macOS this
 isolation is built in; on **Linux it requires `bubblewrap` and `socat` installed**. If unavailable,
 `failIfUnavailable` means the job hard-fails rather than running unconfined.
+
+## Live cockpit (Phase 2b)
+
+`scorch coa --serve [<repo>]` opens a localhost cockpit — a live kanban board (Proposed →
+Queued → Running → Secured/Cratered) with a per-repo tab toggle. Drag a job into Queued, reorder
+what burns first, hit Run, and watch cards advance in place as work completes. The runner is
+event-driven (one job at a time; no background loop). Security: binds 127.0.0.1, a one-time token
+is required on every request, the server runs only the agent-supplied launch for a queued job-id
+(never a command from the page), ROE is enforced server-side, and it dies when you Ctrl-C. Every
+job still runs under the Phase 2a sandbox. Closing the window or Ctrl-C stops it.

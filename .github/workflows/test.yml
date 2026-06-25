@@ -24,3 +24,5 @@ jobs:
         run: python3 tests/test_advisor.py
       - name: Runner tests
         run: python3 tests/test_runner.py
+      - name: Cockpit tests
+        run: python3 tests/test_cockpit.py
