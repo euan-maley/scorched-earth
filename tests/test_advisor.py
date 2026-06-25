@@ -168,16 +168,12 @@ for _c in ("coa", "roe"):
           _txt.startswith("---") and "description:" in _txt)
 
 
-# --- depth flows into the rendered job dicts (AAR half is Task 8) ----------------
+# --- AAR _job_obj carries defcon (Task 8) ----------------------------------------
 from scorched_earth.runner import JobOutcome  # noqa: E402
 from scorched_earth.review_report import _job_obj as _aar_job_obj  # noqa: E402
-# AAR assertion left for Task 8 to resolve (JobOutcome has no depth field yet)
-try:
-    check("aar _job_obj carries depth",
-          _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test",
-                                  outcome="pass"))["defcon"] == 3)
-except Exception as _e2:
-    print(f"  [skip] aar depth/report section crashed ({type(_e2).__name__}: {_e2}) — Task 8 fixes this")
+check("aar _job_obj carries defcon",
+      _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test",
+                              defcon=8, outcome="pass"))["defcon"] == 8)
 
 # advise writes BOTH md + html (no-budget API)
 import tempfile as _tf2, os as _os2  # noqa: E402

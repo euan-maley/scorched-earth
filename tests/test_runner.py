@@ -152,6 +152,9 @@ check("render_review_html omits refresh when done",
       "http-equiv" not in render_review_html(_done).lower())
 check("render_review_html refresh injection survives running state",
       render_review_html(_running).lower().count("http-equiv") == 1)
+check("render_review_html contains a DEFCON badge (class defcon-2 for defcon=2 job)",
+      'class="defcon defcon-2"' in render_review_html(_running)
+      or "defcon-2" in render_review_html(_running))
 
 # --- Task 6: command builders + sandbox settings ----------------------------------
 from scorched_earth.runner import (worktree_path, branch_name, build_claude_cmd,  # noqa: E402
