@@ -33,21 +33,21 @@ Three things to fix (user-raised):
 
 **A1. New headroom number (separate from `windows_left`).**
 COA execution headroom = the unused capacity of the **current 5-hour window**, in
-window-units, optionally capped by the weekly reserve:
+window-units (0..1.0):
 
 ```
-window_free_windows  = max(0, (100 - five_hour_pct) / 100)        # 0..1.0
-weekly_reserve_windows = (100 - seven_day_pct) / 100 / R           # R = weekly% per full window
-headroom = min(window_free_windows, weekly_reserve_windows)
+headroom = max(0, (100 - five_hour_pct) / 100)        # the user's "% usage left in current window"
+weekly_reserve_pct = max(0, 100 - seven_day_pct)      # shown as context only, NOT a gate
 ```
 
-- Primary driver is `window_free_windows` (the user's "% usage left in current
-  window"); `weekly_reserve_windows` is a ceiling so we never suggest more than the
-  weekly reserve can fund. In the observed case: `min(0.95, ~6) = 0.95`.
-- Pure helper, reads the cached snapshot. Lives in `advisor.py` (COA, pure) with `R`
-  passed in (already measured by `calibrate.py`). A parallel `read_headroom(state)` in
-  `runner.py` mirrors `read_envelope` for the execution path. **`core.py`,
-  `calibrate.py`, `statusline.py` are NOT touched** — the green-light is unchanged.
+- `headroom` is the soft-fit basis (in the observed case `0.95`). `weekly_reserve_pct`
+  (19%) and the weekly reset time are shown as **context** next to it, not converted to
+  windows and not used to gate — the gate is soft and the real-limit halt is the true
+  backstop, so an optimistic suggestion is acceptable (no `R` dependency, less risk).
+- Pure helper, reads the cached snapshot. Lives in `advisor.py` (COA, pure). A parallel
+  `read_headroom(state)` in `runner.py` mirrors `read_envelope` for the execution path.
+  **`core.py`, `calibrate.py`, `statusline.py` are NOT touched** — the green-light is
+  unchanged.
 
 **A2. `advisor.match` annotates, never forfeits.**
 - Signature moves from `match(windows_left, jobs, roe)` to `match(headroom, jobs, roe)`.
