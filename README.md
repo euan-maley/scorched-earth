@@ -1,3 +1,5 @@
+https://github.com/user-attachments/assets/52706f21-19d8-49f1-b5cc-1a5ec865a508
+
 <p align="center">
   <img src="assets/banner.png" alt="Scorched Earth: torch it all, leave them nothing behind" width="760">
 </p>
