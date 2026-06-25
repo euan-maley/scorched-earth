@@ -17,7 +17,8 @@ Steps:
      with `scorch roe <repo>` first, then dispatch the scan agent bounded by those rules (respect
      `exclude_paths`, `allowed_types`, `goals`, the cost caps). It returns a JSON array of jobs
      matching the schema (`id, repo, title, type, est_windows, value, rationale, launch`); write
-     it to `<repo>/.scorched/jobs.json`.
+     it to `<repo>/.scorched/jobs.json`. The returned array must use the schema
+     (`id, repo, title, type, depth, value, rationale, launch`).
 
    **What the scan hunts for** (the advisor's instinct, not a generic to-do scan): work *this
    moment* is uniquely good for, a real budget to spend, often an unsupervised window. Prefer
@@ -38,7 +39,10 @@ Steps:
      transformative work as review-required in its `rationale`.
    - **Size to the budget.** Use the rough windows available (from `scorch`) to scope each job:
      propose work ambitious enough to be worth the window (whole-repo on a big night, one module
-     when little is left). Set `est_windows` to the honest cost, `value` to its worth.
+     when little is left). Set `depth` (1–10, your honest relative cost rating) and `value` to its
+     worth. Depth 1–2 is a quick strike (a few minutes of focused work); 9–10 is a major
+     multi-window operation (whole-repo exhaustive pass). Do NOT emit `est_windows` — the tool
+     derives the budget cost from `depth`, so you never guess windows.
    - **Skip the trivial.** Do NOT propose quick one-off fixes, lint nits, or anything a human
      would just do inline; they waste a burn window. Skip work needing a product/design decision,
      work with no way to verify it, and speculative features the user never asked for.

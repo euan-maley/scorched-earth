@@ -150,6 +150,24 @@ for _c in ("coa", "roe"):
     check(f"/{_c} command exists with description frontmatter",
           _txt.startswith("---") and "description:" in _txt)
 
+# --- depth rating ----------------------------------------------------------------
+from scorched_earth.jobs import windows_for_depth, depth_for_windows  # noqa: E402
+
+check("windows_for_depth coarse bands",
+      (windows_for_depth(1), windows_for_depth(4), windows_for_depth(6),
+       windows_for_depth(8), windows_for_depth(10)) == (0.25, 0.5, 1.0, 2.0, 3.5))
+check("windows_for_depth clamps out-of-range", windows_for_depth(0) == 0.25 and windows_for_depth(99) == 3.5)
+check("depth_for_windows inverse bands",
+      (depth_for_windows(0.25), depth_for_windows(0.5), depth_for_windows(1.0),
+       depth_for_windows(2.0), depth_for_windows(3.5)) == (2, 4, 6, 8, 10))
+
+_dj = parse_jobs([{"id": "a", "title": "A", "type": "test", "depth": 7, "value": 8}])[0]
+check("parse_jobs: depth job derives est_windows", _dj.depth == 7 and _dj.est_windows == 2.0)
+_lj = parse_jobs([{"id": "b", "title": "B", "type": "test", "est_windows": 1.0, "value": 5}])[0]
+check("parse_jobs: legacy est_windows job derives a display depth", _lj.est_windows == 1.0 and _lj.depth == 6)
+check("parse_jobs: a dict with neither depth nor est_windows is skipped",
+      parse_jobs([{"id": "c", "value": 3}]) == [])
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
