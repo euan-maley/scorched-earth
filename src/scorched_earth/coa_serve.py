@@ -98,7 +98,12 @@ class Engine:
         with self._lock:
             running = [dict(v) for v in self._running.values()]
             busy = bool(running) or bool(self._workers)
-        return {"repos": [coa_io.board_state(r) for r in self.repos],
+            # group in-flight ids by repo so board_state can keep each running job out of its
+            # repo's proposed column (it's been unqueued but not yet recorded as finished).
+            running_by_repo = {}
+            for v in self._running.values():
+                running_by_repo.setdefault(v["repo"], []).append(v["id"])
+        return {"repos": [coa_io.board_state(r, running_by_repo.get(r, ())) for r in self.repos],
                 "running": running, "busy": busy}
 
     # ---- per-repo drain worker ----

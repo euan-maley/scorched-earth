@@ -105,6 +105,14 @@ _bsn = _io.board_state(_repo_norec)
 check("board_state with no run record yields empty finished + the job proposed",
       _bsn["finished"] == [] and [j["id"] for j in _bsn["proposed"]] == ["n1"])
 
+# board_state is running-aware: an in-flight job (unqueued, not yet finished, still in
+# jobs.json) is held out of `proposed` only when its id is passed via running_ids.
+_io.unqueue(_repo_norec, "n1")          # simulate the pick: gone from the queue, mid-run
+check("board_state WITHOUT running_ids leaks the in-flight job into proposed",
+      [j["id"] for j in _io.board_state(_repo_norec)["proposed"]] == ["n1"])
+check("board_state(running_ids=[id]) hides the in-flight job from proposed",
+      _io.board_state(_repo_norec, running_ids=["n1"])["proposed"] == [])
+
 # --- Task 5: Engine (event-driven advance) ----------------------------------------
 from scorched_earth.coa_serve import Engine  # noqa: E402
 import time as _time5  # noqa: E402
@@ -454,6 +462,32 @@ _hp = render_cockpit("tk", {"repos": [{"repo": "/r/a", "name": "a", "proposed": 
 check("cockpit handles a running LIST (renders without error, references running as array)",
       "__COCKPIT_" not in _hp and "running" in _hp.lower()
       and "PARALLEL" in _hp)
+
+# --- in-flight job must not flicker back into the proposed column ----------------
+# Regression: a worker unqueues a job at pick time but only writes it to the run record
+# on completion. In that window board_state saw it in neither queue nor finished and,
+# since it's still in jobs.json, leaked it back into `proposed` — so the live cockpit
+# showed a RUNNING card simultaneously in the proposed column. state_json must hide
+# any in-flight job from its repo's proposed list.
+_fgate = _pth.Event()
+def _flick_exec(repo, job, roe):
+    _fgate.wait(3); return ("pass", None, "ok")
+_fr = _mk_repo([Job(id="f1", repo=".", title="F1", type="test", est_windows=0.5, value=5, depth=3),
+                Job(id="f2", repo=".", title="F2", type="test", est_windows=0.5, value=5, depth=3)])
+_feng = Engine([_fr], execute=_flick_exec, load_state=lambda: _STATE, now=lambda: 1)
+_feng.run([_fr])
+_end = _ptime.time() + 3
+while _ptime.time() < _end and not _feng.state_json()["running"]:
+    _ptime.sleep(0.02)
+_sj = _feng.state_json()
+_running_id = _sj["running"][0]["id"] if _sj["running"] else None
+_prop_ids = [j["id"] for _rep in _sj["repos"] for j in _rep["proposed"]]
+check("state_json hides the in-flight job from proposed (no RUNNING-in-proposed flicker)",
+      _running_id is not None and _running_id not in _prop_ids)
+_fgate.set()
+_end = _ptime.time() + 3
+while _ptime.time() < _end and _feng.state_json()["busy"]:
+    _ptime.sleep(0.02)
 
 print(f"\n{passed} checks passed.")
 if failures:

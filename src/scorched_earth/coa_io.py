@@ -177,12 +177,16 @@ def _job_brief(j: Job) -> dict:
             "depth": j.depth, "est_windows": j.est_windows, "value": j.value}
 
 
-def board_state(repo_path: str) -> dict:
+def board_state(repo_path: str, running_ids=()) -> dict:
     ap = os.path.realpath(os.path.expanduser(repo_path))
     queued = read_queue(repo_path)
     rec = read_run_record(repo_path) or {}
     finished = [j for j in (rec.get("jobs") or []) if j.get("outcome") in ("pass", "fail")]
-    spoken = {j.id for j in queued} | {j.get("id") for j in finished}
+    # An in-flight job has been unqueued (at pick) but not yet written to the run record
+    # (on completion); without `running_ids` it would fall back into `proposed` because it's
+    # still in jobs.json. The Engine passes the currently-running id(s) so the live board
+    # shows it only as RUNNING, never simultaneously in the proposed column.
+    spoken = {j.id for j in queued} | {j.get("id") for j in finished} | set(running_ids)
     proposed = [_job_brief(j) for j in load_jobs(repo_path) if j.id not in spoken]
     return {"repo": ap, "name": os.path.basename(ap),
             "proposed": proposed, "queued": [_job_brief(j) for j in queued],
