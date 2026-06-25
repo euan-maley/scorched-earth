@@ -28,6 +28,7 @@ spent by maxing out every remaining 5-hour window.
 - `src/scorched_earth/review_report.py` + `review_template.html` — renders the live After-Action Report (md + HTML) from one `RunResult`; auto-refreshes while running, settles when done.
 - `src/scorched_earth/coa_serve.py` + `cockpit_template.html` — COA live cockpit (Phase 2b): a 127.0.0.1 `ThreadingHTTPServer` (one-time token, job-ids-not-commands, ROE server-side) hosting an event-driven `Engine.advance` step (no background loop) that drives the Phase 2a runner; SSE pushes board state to a kanban cockpit. `scorch coa --serve`.
 - `commands/coa.md` / `commands/roe.md` — `/coa` (generate a Course of Action) and `/roe` (edit the Rules of Engagement).
+- `commands/war-room.md` — `/war-room` slash command: background-launches `scorch coa --serve` (the live cockpit) and hands back the token URL; `/war-room stop` kills it.
 
 ## Packaging facts (confirmed against installed plugins + docs)
 
