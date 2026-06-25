@@ -40,19 +40,25 @@ class Engine:
 
     # ---- public mutations (called by HTTP handlers) ----
     def queue(self, repo, job_id):
-        # promote a proposed job into the queue by id
+        # promote a proposed job into the queue by id. The queue.json read-modify-write
+        # runs under the lock so concurrent /queue|/unqueue|/reorder POSTs (and advance's
+        # own unqueue) can't race and lose updates. Lock is released before advance (the
+        # lock is non-reentrant and advance re-acquires it).
         jobs = {j.id: j for j in coa_io.load_jobs(repo)}
         if job_id in jobs:
-            coa_io.enqueue(repo, [jobs[job_id]])
+            with self._lock:
+                coa_io.enqueue(repo, [jobs[job_id]])
         self._broadcast()
         self.advance(repo)
 
     def unqueue(self, repo, job_id):
-        coa_io.unqueue(repo, job_id)
+        with self._lock:
+            coa_io.unqueue(repo, job_id)
         self._broadcast()
 
     def reorder(self, repo, ids):
-        coa_io.reorder(repo, ids)
+        with self._lock:
+            coa_io.reorder(repo, ids)
         self._broadcast()
 
     def run(self, repo):

@@ -268,6 +268,33 @@ check("scorch coa --serve with no linked repos refuses cleanly (exit 0, no trace
       _p.returncode == 0 and "Traceback" not in _p.stderr
       and ("link" in _p.stdout.lower() or "no repos" in _p.stdout.lower()))
 
+# --- concurrency: rapid /queue POSTs must not lose cards (queue mutations under the lock) --
+import threading as _ccth, time as _cctime  # noqa: E402
+_cc_repo = tempfile.mkdtemp()
+os.makedirs(os.path.join(_cc_repo, ".scorched"), exist_ok=True)
+with open(os.path.join(_cc_repo, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": _c, "title": _c, "type": "test", "est_windows": 0.5, "value": 5}
+               for _c in "abcdef"], _f)
+_cc_eng = Engine([_cc_repo], execute=lambda *_a: ("pass", None, "ok"),
+                 load_state=lambda: _STATE, now=lambda: 1)
+_cc_httpd, _cc_port = make_server(_cc_eng, "cc-tok")
+_ccth.Thread(target=_cc_httpd.serve_forever, daemon=True).start()
+def _cc_req(path, body):
+    _c = http.client.HTTPConnection("127.0.0.1", _cc_port, timeout=3)
+    _c.request("POST", path, json.dumps(body),
+               {"Content-Type": "application/json", "X-Scorch-Token": "cc-tok"})
+    _c.getresponse().read(); _c.close()
+_cc_req("/stop", {})                                          # stage without auto-running
+_cc_threads = [_ccth.Thread(target=_cc_req, args=("/queue", {"repo": _cc_repo, "id": _c}))
+               for _c in "abcdef"]                            # 6 concurrent /queue POSTs
+[t.start() for t in _cc_threads]; [t.join() for t in _cc_threads]
+_cc_end = _cctime.time() + 3
+while _cctime.time() < _cc_end and len(_io.read_queue(_cc_repo)) < 6:
+    _cctime.sleep(0.02)
+check("rapid concurrent /queue loses no cards (mutations serialized under the lock)",
+      sorted(j.id for j in _io.read_queue(_cc_repo)) == list("abcdef"))
+_cc_httpd.shutdown()
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

@@ -108,8 +108,12 @@ def write_queue(repo_path: str, jobs: List[Job]) -> str:
     path = _queue_path(repo_path)
     for j in jobs:
         j.status = "queued"
-    with open(path, "w") as f:
+    # Atomic write (temp + os.replace) so an unlocked reader (board_state) never sees a
+    # half-written file — it observes either the old or the new complete queue.
+    tmp = "{}.{}.tmp".format(path, os.getpid())
+    with open(tmp, "w") as f:
         json.dump([_job_to_dict(j) for j in jobs], f, indent=2)
+    os.replace(tmp, path)
     return path
 
 
