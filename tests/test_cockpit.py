@@ -245,6 +245,16 @@ check("render_cockpit substitutes both tokens",
 check("render_cockpit embeds token + state",
       "tok-123" in _txt and "g1" in _txt and _txt.lstrip().lower().startswith("<!doctype html"))
 
+# --- Task 8: CLI verb (no-repos refusal; never starts the blocking server) ---------
+import subprocess  # noqa: E402
+_cli_env = dict(os.environ); _cli_env["HOME"] = tempfile.mkdtemp()
+_scorch = os.path.join(os.path.dirname(__file__), "..", "bin", "scorch")
+_p = subprocess.run([sys.executable, _scorch, "coa", "--serve"],
+                    capture_output=True, text=True, env=_cli_env, timeout=10)
+check("scorch coa --serve with no linked repos refuses cleanly (exit 0, no traceback)",
+      _p.returncode == 0 and "Traceback" not in _p.stderr
+      and ("link" in _p.stdout.lower() or "no repos" in _p.stdout.lower()))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

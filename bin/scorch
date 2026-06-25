@@ -217,6 +217,29 @@ def _coa_run_cli(rest):
     args = rest[1:]
     date = _time.strftime("%Y-%m-%d", _time.localtime())
 
+    if "--serve" in rest or sub == "serve":
+        import secrets, webbrowser
+        from scorched_earth import coa_serve
+        named = [a for a in rest if not a.startswith("-") and a != "serve"]
+        repos = [named[0]] if named else coa_io.list_repos()
+        if not repos:
+            print("No repos linked. Use: scorch link <path>")
+            return 0
+        token = secrets.token_urlsafe(32)
+        engine = coa_serve.Engine(repos)
+        httpd, port = coa_serve.make_server(engine, token, render=coa_serve.render_cockpit)
+        url = f"http://127.0.0.1:{port}/?t={token}"
+        print(f"COA cockpit on {url}\n(Ctrl-C to stop)")
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nCockpit stopped.")
+        return 0
+
     if sub == "queue":
         all_flag = "--all" in args
         ids = [a for a in args if not a.startswith("-")]
