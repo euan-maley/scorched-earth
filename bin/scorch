@@ -183,18 +183,17 @@ def _coa_cli(raw):
         return 0
 
     if verb == "roe":
+        import dataclasses as _dc
         repo = rest[0] if rest else "."
         roe = coa_io.load_roe(repo)
-        print(_json.dumps(roe.__dict__, indent=2))
+        print(_json.dumps(_dc.asdict(roe), indent=2))
         return 0
 
     # advise
     state = st.load_state()
     snap = (state or {}).get("snapshot") or {}
     rec = (state or {}).get("recommendation") or {}
-    from scorched_earth import advisor as _adv
-    headroom = _adv.window_headroom(snap)
-    if not _has_usable_snapshot(state) or headroom is None:
+    if not _has_usable_snapshot(state):
         print("No live budget reading yet, so there's nothing to plan against. "
               "Open a Claude Code session to capture a snapshot, then try again.")
         return 0
@@ -205,18 +204,25 @@ def _coa_cli(raw):
         print("No repos linked. Use: scorch link <path>")
         return 0
     date = time.strftime("%Y-%m-%d", time.localtime())
-    wrp = _adv.weekly_reserve_pct(snap) or 0.0
+    wrp = advisor.weekly_reserve_pct(snap) or 0.0
     level = rec.get("level", "unknown")
+    # Weekly reset countdown (display context for the HTML report).
+    wr = snap.get("seven_day_reset")
+    reset_in = fmt_dur(wr - snap.get("now", int(time.time()))) if wr else ""
     written = []
     for repo in repos:
         roe = coa_io.load_roe(repo)
-        coa = advisor.match(headroom, coa_io.load_jobs(repo), roe, weekly_reserve_pct=wrp)
+        coa = advisor.match(coa_io.load_jobs(repo), roe)
         md = coa_report.render_md(coa, date)
-        html = coa_report.render_html(coa, date, verdict=level)
+        html = coa_report.render_html(coa, date, verdict=level,
+                                      reset_in=reset_in, weekly_reserve_pct=wrp)
         md_path, html_path = coa_io.write_coa(repo, md, html, date)
         written.append(html_path)
         print(f"\n=== {repo} ===")
         print(coa.note)
+        for j in coa.queue:
+            mark = " (approval required)" if advisor.approval_required(j, roe) else ""
+            print(f"  DEFCON {j.defcon}  {j.title or j.id}{mark}")
         print(f"COA written: {html_path}")
     if not no_open and len(written) == 1:
         _open_file(written[0])
@@ -260,22 +266,17 @@ def _coa_run_cli(rest):
         ids = [a for a in args if not a.startswith("-")]
         repo = ids.pop(0) if ids and os.path.isdir(os.path.expanduser(ids[0])) else "."
         state = st.load_state()
-        snap = (state or {}).get("snapshot") or {}
-        # Mirror the advise branch's budget model: plan against the CURRENT 5-hour window's
-        # headroom, never the weekly windows_left, and never forfeit over-budget jobs.
-        headroom = advisor.window_headroom(snap)
-        if not _has_usable_snapshot(state) or headroom is None:
+        # The runner halts on the real usage limit, not a budget gate; but we still need a live
+        # snapshot to plan against, so refuse cleanly if there isn't one yet.
+        if not _has_usable_snapshot(state):
             print("No live budget reading yet — open a Claude Code session, then queue.")
             return 0
         roe = coa_io.load_roe(repo)
-        coa = advisor.match(headroom, coa_io.load_jobs(repo), roe,
-                            weekly_reserve_pct=advisor.weekly_reserve_pct(snap) or 0.0)
+        coa = advisor.match(coa_io.load_jobs(repo), roe)
         if not all_flag and not ids:
             print("Nothing specified. Use `scorch coa queue --all` or pass job ids.")
             return 0
-        # Nothing forfeited: draw from queue + over_budget so over-budget jobs are still queueable.
-        eligible = coa.queue + coa.over_budget
-        pick = eligible if all_flag else [j for j in eligible if j.id in ids]
+        pick = coa.queue if all_flag else [j for j in coa.queue if j.id in ids]
         if not pick:
             print("Nothing to queue (the latest COA produced no eligible jobs).")
             return 0
@@ -284,6 +285,7 @@ def _coa_run_cli(rest):
         return 0
 
     if sub == "run":
+        approve = "--approve" in args
         repos = [a for a in args if not a.startswith("-")] or coa_io.list_repos() or ["."]
         state = st.load_state()
         now = int(_time.time())
@@ -294,7 +296,7 @@ def _coa_run_cli(rest):
         for repo in repos:
             if not coa_io.read_queue(repo):
                 continue
-            rr = runner.run_queue(repo, state, now=now, date=date)
+            rr = runner.run_queue(repo, state, now=now, date=date, approved=approve)
             if rr is None:
                 print(f"{repo}: refused (stale snapshot).")
                 continue

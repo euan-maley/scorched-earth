@@ -157,7 +157,7 @@ _p2 = subprocess.run([sys.executable, _scorch, "advise"], capture_output=True, t
 check("scorch advise refuses cleanly with no snapshot",
       _p2.returncode == 0 and "no" in _p2.stdout.lower())
 _p3 = subprocess.run([sys.executable, _scorch, "roe", _r], capture_output=True, text=True, env=_env)
-check("scorch roe prints JSON", _p3.returncode == 0 and "max_windows" in _p3.stdout)
+check("scorch roe prints JSON", _p3.returncode == 0 and "auto_run_min_defcon" in _p3.stdout)
 
 # --- slash commands exist with frontmatter ---------------------------------------
 _cmds = os.path.join(os.path.dirname(__file__), "..", "commands")
