@@ -260,6 +260,9 @@ def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1):
                 p.wait()
             return "killed"
         time.sleep(poll)
+    # process exited on its own — but honor a kill the operator requested in the meantime
+    if kill_event.is_set():
+        return "killed"
     return "done"
 
 

@@ -130,9 +130,9 @@ class Engine:
 
             with self._lock:
                 if oc.outcome not in ("pass", "fail"):
-                    # killed (or other non-terminal): do NOT append to finished; do NOT charge.
-                    # The job was already unqueued; re-enqueue it so the board shows it proposed.
-                    # (board_state derives "proposed" from jobs.json minus queue minus finished.)
+                    # killed (or other non-terminal): do NOT charge, do NOT append to the run
+                    # record. The job was already unqueued; board_state derives it back to
+                    # "proposed" (in jobs.json, not in queue, not in finished) — nothing to do.
                     pass
                 else:
                     tracker.charge(job.est_windows)

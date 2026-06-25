@@ -301,6 +301,11 @@ check("_run_killable returns 'done' when the process exits on its own",
 check("_run_killable with no kill_event waits to completion",
       _run_killable([sys.executable, "-c", "pass"], None, None) == "done")
 
+# operator intent wins even if the child finishes coincidentally
+_pre = _kt.Event(); _pre.set()
+check("_run_killable: a kill requested before the child exits still returns 'killed'",
+      _run_killable([sys.executable, "-c", "pass"], None, _pre) == "killed")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
