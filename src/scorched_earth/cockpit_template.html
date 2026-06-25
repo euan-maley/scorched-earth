@@ -249,7 +249,8 @@ const STATE = __COCKPIT_JSON__;
   let state = normalize(STATE);
   let activeRepo = state.repos.length ? state.repos[0].repo : null;
   let dragKind = null;            // 'proposed' | 'queued' while a drag is live
-  let armed = null;               // Set of repo paths included in next Run; null = all
+  let armed = new Set();          // repos a Run drains — new repos auto-arm; user unchecks persist
+  const seenRepos = new Set();    // repos we've auto-armed once (so we don't re-arm an unchecked one)
 
   function normalize(s){
     s = s || {};
@@ -415,7 +416,7 @@ const STATE = __COCKPIT_JSON__;
       const b=document.createElement("button");
       b.className="tab"+(r.repo===activeRepo?" active":"")+(isRunning?" running":"");
       const cb = document.createElement("input");
-      cb.type = "checkbox"; cb.className = "tab__arm"; cb.checked = armed === null || armed.has(r.repo);
+      cb.type = "checkbox"; cb.className = "tab__arm"; cb.checked = armed.has(r.repo);
       cb.title = "include this repo in Run";
       cb.onclick = (ev)=>{ ev.stopPropagation(); if(cb.checked) armed.add(r.repo); else armed.delete(r.repo); };
       b.appendChild(cb);
@@ -461,7 +462,7 @@ const STATE = __COCKPIT_JSON__;
 
   /* ---------- master render (idempotent) ---------- */
   function render(){
-    if(armed === null) armed = new Set(state.repos.map(r=>r.repo));
+    state.repos.forEach(r=>{ if(!seenRepos.has(r.repo)){ seenRepos.add(r.repo); armed.add(r.repo); } });
     const repo = activeRepoObj();
     renderHeader();
     renderTabs();
@@ -477,7 +478,6 @@ const STATE = __COCKPIT_JSON__;
 
   /* ---------- engine controls ---------- */
   document.getElementById("btnRun").addEventListener("click", ()=>{
-    if(armed === null) armed = new Set(state.repos.map(r=>r.repo));
     const repos = state.repos.map(r=>r.repo).filter(x=>armed.has(x));
     if(!repos.length) return;
     state.busy = true; renderHeader();
