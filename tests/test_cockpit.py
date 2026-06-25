@@ -179,6 +179,19 @@ check("engine busy guard: after release the chain drains the rest and goes idle"
       sorted(_cstarted) == ["c1", "c2"] and _engc.state_json()["busy"] is False
       and _io.read_queue(_rc) == [])
 
+# Run clears a prior Stop (Stop is a pause, not a permanent kill)
+_ran_sr = []
+def _exec_sr(repo, job, roe):
+    _ran_sr.append(job.id); return ("pass", None, "ok")
+_rs = _mk_repo([Job(id="p1", repo=".", title="P1", type="test", est_windows=0.5, value=5),
+                Job(id="p2", repo=".", title="P2", type="test", est_windows=0.5, value=4)])
+_engsr = Engine([_rs], execute=_exec_sr, load_state=lambda: _STATE, now=lambda: 1)
+_engsr.stop()                         # pre-stopped
+_engsr.run(_rs)                        # Run must clear the stop flag and drain
+check("engine: Run resumes after a prior Stop (clears the stop flag)",
+      sorted(_ran_sr) == ["p1", "p2"] and _io.read_queue(_rs) == []
+      and _engsr.state_json()["busy"] is False)
+
 # --- Task 6: HTTP server (token, routing, SSE) ------------------------------------
 import http.client  # noqa: E402
 import threading as _threading  # noqa: E402

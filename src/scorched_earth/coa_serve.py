@@ -56,6 +56,8 @@ class Engine:
         self._broadcast()
 
     def run(self, repo):
+        with self._lock:
+            self._stop = False          # Run = go/resume: clear any prior Stop
         self.advance(repo)
 
     def stop(self):
