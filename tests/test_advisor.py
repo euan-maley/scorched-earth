@@ -93,7 +93,8 @@ from scorched_earth import coa_report as _rep  # noqa: E402
 _md = _rep.render_md(_coa, "2026-06-25")
 check("render_md uses the 'Over budget' framing, not 'Left on the table'",
       "Over budget" in _md and "Left on the table" not in _md)
-check("render_md lists the over-budget jobs", "b" in _md and "c" in _md)
+check("render_md lists the over-budget jobs under the Over budget section",
+      "## Over budget (queue anyway)" in _md and "- big (" in _md)
 _html = _rep.render_html(_coa, "2026-06-25", verdict="green")
 check("render_html substitutes the token (no leftover __COA_JSON__)",
       "__COA_JSON__" not in _html)

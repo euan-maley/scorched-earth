@@ -326,7 +326,7 @@ var DATA = __COA_JSON__;
         </span>
       </div>
       <h1 class="hdr__title">COURSE OF ACTION</h1>
-      <div class="hdr__sub">BUDGET-MATCHED BATTLE PLAN &middot; ${DATA.queue.length} JOBS COMMITTED &middot; ${overBudgetJobs.length} OVER BUDGET &middot; ${blockedJobs.length} BLOCKED</div>
+      <div class="hdr__sub">BUDGET-MATCHED BATTLE PLAN &middot; ${(DATA.queue||[]).length} JOBS COMMITTED &middot; ${overBudgetJobs.length} OVER BUDGET &middot; ${blockedJobs.length} BLOCKED</div>
     </div>
 
     <div class="deck">
@@ -358,14 +358,14 @@ var DATA = __COA_JSON__;
       <div class="mod">
         <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT</span><span class="r">ROE // STANDING ORDERS</span></div>
         <ul class="roe">
-          ${DATA.roe.map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
+          ${(DATA.roe||[]).map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
         </ul>
       </div>
 
       <!-- 4. BATTLE PLAN -->
       <div class="sec"><h2>BATTLE PLAN</h2><span class="rule"></span><span class="rt">FIRING ORDER &middot; HIGH \u2192 LOW</span></div>
       <div class="jobs">
-        ${DATA.queue.map((j,i)=>jobCard(j,i+1)).join("")}
+        ${(DATA.queue||[]).map((j,i)=>jobCard(j,i+1)).join("")}
       </div>
 
       <!-- 5. OVER BUDGET (QUEUE ANYWAY) -->
