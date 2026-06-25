@@ -433,6 +433,10 @@ check("POST /run with an unknown repo in the list is 400",
 check("POST /run with single {repo} still works (back-compat)", _rpost({"repo": _rrA}) == 200)
 _hr.shutdown()
 
+# cockpit wires a repos-list run (Run-all over the armed checkboxes)
+_hr3 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
+check("cockpit Run posts a repos list (armed checkboxes)", "repos" in _hr3 and "armed" in _hr3.lower())
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

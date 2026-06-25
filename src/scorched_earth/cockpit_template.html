@@ -90,6 +90,7 @@
        color:#ff8a3f;border:1px solid #5a3014;padding:1px 6px}
   .tab .cnt{font-size:11px;letter-spacing:1px;color:var(--muted);border:1px solid var(--mod-bd);padding:1px 6px}
   .tab.active .cnt{color:var(--ember2);border-color:#5a3014}
+  .tab__arm{accent-color:#ff6a1f;margin-right:4px;cursor:pointer}
 
   /* ---- board ---- */
   .board{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;padding:16px 18px}
@@ -248,6 +249,7 @@ const STATE = __COCKPIT_JSON__;
   let state = normalize(STATE);
   let activeRepo = state.repos.length ? state.repos[0].repo : null;
   let dragKind = null;            // 'proposed' | 'queued' while a drag is live
+  let armed = null;               // Set of repo paths included in next Run; null = all
 
   function normalize(s){
     s = s || {};
@@ -412,9 +414,14 @@ const STATE = __COCKPIT_JSON__;
       const isRunning = state.running && state.running.repo===r.repo;
       const b=document.createElement("button");
       b.className="tab"+(r.repo===activeRepo?" active":"")+(isRunning?" running":"");
-      b.innerHTML='<span>'+esc(r.name||r.repo)+'</span>'+
-        (isRunning ? '<span class="tab__run"><span class="dot ember" style="background:#ff6a1f"></span>RUNNING</span>'
-                   : '<span class="cnt">'+n+'</span>');
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.className = "tab__arm"; cb.checked = armed === null || armed.has(r.repo);
+      cb.title = "include this repo in Run";
+      cb.onclick = (ev)=>{ ev.stopPropagation(); if(cb.checked) armed.add(r.repo); else armed.delete(r.repo); };
+      b.appendChild(cb);
+      b.appendChild(html('<span>'+esc(r.name||r.repo)+'</span>'));
+      b.appendChild(html(isRunning ? '<span class="tab__run"><span class="dot ember" style="background:#ff6a1f"></span>RUNNING</span>'
+                                   : '<span class="cnt">'+n+'</span>'));
       b.onclick=()=>{ activeRepo=r.repo; render(); };
       tabs.appendChild(b);
     });
@@ -454,6 +461,7 @@ const STATE = __COCKPIT_JSON__;
 
   /* ---------- master render (idempotent) ---------- */
   function render(){
+    if(armed === null) armed = new Set(state.repos.map(r=>r.repo));
     const repo = activeRepoObj();
     renderHeader();
     renderTabs();
@@ -469,9 +477,11 @@ const STATE = __COCKPIT_JSON__;
 
   /* ---------- engine controls ---------- */
   document.getElementById("btnRun").addEventListener("click", ()=>{
-    if(!activeRepo) return;
-    state.busy = true; renderHeader(); renderStatus(activeRepoObj());   // optimistic
-    post("/run", { repo: activeRepo });
+    if(armed === null) armed = new Set(state.repos.map(r=>r.repo));
+    const repos = state.repos.map(r=>r.repo).filter(x=>armed.has(x));
+    if(!repos.length) return;
+    state.busy = true; renderHeader();
+    post("/run", { repos: repos });
   });
   document.getElementById("btnStop").addEventListener("click", ()=>{
     state.busy = false; renderHeader(); renderStatus(activeRepoObj());  // optimistic
