@@ -128,6 +128,20 @@
   .cnext{flex:none;font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--ember2)}
   .cbadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;letter-spacing:1.5px;
           border:1px solid;padding:3px 9px 2px}
+
+  /* DEFCON badges — mirror coa_template.html */
+  .defcon{flex:none;display:inline-flex;align-items:center;justify-content:center;
+          min-width:66px;height:20px;padding:0 7px;font-size:11px;font-weight:800;letter-spacing:1.5px}
+  .defcon-1{background:#c0392b;color:#fff;border:1px solid #ff4040;box-shadow:0 0 8px rgba(192,57,43,.7)}
+  .defcon-2{background:#e2541d;color:#190d05;border:1px solid #ff6a1f}
+  .defcon-3{background:#e2a04d;color:#190d05;border:1px solid #ffb84a}
+  .defcon-4{background:#5e7a7a;color:#eef3f3;border:1px solid #7a9d9d}
+  .defcon-5{background:transparent;color:#86abab;border:1px solid #3a5a5a}
+
+  /* approval marker */
+  .capproval{flex:none;font-size:10px;letter-spacing:1.5px;font-weight:800;
+             color:#ff4040;border:1px solid #c0392b;padding:1px 6px;
+             animation:blink 1.4s steps(1,end) infinite}
   .cbranch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--secondary);
            background:#0c1217;border:1px solid var(--track-bd);padding:2px 8px;max-width:100%;overflow:hidden;
            text-overflow:ellipsis;white-space:nowrap}
@@ -220,7 +234,7 @@
   <div class="statusbar">
     <div class="sb__group" id="sbStats"></div>
     <div class="sb__group">
-      <div class="sb__stat"><span>HEADROOM</span><b id="sbHeadroom">&mdash;</b><span id="sbHeadroomUnit">WIN FREE</span><small id="sbReserve" style="font-size:11px;letter-spacing:1px;color:#86abab;margin-left:4px"></small></div>
+      <div class="sb__stat"><span>WEEKLY RESERVE</span><b id="sbReserve">&mdash;</b><span>%</span></div>
       <div class="sb__sep"></div>
       <span class="sb__engine" id="sbEngine"></span>
     </div>
@@ -255,7 +269,7 @@ const STATE = __COCKPIT_JSON__;
   function normalize(s){
     s = s || {};
     return { repos: Array.isArray(s.repos)?s.repos:[], running: Array.isArray(s.running)?s.running:[], busy: !!s.busy,
-             headroom: s.headroom!=null?s.headroom:null, weekly_reserve_pct: s.weekly_reserve_pct!=null?s.weekly_reserve_pct:null };
+             weekly_reserve_pct: s.weekly_reserve_pct!=null?s.weekly_reserve_pct:null };
   }
   const repoOf = key => state.repos.find(r=>r.repo===key) || null;
   function activeRepoObj(){
@@ -305,19 +319,22 @@ const STATE = __COCKPIT_JSON__;
     const foot = el.querySelector(".cfoot");
     foot.innerHTML = "";
     if(kind==="proposed"){
-      foot.appendChild(html('<span class="cdepth">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
+      const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
+      foot.appendChild(html('<span class="defcon defcon-'+d+'">DEFCON '+d+'</span>'));
+      if(job.approval_required) foot.appendChild(html('<span class="capproval">APPROVAL REQUIRED</span>'));
       if(job.value!=null) foot.appendChild(html('<span class="cval" style="color:'+VALCOL(+job.value)+'">VAL '+esc(job.value)+'</span>'));
-      if(job.fit==="over") foot.appendChild(html('<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16);margin-left:auto">OVER</span>'));
     } else if(kind==="queued"){
       const isNext = idx===0;
       el.style.borderLeftColor = isNext ? "#ff6a1f" : "var(--amber)";
       foot.appendChild(html('<span class="cpos'+(isNext?' cpos--next':'')+'">'+String(idx+1)+(isNext?' \u2191':'')+'</span>'));
       if(isNext) foot.appendChild(html('<span class="cnext">NEXT UP</span>'));
-      foot.appendChild(html('<span class="cdepth"'+(isNext?'':' style="margin-left:auto"')+'>DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
-      if(job.fit==="over") foot.appendChild(html('<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">OVER</span>'));
+      const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
+      foot.appendChild(html('<span class="defcon defcon-'+d+'"'+(isNext?'':' style="margin-left:auto"')+'>DEFCON '+d+'</span>'));
+      if(job.approval_required) foot.appendChild(html('<span class="capproval">APPROVAL REQUIRED</span>'));
     } else if(kind==="running"){
       foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
-      foot.appendChild(html('<span class="cdepth" style="margin-left:auto">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
+      const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
+      foot.appendChild(html('<span class="defcon defcon-'+d+'" style="margin-left:auto">DEFCON '+d+'</span>'));
       const kb = html('<button class="btn btn--stop" data-kill="'+esc(job.id)+'" style="margin-left:auto;padding:4px 11px 3px;font-size:11px">\u2715 KILL</button>');
       foot.appendChild(kb);
     } else { // finished
@@ -326,7 +343,6 @@ const STATE = __COCKPIT_JSON__;
         ? '<span class="cbadge" style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
         : '<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
       foot.appendChild(html(badge));
-      foot.appendChild(html('<span class="cdepth" style="color:#86abab;font-weight:700">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
       if(job.branch){
         const br = html('<span class="cbranch" style="flex-basis:100%"><span class="g">&#9095;</span>'+esc(job.branch)+'</span>');
         foot.appendChild(br);
@@ -450,19 +466,10 @@ const STATE = __COCKPIT_JSON__;
       stat(queued,"QUEUED","#e2a04d")+
       stat(proposed,"PROPOSED","#9ec1c1");
 
-    // headroom readout: windows of current-window capacity still free
-    const hd = state.headroom;
-    const hdEl = document.getElementById("sbHeadroom");
+    // weekly reserve context readout
     const resEl = document.getElementById("sbReserve");
-    if(hd != null){
-      hdEl.textContent = "~"+fmt(hd);
-      document.getElementById("sbHeadroomUnit").textContent = "WIN FREE NOW";
-    } else {
-      hdEl.textContent = "—";
-      document.getElementById("sbHeadroomUnit").textContent = "WIN FREE";
-    }
     const wrp = state.weekly_reserve_pct;
-    resEl.textContent = wrp != null ? "WEEKLY "+Math.round(wrp)+"% RESERVE" : "";
+    resEl.textContent = wrp != null ? Math.round(wrp) : "—";
 
     const eng = document.getElementById("sbEngine");
     if(state.busy){ eng.style.borderColor="#ff6a1f"; eng.style.color="#ff8a3f";

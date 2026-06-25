@@ -355,9 +355,20 @@ with open(os.path.join(_rb2, ".scorched", "jobs.json"), "w") as _f:
 check("board_state brief carries defcon", _io.board_state(_rb2)["proposed"][0]["defcon"] == 2)
 check("board_state brief carries approval_required", "approval_required" in _io.board_state(_rb2)["proposed"][0])
 
-# cockpit cards render DEFCON (template updated in Task 9; verify no EST ~ window-cost label)
-_hk2 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
+# cockpit cards render DEFCON (template updated in Task 9)
+_defcon_repo = tempfile.mkdtemp()
+os.makedirs(os.path.join(_defcon_repo, ".scorched"), exist_ok=True)
+with open(os.path.join(_defcon_repo, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "d1", "title": "DefconJob", "type": "test", "defcon": 2, "value": 7}], _f)
+_hk2 = render_cockpit("tk", {
+    "repos": [{"repo": _defcon_repo, "name": "dr",
+               "proposed": [{"id": "d1", "title": "DefconJob", "type": "test",
+                              "defcon": 2, "approval_required": True, "value": 7}],
+               "queued": [], "finished": []}],
+    "running": None, "busy": False, "weekly_reserve_pct": 42
+}).decode("utf-8")
 check("cockpit template has no per-card EST window-cost label", "EST ~" not in _hk2)
+check("cockpit renders a DEFCON badge for proposed cards", "defcon-" in _hk2)
 
 # --- parallel per-repo execution -------------------------------------------------
 import threading as _pth, time as _ptime  # noqa: E402
@@ -508,14 +519,21 @@ _end = _ptime.time() + 3
 while _ptime.time() < _end and _feng.state_json()["busy"]:
     _ptime.sleep(0.02)
 
-# --- Task 5: cockpit headroom HUD + over-budget badge ----------------------------
+# --- Task 9: cockpit DEFCON board — headroom dropped, DEFCON + approval rendered ----
 _hd = render_cockpit("tk", {"repos": [{"repo":"/r/a","name":"a",
-        "proposed":[{"id":"p1","title":"P","type":"docs","tier":"M","depth":6,"est_windows":1.0,"value":7,"fit":"over"}],
-        "queued":[],"finished":[]}],
-        "running": [], "busy": False, "headroom": 0.95, "weekly_reserve_pct": 19}).decode("utf-8")
-check("cockpit renders the headroom readout", "0.95" in _hd and '"headroom": 0.95' in _hd)
-check("cockpit renders an OVER-budget badge for over-headroom jobs", '"fit": "over"' in _hd)
+        "proposed":[{"id":"p1","title":"P","type":"docs","defcon":2,"approval_required":True,"value":7}],
+        "queued":[{"id":"q1","title":"Q","type":"test","defcon":4,"approval_required":False,"value":5}],
+        "finished":[]}],
+        "running": [], "busy": False, "weekly_reserve_pct": 19}).decode("utf-8")
+check("cockpit renders DEFCON badge for proposed card", "defcon-2" in _hd)
+check("cockpit renders DEFCON badge for queued card", "defcon-4" in _hd)
+check("cockpit renders approval marker for approval_required card", "APPROVAL REQUIRED" in _hd)
+check("cockpit weekly_reserve_pct context is present", "weekly_reserve_pct" in _hd)
+check("cockpit headroom not in rendered HTML", "headroom" not in _hd.lower())
 check("cockpit no longer labels the HUD 'BUDGET SPENT'", "BUDGET SPENT" not in _hd)
+# token + JSON substitution
+check("__COCKPIT_TOKEN__ and __COCKPIT_JSON__ are fully substituted",
+      "__COCKPIT_TOKEN__" not in _hd and "__COCKPIT_JSON__" not in _hd)
 
 print(f"\n{passed} checks passed.")
 if failures:
