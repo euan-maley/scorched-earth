@@ -1,9 +1,5 @@
 https://github.com/user-attachments/assets/52706f21-19d8-49f1-b5cc-1a5ec865a508
 
-<p align="center">
-  <img src="assets/banner.png" alt="Scorched Earth: torch it all, leave them nothing behind" width="760">
-</p>
-
 # Scorched Earth
 
 A green light for your Claude usage. It tells you when your remaining **weekly**
@@ -58,8 +54,6 @@ with THE FIELD: a Stardew-style pixel farm where each weekday plot grows lush wh
 burn light and chars when you burn heavy. Toggle the field between **LAST WEEK** (what you
 actually burned), **AVERAGE** (your all-time habit), and **THIS WEEK** (actual so far plus
 projected/recommended for the days ahead).
-
-https://github.com/user-attachments/assets/b735ffb4-5764-426c-b282-5b9c5e8c3481
 
 When the verdict goes green, the whole sitrep catches fire. Toggle the field across the
 three views:
@@ -132,3 +126,8 @@ The three layers that make it work: a **statusline script** (the engine, and the
 surface Claude Code feeds live usage data to), the **`scorch` CLI / `/scorched-earth` skill**
 (read the cached state), and the **plugin** (bundles them plus the install-time wiring). See
 `docs/playbook.md`.
+
+
+<p align="center">
+  <img src="assets/banner.png" alt="Scorched Earth: torch it all, leave them nothing behind" width="760">
+</p>
