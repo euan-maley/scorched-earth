@@ -369,8 +369,7 @@ const STATE = __COCKPIT_JSON__;
       jobs.push(Object.assign({}, base, { id: here.id }));
     }
     reconcile("running", jobs, "running");
-    const totalRunning = (state.running||[]).length;
-    root.querySelector('[data-cnt="running"]').textContent = totalRunning > 0 ? totalRunning + " ACTIVE" : "\u2014";
+    root.querySelector('[data-cnt="running"]').textContent = here ? "1 ACTIVE" : "\u2014";
   }
 
   /* ---------- header / status / tabs ---------- */
