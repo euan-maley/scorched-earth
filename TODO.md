@@ -1,6 +1,26 @@
 # TODO
 
-## Current Session — COA advisor + cockpit, FULLY built through multi-repo · branch `feat/burn-advisor` (LOCAL, unpushed) · 215 checks green
+## Current Session (2026-06-25) — published COA stack to public `main`; DEFCON refactor WIP; full CRT demo video built
+
+**Repo state:**
+- **public `main`** (origin, `df0dd5b`): the full COA advisor stack SHIPPED — Phase 1 + 2a/2b/2c + depth + multi-repo + **parallel per-repo execution** + the **budget→headroom UX revision** + `/war-room`. Installable via `/plugin marketplace add euan-maley/scorched-earth`. Internal `docs/superpowers/` stripped from the public tree (kept at `~/Downloads/scorched-earth-planning-docs/`); they remain in git history (offer a history scrub if it matters).
+- **`feat/defcon-coa`** (LOCAL, 8 commits, UNPUSHED — current branch): the **DEFCON refactor** — replaces budget/cost estimation entirely with a **DEFCON 5–1 criticality rating** (impact, not cost) + an **approval / `auto_run_min_defcon` gate**. spec + plan (11 tasks) + 6 feat commits across jobs/roe/advisor/coa_io/runner/coa_serve + tests. **DEFCON 1 = biggest blast radius** (whole-codebase audits, full test-suite builds, backend creations) — NOT "do first." **New COA HTML render pending** (user building).
+
+**DONE this session:** parallel per-repo execution (SDD, 2 tasks + fixes); cockpit proposed-flicker fix; `/war-room` command; **COA budget→headroom UX revision** (brainstorm→spec→plan→7 tasks + final-review fix wave: `_run_killable` deadlock, queue-CLI forfeit, exit-code phantom-pass); **published** the stack to public `main`; built a market-quality **CRT demo video**.
+
+**Demo/video (NOT in repo — PRESERVED to `~/Downloads/scorched-earth-captures/`):**
+- `tour_crt.mp4` (~74s) = deliverable: 8-bit **beige CRT** (convex barrel-warp via `lenscorrection k1=+0.13`, phosphor glow `eq=brightness=0.020:gamma=1.11`), green-on-black **terminal title cards** with frame-perfect plastic key-click audio (every ~2 *visible* glyphs; spaces don't click), and the 3 product demos (**SITREP → COURSE OF ACTION → WAR ROOM**) all CRT-framed with synthetic-cursor + lower-third captions.
+- **Pipeline at `~/Downloads/scorched-earth-captures/_pipeline/`** (scripts + `seg/` intermediates + wavs + `*_clicks.json` + `tour.txt`). See `_pipeline/HANDOFF.md`. Recreate venv: `python3 -m venv pwenv && pwenv/bin/pip install playwright` (chromium cached in `~/Library/Caches/ms-playwright`). NB: scripts hardcode the OLD scratchpad path in `SP=` — repoint to the pipeline dir when resuming.
+
+**RESUME HERE when the DEFCON COA page is ready:** user sends path/URL → (1) re-record it in the capture rig (CRT), (2) swap into the tour in place of `coa_t_crt`, (3) update the `scorch advise` divider + 3 COA captions to the **locked DEFCON wording**:
+- divider: `ranking every operation by impact — DEFCON 5 to 1 …`
+- cap 1: `COURSE OF ACTION · DEFCON-ranked target list` · cap 2: `every target rated DEFCON 5–1 · impact, not cost` · cap 3: `DEFCON 1 = biggest blast radius`
+- (intro list line ALREADY says `DEFCON-ranked target list`.)
+- Also: decide when to finish/merge `feat/defcon-coa` (supersedes the just-published budget model).
+
+---
+
+## Prior Session — COA advisor + cockpit, FULLY built through multi-repo · branch `feat/burn-advisor` · 215 checks green
 
 Huge session (61 commits). Built the entire **COA execution stack** on top of Phase 1, each
 phase brainstorm→spec→plan→subagent-driven-dev (fresh implementer + independent review per
