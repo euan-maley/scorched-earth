@@ -85,6 +85,9 @@
        display:flex;align-items:center;gap:9px;transition:color .12s,border-color .12s}
   .tab:hover{color:var(--secondary)}
   .tab.active{color:var(--strong);border-bottom-color:var(--fire)}
+  .tab.running{color:var(--strong)}
+  .tab__run{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;letter-spacing:1px;
+       color:#ff8a3f;border:1px solid #5a3014;padding:1px 6px}
   .tab .cnt{font-size:11px;letter-spacing:1px;color:var(--muted);border:1px solid var(--mod-bd);padding:1px 6px}
   .tab.active .cnt{color:var(--ember2);border-color:#5a3014}
 
@@ -385,6 +388,13 @@ const STATE = __COCKPIT_JSON__;
       flag.style.borderColor="#6f8a8a"; flag.style.color="#9ec1c1";
       flag.innerHTML='<span class="dot" style="background:#6f8a8a;box-shadow:0 0 6px #6f8a8a"></span>IDLE';
     }
+    const sub = document.querySelector(".hdr__sub");
+    if(busy && state.running){
+      const rn = (state.repos.find(x=>x.repo===state.running.repo)||{}).name || "?";
+      sub.innerHTML = 'NOW RUNNING <span style="color:#ff8a3f">▶ '+esc(rn)+' / '+esc(state.running.id)+'</span> · ONE JOB AT A TIME, GLOBALLY';
+    } else {
+      sub.textContent = "SCORCHED EARTH · LIVE QUEUE CONTROL";
+    }
     document.getElementById("btnRun").classList.toggle("is-primary", !busy);
     document.getElementById("btnStop").classList.toggle("is-primary", busy);
   }
@@ -399,9 +409,12 @@ const STATE = __COCKPIT_JSON__;
     state.repos.forEach(r=>{
       const n = (r.proposed||[]).length+(r.queued||[]).length+(r.finished||[]).length+
                 ((state.running&&state.running.repo===r.repo)?1:0);
+      const isRunning = state.running && state.running.repo===r.repo;
       const b=document.createElement("button");
-      b.className="tab"+(r.repo===activeRepo?" active":"");
-      b.innerHTML='<span>'+esc(r.name||r.repo)+'</span><span class="cnt">'+n+'</span>';
+      b.className="tab"+(r.repo===activeRepo?" active":"")+(isRunning?" running":"");
+      b.innerHTML='<span>'+esc(r.name||r.repo)+'</span>'+
+        (isRunning ? '<span class="tab__run"><span class="dot ember" style="background:#ff6a1f"></span>RUNNING</span>'
+                   : '<span class="cnt">'+n+'</span>');
       b.onclick=()=>{ activeRepo=r.repo; render(); };
       tabs.appendChild(b);
     });
