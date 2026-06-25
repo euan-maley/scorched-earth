@@ -295,17 +295,17 @@ const STATE = __COCKPIT_JSON__;
     const foot = el.querySelector(".cfoot");
     foot.innerHTML = "";
     if(kind==="proposed"){
-      foot.appendChild(html('<span class="cwin">EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+      foot.appendChild(html('<span class="cdepth">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
       if(job.value!=null) foot.appendChild(html('<span class="cval" style="color:'+VALCOL(+job.value)+'">VAL '+esc(job.value)+'</span>'));
     } else if(kind==="queued"){
       const isNext = idx===0;
       el.style.borderLeftColor = isNext ? "#ff6a1f" : "var(--amber)";
       foot.appendChild(html('<span class="cpos'+(isNext?' cpos--next':'')+'">'+String(idx+1)+(isNext?' \u2191':'')+'</span>'));
       if(isNext) foot.appendChild(html('<span class="cnext">NEXT UP</span>'));
-      foot.appendChild(html('<span class="cwin"'+(isNext?'':' style="margin-left:auto"')+'>EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+      foot.appendChild(html('<span class="cdepth"'+(isNext?'':' style="margin-left:auto"')+'>DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
     } else if(kind==="running"){
       foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
-      if(job.est_windows!=null) foot.appendChild(html('<span class="cwin" style="margin-left:auto">EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+      foot.appendChild(html('<span class="cdepth" style="margin-left:auto">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
       const kb = html('<button class="btn btn--stop" data-kill="'+esc(job.id)+'" style="margin-left:auto;padding:4px 11px 3px;font-size:11px">\u2715 KILL</button>');
       foot.appendChild(kb);
     } else { // finished
@@ -314,7 +314,7 @@ const STATE = __COCKPIT_JSON__;
         ? '<span class="cbadge" style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
         : '<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
       foot.appendChild(html(badge));
-      if(job.tier) foot.appendChild(html('<span class="cval" style="color:#86abab;font-weight:700">'+esc(job.tier)+'</span>'));
+      foot.appendChild(html('<span class="cdepth" style="color:#86abab;font-weight:700">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
       if(job.branch){
         const br = html('<span class="cbranch" style="flex-basis:100%"><span class="g">&#9095;</span>'+esc(job.branch)+'</span>');
         foot.appendChild(br);

@@ -239,24 +239,20 @@ const COA = __COA_JSON__;
   const fmt = n => (Math.round(n*10)/10).toString();
 
   function jobCard(job, idx){
-    const t = TIER[job.tier] || TIER.M;
-    const badge = `<span class="tier" style="background:${t.badgeBg};color:${t.badgeFg};border:1px solid ${t.badgeBd};">${esc(job.tier)}</span>`;
-    const glow = t.glow ? "box-shadow:0 0 0 1px rgba(255,106,31,.28),0 0 24px rgba(255,90,20,.16);" : "";
     return `
-    <div class="job" style="border-left:${t.barW}px solid ${t.bar};${glow}">
+    <div class="job" style="border-left:4px solid #5e8080;">
       <div class="job__rank">${String(idx).padStart(2,"0")}</div>
       <div class="job__body">
         <div class="job__head">
-          ${badge}
-          <span class="job__title" style="font-size:${t.title}px;">${esc(job.title)}</span>
+          <span class="job__title">${esc(job.title)}</span>
           <span class="type">${esc(job.type)}</span>
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
         <div class="job__cmd"><span class="px">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
       </div>
       <div class="job__meta">
-        <div class="job__cost">${esc(job.cost)}</div>
-        <div class="job__sub">COST</div>
+        <div class="job__cost">DEPTH ${job.depth}/10</div>
+        <div class="job__sub">DEPTH</div>
         <div class="job__value" style="color:${VALUE[job.value]||"#c1dada"};">${esc(job.value)}</div>
         <div class="job__sub">VALUE</div>
       </div>
@@ -264,22 +260,20 @@ const COA = __COA_JSON__;
   }
 
   function skipCard(job){
-    const t = TIER[job.tier] || TIER.M;
     return `
-    <div class="job job--dim" style="border-left:${t.barW}px solid #3a2615;">
+    <div class="job job--dim" style="border-left:3px solid #3a2615;">
       <div class="job__rank">&mdash;</div>
       <div class="job__body">
         <div class="job__head">
-          <span class="tier" style="background:transparent;color:#9c7a5e;border:1px solid #5a3420;">${esc(job.tier)}</span>
-          <span class="job__title" style="font-size:${t.title}px;">${esc(job.title)}</span>
+          <span class="job__title">${esc(job.title)}</span>
           <span class="type" style="border-color:#3a2615;color:#8a6a52;">${esc(job.type)}</span>
           <span class="job__stamp">DID NOT FIT</span>
         </div>
         <div class="job__rationale">${esc(job.note)}</div>
       </div>
       <div class="job__meta" style="border-left-color:#3a2615;">
-        <div class="job__cost" style="color:#b59478;">${esc(job.cost)}</div>
-        <div class="job__sub" style="color:#7a5e44;">COST</div>
+        <div class="job__cost" style="color:#b59478;">DEPTH ${job.depth}/10</div>
+        <div class="job__sub" style="color:#7a5e44;">DEPTH</div>
         <div class="job__value" style="color:#8a6a52;">${esc(job.value)}</div>
         <div class="job__sub" style="color:#7a5e44;">VALUE</div>
       </div>

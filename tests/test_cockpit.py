@@ -369,6 +369,10 @@ with open(os.path.join(_rb2, ".scorched", "jobs.json"), "w") as _f:
     json.dump([{"id": "g", "title": "G", "type": "test", "depth": 9, "value": 6}], _f)
 check("board_state brief carries depth", _io.board_state(_rb2)["proposed"][0]["depth"] == 9)
 
+# cockpit cards render depth (and no per-card window-cost label "EST ~")
+_hk2 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
+check("cockpit template renders job depth", "depth" in _hk2.lower())
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

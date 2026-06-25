@@ -282,7 +282,7 @@ const AAR = __REVIEW_JSON__;
       ? `<span class="diff"><span class="files">${j.diff.files} files</span> <span class="ins">+${j.diff.insertions}</span> <span class="del">\u2212${j.diff.deletions}</span></span>`
       : (j.branch ? "" : "");
     return `<div class="job__data">${branch}${diff}
-      <span class="job__est">EST <b>~${fmt(j.estWindows)} win</b></span></div>`;
+      <span class="job__est">DEPTH <b>${j.depth}/10</b></span></div>`;
   }
 
   // ---- copyable command lines ----
@@ -294,16 +294,14 @@ const AAR = __REVIEW_JSON__;
 
   function jobCard(j){
     const s = STATE[j.outcome] || STATE.pending;
-    const t = TIER[j.tier] || TIER.M;
     const emberDot = s.live ? `<span class="dot ember" style="background:${s.pill};"></span>` : `<span class="dot" style="background:${s.pill};"></span>`;
     const pill = `<span class="opill" style="color:${s.pill};background:${s.pillBg};border-color:${s.pillBd};">${emberDot}${esc(s.label)}</span>`;
-    const tier = `<span class="tier" style="background:${t.badgeBg};color:${t.badgeFg};border:1px solid ${t.badgeBd};">${esc(j.tier)}</span>`;
     const stamp = s.stamp ? `<span class="job__stamp" style="color:${s.stampCol};border:1px solid ${s.stampBd};background:rgba(0,0,0,.25);">${esc(s.stamp)}</span>` : "";
     return `
     <div class="job ${s.cls}" style="border-left:5px solid ${s.bar};">
       <div class="job__seq">${String(j.seq).padStart(2,"0")}</div>
       <div class="job__body">
-        <div class="job__head">${pill}${tier}<span class="job__title">${esc(j.title)}</span><span class="type">${esc(j.type)}</span>${stamp}</div>
+        <div class="job__head">${pill}<span class="job__title">${esc(j.title)}</span><span class="type">${esc(j.type)}</span>${stamp}</div>
         ${dataRow(j)}
         <div class="job__note" style="${j.outcome==="fail"?"color:#e0a090;":""}">${esc(j.note)}</div>
         ${cmds(j)}
