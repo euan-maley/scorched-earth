@@ -114,13 +114,6 @@ def write_queue(repo_path: str, jobs: List[Job]) -> str:
     with open(tmp, "w") as f:
         json.dump([_job_to_dict(j) for j in jobs], f, indent=2)
     os.replace(tmp, path)
-    # Seed jobs.json (the master catalogue) from the initial queue write if it doesn't
-    # exist yet. This lets board_state show killed jobs as "proposed" (re-queueable) even
-    # when no explicit jobs.json was written. Does NOT overwrite an existing jobs.json.
-    jobs_path = os.path.join(_repo_dir(repo_path), "jobs.json")
-    if jobs and not os.path.exists(jobs_path):
-        with open(jobs_path, "w") as f:
-            json.dump([_job_to_dict(j) for j in jobs], f, indent=2)
     return path
 
 

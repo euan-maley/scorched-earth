@@ -106,6 +106,10 @@ from scorched_earth.coa_serve import Engine  # noqa: E402
 
 def _mk_repo(jobs):
     r = tempfile.mkdtemp()
+    os.makedirs(os.path.join(r, ".scorched"), exist_ok=True)
+    with open(os.path.join(r, ".scorched", "jobs.json"), "w") as f:
+        json.dump([{"id": j.id, "title": j.title, "type": j.type,
+                    "est_windows": j.est_windows, "value": j.value} for j in jobs], f)
     _io.write_queue(r, jobs)
     return r
 
