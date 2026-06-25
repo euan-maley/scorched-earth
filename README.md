@@ -29,8 +29,9 @@ remaining window, the light goes green. Pacing yourself just wastes credits.
 The **🟢 hard light** is the certain one. It goes green only when you can't spend your
 remaining weekly budget even by maxing every 5-hour window left before the reset. It fires
 late, and it's never wrong. In the default fire style that green reads **🔥 BURN IT ALL**.
-One notch back is amber, **🟡 burn ~N%**: close to the line, not over it. Any other time the
-bar stays empty, either you have budget to spare or there's no live reading yet.
+One notch back is amber, **🟡 burn ~N%**: close to the line, not over it. When you have
+ample budget and time the bar shows **⚪ no rush** — deep reserves, pace normally. The bar
+is only empty when there's no live reading yet or the weekly budget is exhausted.
 
 The **🔥 forecast nudge** comes earlier, and for most people it's the more useful of the two.
 Scorched Earth learns your day-of-week pattern and projects where the week is heading. If

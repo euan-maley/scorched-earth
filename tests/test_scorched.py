@@ -171,7 +171,7 @@ for _style in ("fire", "emoji", "text"):
     _tok = _sl_token(_low_rec, _style)
     check(f"low token ({_style}) contains 'no rush'", "no rush" in _tok and len(_tok) > 0)
 _tok_min = _sl_token(_low_rec, "minimal")
-check("low token (minimal) is a dim dot", "●" in _tok_min and len(_tok_min) > 0)
+check("low token (minimal) is a dim dot", _tok_min == "\033[2m●\033[0m")
 check("off token (emoji) returns empty string", _sl_token(_off_rec, "emoji") == "")
 
 # --- habits / forecast ---------------------------------------------------------

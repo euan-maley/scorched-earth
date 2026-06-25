@@ -74,7 +74,12 @@ target_per_window = (weekly_left / windows_left) / (R × 100)     # as a fractio
   remaining weekly budget even by maxing every remaining window. Pacing wastes
   credits — burn 100% every window.
 - `0.70 ≤ target_per_window < 1.0` → **🟡 AMBER.** Burn hard; you're close to the line.
-- `target_per_window < 0.70` → **off / normal.** You have slack; no need to push.
+- `target_per_window < 0.70` → **low (no rush) / off.**
+  - **`low`** — deep reserves and plenty of time; the statusline shows `⚪ no rush`. No
+    urgency; pace normally.
+  - **`off`** — budget-exhausted terminal state: weekly budget is spent, no credits left.
+
+The verdict `level` enum is therefore five states: `green | amber | low | off | unknown`.
 
 Equivalent green condition without dividing by zero risk:
 
