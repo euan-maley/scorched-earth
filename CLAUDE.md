@@ -16,7 +16,8 @@ spent by maxing out every remaining 5-hour window.
 - `statusline-segment.sh` — thin bash wrapper the host statusline pipes `$DATA` into; emits the light token.
 - `statusline-wrapper.sh` — plugin install path: runs the user's captured prior statusline + appends our token (so we wrap, never clobber).
 - `hooks/hooks.json` + `hooks/setup.sh` — SessionStart hook that idempotently wires the statusLine to the wrapper and seeds the style. Self-heals across plugin updates (version-stamped path) because it runs each session.
-- `skills/scorched-earth/SKILL.md` — `/scorched-earth` in-session readout + conversational style-setting.
+- `skills/scorched-earth/SKILL.md` — `/scorched-earth` in-session readout + conversational style-setting. Opens with a first-run gate: on the user's first invocation (no `onboarded` sentinel) it routes to `setup.md`, then falls through to the readout.
+- `skills/scorched-earth/setup.md` — guided first-run setup the gate delegates to: primes Claude on the model (self-contained primer — green-light math + DEFCON/COA), then tours the user, sets the light style, and links repos. Re-runnable on demand; never loaded on the routine readout path (so it costs nothing once onboarded).
 - `commands/sitrep.md` — `/sitrep` slash command: runs `scorch --sitrep` to generate + open the HTML report.
 - `install.sh` — manual (non-plugin) install: puts `scorch` on PATH, offers light styles, wires the segment.
 - `.claude-plugin/plugin.json` — plugin manifest. Skills/commands/hooks/bin are auto-discovered by directory convention (no explicit declaration needed).
@@ -37,7 +38,7 @@ spent by maxing out every remaining 5-hour window.
 - Plugin `bin/` is on PATH only inside Claude Code's Bash tool, not the user's terminal — `install.sh` symlink covers terminal use.
 - `userConfig` is not used (no real-world examples; undocumented runtime exposure). The style choice is handled conversationally by the skill / `scorch --style` instead.
 
-State files under `~/.claude/scorched-earth/`: `state.json` (latest snapshot + recommendation + forecast), `calibration.json` (R samples, resets weekly), `habits.json` (cross-week history, does NOT reset), `style` (light style), `fc-notified` (last weekly cycle nudged).
+State files under `~/.claude/scorched-earth/`: `state.json` (latest snapshot + recommendation + forecast), `calibration.json` (R samples, resets weekly), `habits.json` (cross-week history, does NOT reset), `style` (light style), `fc-notified` (last weekly cycle nudged), `onboarded` (first-run setup completed — its presence makes the skill skip setup).
 
 ## Invariants
 
