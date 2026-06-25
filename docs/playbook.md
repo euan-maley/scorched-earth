@@ -93,6 +93,12 @@ plugin/skill; install flow asks the user how they want the light displayed.
 - **Fire animation:** the burn-mode fire is a continuously-animated canvas. Playwright
   screenshots time out on it — verify the report by opening it (`scorch --report`), not by
   screenshot. Consider pausing on `visibilitychange` later.
+- **Skill-file cross-references must not be CWD-relative.** When a skill's markdown tells
+  Claude to read a sibling file (e.g. SKILL.md → `setup.md`), a bare relative path resolves
+  against the user's working directory and breaks whenever the skill is invoked from any repo
+  other than the plugin root — the common case. Reference it via the skill's own directory
+  (the harness provides the skill base dir on invocation) with an absolute `~/scorched-earth/
+  skills/...` fallback, mirroring the `scorch || ~/scorched-earth/bin/scorch` PATH pattern.
 
 ## The sitrep (HTML report)
 
