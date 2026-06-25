@@ -44,17 +44,18 @@ check("parse_jobs clamps out-of-range defcon",
 # --- roe.py ----------------------------------------------------------------------
 from scorched_earth.roe import ROE, DEFAULT_ROE, roe_from_dict, merge_roe  # noqa: E402
 
-check("DEFAULT_ROE is permissive",
-      DEFAULT_ROE.max_windows is None and DEFAULT_ROE.allowed_types is None)
+check("DEFAULT_ROE is permissive with defcon gate at 3",
+      DEFAULT_ROE.allowed_types is None and DEFAULT_ROE.auto_run_min_defcon == 3
+      and not hasattr(DEFAULT_ROE, "max_windows"))
 
-_roe = roe_from_dict({"max_windows": 2, "allowed_types": ["test"]})
+_roe = roe_from_dict({"auto_run_min_defcon": 2, "allowed_types": ["test"]})
 check("roe_from_dict overlays only given keys",
-      _roe.max_windows == 2 and _roe.allowed_types == ["test"] and _roe.min_weekly_left == 0.0)
+      _roe.auto_run_min_defcon == 2 and _roe.allowed_types == ["test"] and _roe.min_weekly_left == 0.0)
 
-_merged = merge_roe(roe_from_dict({"max_windows": 9, "goals": ["a"]}),
-                    roe_from_dict({"max_windows": 2}))
+_merged = merge_roe(roe_from_dict({"max_jobs": 9, "goals": ["a"]}),
+                    roe_from_dict({"max_jobs": 2}))
 check("merge_roe: override wins where set, base kept otherwise",
-      _merged.max_windows == 2 and _merged.goals == ["a"])
+      _merged.max_jobs == 2 and _merged.goals == ["a"])
 
 # --- advisor.py (matcher) --------------------------------------------------------
 from scorched_earth.advisor import COA, match  # noqa: E402
