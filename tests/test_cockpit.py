@@ -446,6 +446,15 @@ _hr.shutdown()
 _hr3 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
 check("cockpit Run posts a repos list (armed checkboxes)", "repos" in _hr3 and "armed" in _hr3.lower())
 
+# cockpit renders running as a list (multiple in-flight)
+_hp = render_cockpit("tk", {"repos": [{"repo": "/r/a", "name": "a", "proposed": [], "queued": [], "finished": []},
+                                      {"repo": "/r/b", "name": "b", "proposed": [], "queued": [], "finished": []}],
+                            "running": [{"repo": "/r/a", "id": "j1"}, {"repo": "/r/b", "id": "j2"}],
+                            "busy": True}).decode("utf-8")
+check("cockpit handles a running LIST (renders without error, references running as array)",
+      "__COCKPIT_" not in _hp and "running" in _hp.lower()
+      and "PARALLEL" in _hp)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

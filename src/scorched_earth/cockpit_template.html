@@ -254,7 +254,7 @@ const STATE = __COCKPIT_JSON__;
 
   function normalize(s){
     s = s || {};
-    return { repos: Array.isArray(s.repos)?s.repos:[], running: s.running||null, busy: !!s.busy };
+    return { repos: Array.isArray(s.repos)?s.repos:[], running: Array.isArray(s.running)?s.running:[], busy: !!s.busy };
   }
   const repoOf = key => state.repos.find(r=>r.repo===key) || null;
   function activeRepoObj(){
@@ -362,15 +362,15 @@ const STATE = __COCKPIT_JSON__;
   }
 
   function renderRunning(repo){
-    const body = root.querySelector('[data-body="running"]');
-    const isHere = state.running && repo && state.running.repo===repo.repo;
+    const here = (state.running||[]).find(x=>x.repo===(repo&&repo.repo));
     const jobs = [];
-    if(isHere){
-      const base = lookupJob(repo, state.running.id) || { id: state.running.id };
-      jobs.push(Object.assign({}, base, { id: state.running.id }));
+    if(here){
+      const base = lookupJob(repo, here.id) || { id: here.id };
+      jobs.push(Object.assign({}, base, { id: here.id }));
     }
     reconcile("running", jobs, "running");
-    root.querySelector('[data-cnt="running"]').textContent = isHere ? "1 ACTIVE" : "\u2014";
+    const totalRunning = (state.running||[]).length;
+    root.querySelector('[data-cnt="running"]').textContent = totalRunning > 0 ? totalRunning + " ACTIVE" : "\u2014";
   }
 
   /* ---------- header / status / tabs ---------- */
@@ -392,9 +392,13 @@ const STATE = __COCKPIT_JSON__;
       flag.innerHTML='<span class="dot" style="background:#6f8a8a;box-shadow:0 0 6px #6f8a8a"></span>IDLE';
     }
     const sub = document.querySelector(".hdr__sub");
-    if(busy && state.running){
-      const rn = (state.repos.find(x=>x.repo===state.running.repo)||{}).name || "?";
-      sub.innerHTML = 'NOW RUNNING <span style="color:#ff8a3f">▶ '+esc(rn)+' / '+esc(state.running.id)+'</span> · ONE JOB AT A TIME, GLOBALLY';
+    const R = state.running||[];
+    if(R.length === 1){
+      const rn = (state.repos.find(x=>x.repo===R[0].repo)||{}).name || "?";
+      sub.innerHTML = 'NOW RUNNING <span style="color:#ff8a3f">&#9654; '+esc(rn)+' / '+esc(R[0].id)+'</span>';
+    } else if(R.length > 1){
+      const names = R.map(x=>(state.repos.find(r=>r.repo===x.repo)||{}).name||"?").join(", ");
+      sub.innerHTML = '<span style="color:#ff8a3f">'+R.length+' RUNNING IN PARALLEL</span> &middot; '+esc(names);
     } else {
       sub.textContent = "SCORCHED EARTH · LIVE QUEUE CONTROL";
     }
@@ -410,9 +414,9 @@ const STATE = __COCKPIT_JSON__;
     lab.innerHTML='REPOS <span class="tabs__chev">&#8250;</span>';   // label the strip as repo tabs
     tabs.appendChild(lab);
     state.repos.forEach(r=>{
+      const isRunning = (state.running||[]).some(x=>x.repo===r.repo);
       const n = (r.proposed||[]).length+(r.queued||[]).length+(r.finished||[]).length+
-                ((state.running&&state.running.repo===r.repo)?1:0);
-      const isRunning = state.running && state.running.repo===r.repo;
+                (isRunning?1:0);
       const b=document.createElement("button");
       b.className="tab"+(r.repo===activeRepo?" active":"")+(isRunning?" running":"");
       const cb = document.createElement("input");
@@ -434,7 +438,8 @@ const STATE = __COCKPIT_JSON__;
     const failed = F.filter(j=>j.outcome==="fail").length;
     const queued = repo?(repo.queued||[]).length:0;
     const proposed = repo?(repo.proposed||[]).length:0;
-    const total = F.length+queued+proposed+((state.running&&repo&&state.running.repo===repo.repo)?1:0);
+    const hereEntry = (state.running||[]).find(x=>repo&&x.repo===repo.repo);
+    const total = F.length+queued+proposed+(hereEntry?1:0);
 
     document.getElementById("sbStats").innerHTML =
       stat(F.length+"/"+total, "DONE")+
@@ -445,8 +450,8 @@ const STATE = __COCKPIT_JSON__;
 
     // budget spent estimate = finished est + the running job's est (active repo)
     let spent = F.reduce((a,j)=>a+(+j.est_windows||0),0);
-    if(state.running && repo && state.running.repo===repo.repo){
-      const rj = lookupJob(repo, state.running.id); if(rj) spent += (+rj.est_windows||0);
+    if(hereEntry){
+      const rj = lookupJob(repo, hereEntry.id); if(rj) spent += (+rj.est_windows||0);
     }
     document.getElementById("sbBudget").textContent = "~"+fmt(spent);
 
