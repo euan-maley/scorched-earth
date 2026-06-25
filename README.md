@@ -30,7 +30,7 @@ The **🟢 hard light** is the certain one. It goes green only when you can't sp
 remaining weekly budget even by maxing every 5-hour window left before the reset. It fires
 late, and it's never wrong. In the default fire style that green reads **🔥 BURN IT ALL**.
 One notch back is amber, **🟡 burn ~N%**: close to the line, not over it. When you have
-ample budget and time the bar shows **⚪ no rush** — deep reserves, pace normally. The bar
+ample budget and time the bar shows **⚪ no rush**: deep reserves, pace normally. The bar
 is only empty when there's no live reading yet or the weekly budget is exhausted.
 
 The **🔥 forecast nudge** comes earlier, and for most people it's the more useful of the two.
@@ -70,6 +70,30 @@ three views:
 
 <sub><i>Sample data. The clip and stills are rendered from the real report pipeline (<a href="assets/sitrep-demo.mp4">download the mp4</a>).</i></sub>
 
+## Burn it on something
+
+The green light tells you to burn. It doesn't tell you what on. That's the Course of
+Action layer.
+
+Link a repo or a few with `scorch link <path>`, and a scan agent reads them the way you
+would: TODO and FIXME markers, recent commit themes, the roadmap, whatever open issues it
+can reach. It surfaces the expensive work, the jobs big enough to be worth a window you'd
+otherwise waste, and rates each one DEFCON 5 down to 1 by impact on the project rather than
+effort. DEFCON 1 is the biggest blast radius: a whole-codebase security audit, a full
+regression and UI-capability test harness, a backend built out in one pass. The scale
+measures stakes, not urgency, so a DEFCON 1 is the most consequential job, not the one you
+necessarily start with.
+
+`/coa` generates the ranked plan. From there you can queue jobs and let them run headless in
+a sandboxed git worktree (`scorch coa run`), each one committed but never pushed and checked
+against a test command you set. The Rules of Engagement (`/roe`) decide what's allowed to run
+unattended: DEFCON 1 and 2 sit behind an approval gate by default, and `max_jobs` caps a run
+so an overnight campaign can't sprawl.
+
+`/war-room` opens the live version, a localhost cockpit with a kanban board, drag-to-queue,
+and a runner that drains your linked repos in parallel, one job each at a time. The URL
+carries a one-time access token, so treat it like a credential and don't paste it around.
+
 ## Install
 
 **As a plugin (recommended).** This repo is its own marketplace. In Claude Code:
@@ -85,9 +109,11 @@ three views:
 ```
 
 Then it's automatic. A SessionStart hook wires the light into your statusline (wrapping
-any statusline you already have, never replacing it), and `/scorched-earth`, `/sitrep`, and
-`scorch` are available in-session. `/sitrep` generates and opens the HTML field report. Ask
-the assistant to set your preferred light style, or run `scorch --style <x>`.
+any statusline you already have, never replacing it), and `/scorched-earth`, `/sitrep`,
+`/coa`, `/roe`, `/war-room`, and `scorch` are available in-session. The first time you run
+`/scorched-earth` it walks you through a quick setup: it picks a light style and links any
+repos you want the COA layer watching. You can redo it anytime, or just run
+`scorch --style <x>` to change the light on its own.
 
 **Manually (clone):**
 

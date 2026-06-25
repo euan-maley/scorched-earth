@@ -1,5 +1,5 @@
 ---
-description: Open the Scorched Earth War Room — the live COA cockpit (kanban + parallel per-repo runner) in the browser
+description: Open the Scorched Earth War Room, the live COA cockpit (kanban + parallel per-repo runner) in the browser
 argument-hint: "[repo path] | stop"
 allowed-tools: Bash(scorch:*), Bash(*/bin/scorch:*), Bash(pgrep:*), Bash(pkill:*), Read
 ---

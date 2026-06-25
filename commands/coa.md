@@ -1,5 +1,5 @@
 ---
-description: Generate a Course of Action — scan linked repos for expensive work and rank it by DEFCON impact
+description: Generate a Course of Action: scan linked repos for expensive work and rank it by DEFCON impact
 argument-hint: "[repo path] [--refresh]"
 allowed-tools: Bash(scorch:*), Bash(*/bin/scorch:*), Read, Grep, Glob, Agent, Task
 ---
