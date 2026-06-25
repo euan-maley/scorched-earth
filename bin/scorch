@@ -227,6 +227,7 @@ def _coa_run_cli(rest):
             return 0
         token = secrets.token_urlsafe(32)
         engine = coa_serve.Engine(repos)
+        engine.stop()       # cockpit starts PAUSED: stage/organize the queue first, then Run
         httpd, port = coa_serve.make_server(engine, token, render=coa_serve.render_cockpit)
         url = f"http://127.0.0.1:{port}/?t={token}"
         print(f"COA cockpit on {url}\n(Ctrl-C to stop)")

@@ -346,6 +346,23 @@ _hk.shutdown()
 _kh = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
 check("cockpit template wires a /kill POST", '"/kill"' in _kh or "/kill" in _kh)
 
+# --- paused-by-default: stage the queue first, Run drains it -----------------------
+_rp = tempfile.mkdtemp()
+os.makedirs(os.path.join(_rp, ".scorched"), exist_ok=True)
+with open(os.path.join(_rp, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "s1", "title": "S1", "type": "test", "est_windows": 0.5, "value": 5},
+               {"id": "s2", "title": "S2", "type": "test", "est_windows": 0.5, "value": 4}], _f)
+_ran_p = []
+_engp = Engine([_rp], execute=lambda repo, job, roe: (_ran_p.append(job.id), ("pass", None, "ok"))[1],
+               load_state=lambda: _STATE, now=lambda: 1)
+_engp.stop()                          # cockpit starts paused (as bin/scorch --serve does)
+_engp.queue(_rp, "s1"); _engp.queue(_rp, "s2")     # drag cards in while paused
+check("paused cockpit: dragging cards in stages them without running",
+      _ran_p == [] and [j.id for j in _io.read_queue(_rp)] == ["s1", "s2"])
+_engp.run(_rp)                        # press Run
+check("paused cockpit: Run then drains the staged queue in order",
+      _ran_p == ["s1", "s2"] and _io.read_queue(_rp) == [])
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
