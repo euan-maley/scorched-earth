@@ -220,7 +220,7 @@
   <div class="statusbar">
     <div class="sb__group" id="sbStats"></div>
     <div class="sb__group">
-      <div class="sb__stat"><span>BUDGET SPENT</span><b id="sbBudget">~0.0</b><span>WIN</span><span class="estbadge">&#9650; EST</span></div>
+      <div class="sb__stat"><span>HEADROOM</span><b id="sbHeadroom">&mdash;</b><span id="sbHeadroomUnit">WIN FREE</span><small id="sbReserve" style="font-size:11px;letter-spacing:1px;color:#86abab;margin-left:4px"></small></div>
       <div class="sb__sep"></div>
       <span class="sb__engine" id="sbEngine"></span>
     </div>
@@ -254,7 +254,8 @@ const STATE = __COCKPIT_JSON__;
 
   function normalize(s){
     s = s || {};
-    return { repos: Array.isArray(s.repos)?s.repos:[], running: Array.isArray(s.running)?s.running:[], busy: !!s.busy };
+    return { repos: Array.isArray(s.repos)?s.repos:[], running: Array.isArray(s.running)?s.running:[], busy: !!s.busy,
+             headroom: s.headroom!=null?s.headroom:null, weekly_reserve_pct: s.weekly_reserve_pct!=null?s.weekly_reserve_pct:null };
   }
   const repoOf = key => state.repos.find(r=>r.repo===key) || null;
   function activeRepoObj(){
@@ -306,12 +307,14 @@ const STATE = __COCKPIT_JSON__;
     if(kind==="proposed"){
       foot.appendChild(html('<span class="cdepth">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
       if(job.value!=null) foot.appendChild(html('<span class="cval" style="color:'+VALCOL(+job.value)+'">VAL '+esc(job.value)+'</span>'));
+      if(job.fit==="over") foot.appendChild(html('<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16);margin-left:auto">OVER</span>'));
     } else if(kind==="queued"){
       const isNext = idx===0;
       el.style.borderLeftColor = isNext ? "#ff6a1f" : "var(--amber)";
       foot.appendChild(html('<span class="cpos'+(isNext?' cpos--next':'')+'">'+String(idx+1)+(isNext?' \u2191':'')+'</span>'));
       if(isNext) foot.appendChild(html('<span class="cnext">NEXT UP</span>'));
       foot.appendChild(html('<span class="cdepth"'+(isNext?'':' style="margin-left:auto"')+'>DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
+      if(job.fit==="over") foot.appendChild(html('<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">OVER</span>'));
     } else if(kind==="running"){
       foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
       foot.appendChild(html('<span class="cdepth" style="margin-left:auto">DEPTH <b>'+(job.depth||'?')+'/10</b></span>'));
@@ -447,12 +450,19 @@ const STATE = __COCKPIT_JSON__;
       stat(queued,"QUEUED","#e2a04d")+
       stat(proposed,"PROPOSED","#9ec1c1");
 
-    // budget spent estimate = finished est + the running job's est (active repo)
-    let spent = F.reduce((a,j)=>a+(+j.est_windows||0),0);
-    if(hereEntry){
-      const rj = lookupJob(repo, hereEntry.id); if(rj) spent += (+rj.est_windows||0);
+    // headroom readout: windows of current-window capacity still free
+    const hd = state.headroom;
+    const hdEl = document.getElementById("sbHeadroom");
+    const resEl = document.getElementById("sbReserve");
+    if(hd != null){
+      hdEl.textContent = "~"+fmt(hd);
+      document.getElementById("sbHeadroomUnit").textContent = "WIN FREE NOW";
+    } else {
+      hdEl.textContent = "—";
+      document.getElementById("sbHeadroomUnit").textContent = "WIN FREE";
     }
-    document.getElementById("sbBudget").textContent = "~"+fmt(spent);
+    const wrp = state.weekly_reserve_pct;
+    resEl.textContent = wrp != null ? "WEEKLY "+Math.round(wrp)+"% RESERVE" : "";
 
     const eng = document.getElementById("sbEngine");
     if(state.busy){ eng.style.borderColor="#ff6a1f"; eng.style.color="#ff8a3f";
