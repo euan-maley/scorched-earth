@@ -38,14 +38,18 @@ def render_md(coa: COA, generated_at: str) -> str:
     lines += ["", "## Launch", ""]
     for j in coa.queue:
         lines += [f"### {j.id} — {j.title}", "", f"> {j.rationale}", "", "```", j.launch, "```", ""]
-    if coa.skipped:
-        lines += ["## Left on the table", ""]
-        for j in coa.skipped:
+    if coa.over_budget:
+        lines += ["## Over budget (queue anyway)", ""]
+        for j in coa.over_budget:
             lines.append(f"- {j.id} ({j.tier}, {j.est_windows:.1f}w): {j.title}")
+    if coa.blocked:
+        lines += ["", "## Blocked by ROE", ""]
+        for j in coa.blocked:
+            lines.append(f"- {j.id} ({j.type}): {j.title}")
     return "\n".join(lines) + "\n"
 
 
-def _job_obj(j) -> dict:
+def _job_obj(j, fit="fits") -> dict:
     """Map our Job onto the template's job shape. Values stay raw strings; the template's own
     `esc()` escapes them at render, so we must not double-escape here."""
     return {
@@ -57,6 +61,7 @@ def _job_obj(j) -> dict:
         "depth": j.depth,
         "rationale": j.rationale,
         "command": j.launch,
+        "fit": fit,
     }
 
 
@@ -71,16 +76,13 @@ def render_html(coa: COA, generated_at: str, *, verdict: str = "unknown",
         "date": generated_at,
         "verdict": (verdict or "unknown").lower(),
         "note": coa.note,
-        "envelope": {
-            "available": round(coa.envelope_windows, 1),
-            "spent": round(coa.spent_windows, 1),
-            "unit": "WINDOWS",
-            "resetIn": reset_in,
-        },
+        "headroom": round(coa.headroom_windows, 2),
+        "weeklyReservePct": round(coa.weekly_reserve_pct, 0),
+        "resetIn": reset_in,
         "roe": list(roe_lines or []),
-        "queue": [_job_obj(j) for j in coa.queue],
-        "skipped": [dict(_job_obj(j), note="Did not fit the budget or the rules of engagement.")
-                    for j in coa.skipped],
+        "queue": [_job_obj(j, "fits") for j in coa.queue],
+        "overBudget": [_job_obj(j, "over") for j in coa.over_budget],
+        "blocked": [_job_obj(j, "blocked") for j in coa.blocked],
     }
     with open(_TEMPLATE_PATH, encoding="utf-8") as f:
         template = f.read()

@@ -9,22 +9,22 @@
 
   TEMPLATE CONTRACT
   -----------------
-  All data flows through the one `const COA = {…}` blob below (same pattern as the
+  All data flows through the one `const DATA = {…}` blob below (same pattern as the
   sitrep's SITREP object). Python fills it; the date is passed in as a string (no Date()).
-  Everything on screen is derived from COA in render(). Shape:
+  Everything on screen is derived from DATA in render(). Shape:
 
-    COA = {
-      sector:  string,                       // header tag, e.g. "SECTOR 07"
-      date:    string,                       // pre-formatted timestamp string
-      verdict: 'green'|'amber'|'off'|'unknown',   // drives the accent across the report
-      note:    string,                       // the COA verdict line (prose)
-      envelope: { available:number,          // windows in the budget envelope
-                  spent:number,              // windows committed by this plan
-                  unit:string,               // label, e.g. "WINDOWS"
-                  resetIn:string },          // countdown string to reset/reload
-      roe: string[],                         // Rules of Engagement (1 line each)
-      queue:  Job[],                         // the battle plan, ranked best-first
-      skipped: Job[]                         // left on the table (spillover)
+    DATA = {
+      sector:          string,                       // header tag, e.g. "SECTOR 07"
+      date:            string,                       // pre-formatted timestamp string
+      verdict:         'green'|'amber'|'off'|'unknown',   // drives the accent across the report
+      note:            string,                       // the COA verdict line (prose)
+      headroom:        number,                       // current-window headroom in window-units
+      weeklyReservePct: number,                      // weekly budget still available (%)
+      resetIn:         string,                       // countdown string to reset/reload
+      roe:             string[],                     // Rules of Engagement (1 line each)
+      queue:           Job[],                        // fits within headroom, run order
+      overBudget:      Job[],                        // eligible but beyond headroom — queue anyway
+      blocked:         Job[]                         // ROE-disallowed
     }
 
     Job = {
@@ -35,7 +35,7 @@
       value:     'CRITICAL'|'HIGH'|'MEDIUM'|'LOW',
       rationale: string,                     // one-line why
       command:   string,                     // launch command (queue jobs)
-      note:      string                      // why it didn't fit (skipped jobs)
+      fit:       'fits'|'over'|'blocked'     // annotation from the matcher
     }
 -->
 <style>
@@ -209,12 +209,12 @@
 
 <script>
 /* ======================================================================
-   COA — sample data blob. Python overwrites this object; nothing else.
+   DATA — sample data blob. Python overwrites this object; nothing else.
    ====================================================================== */
-const COA = __COA_JSON__;
+var DATA = __COA_JSON__;
 
 /* ======================================================================
-   Render — everything below is derived from COA. No data lives here.
+   Render — everything below is derived from DATA. No data lives here.
    ====================================================================== */
 (function(){
   const VERDICT = {
@@ -232,11 +232,17 @@ const COA = __COA_JSON__;
   const VALUE = { CRITICAL:"#ff6a1f", HIGH:"#e2a04d", MEDIUM:"#c1dada", LOW:"#86abab" };
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-  const V = VERDICT[COA.verdict] || VERDICT.unknown;
-  const env = COA.envelope;
-  const forfeit = Math.max(0, env.available - env.spent);
-  const spentPct = env.available > 0 ? Math.min(100, env.spent / env.available * 100) : 0;
+  const V = VERDICT[DATA.verdict] || VERDICT.unknown;
+  const headroom = DATA.headroom || 0;
+  const headroomPct = Math.min(100, headroom * 100);
+  const weeklyReservePct = DATA.weeklyReservePct || 0;
   const fmt = n => (Math.round(n*10)/10).toString();
+
+  function fitBadge(fit){
+    if(fit === "fits") return `<span style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#7cb342;border:1px solid #3a6020;padding:2px 7px;">FITS</span>`;
+    if(fit === "over") return `<span style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#e2a04d;border:1px solid #7a5010;padding:2px 7px;">OVER</span>`;
+    return `<span style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#8a6a52;border:1px solid #3a2615;padding:2px 7px;">BLOCKED</span>`;
+  }
 
   function jobCard(job, idx){
     return `
@@ -246,6 +252,7 @@ const COA = __COA_JSON__;
         <div class="job__head">
           <span class="job__title">${esc(job.title)}</span>
           <span class="type">${esc(job.type)}</span>
+          ${fitBadge(job.fit)}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
         <div class="job__cmd"><span class="px">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
@@ -259,7 +266,29 @@ const COA = __COA_JSON__;
     </div>`;
   }
 
-  function skipCard(job){
+  function overCard(job){
+    return `
+    <div class="job job--dim" style="border-left:3px solid #7a5010;">
+      <div class="job__rank">&mdash;</div>
+      <div class="job__body">
+        <div class="job__head">
+          <span class="job__title">${esc(job.title)}</span>
+          <span class="type" style="border-color:#7a5010;color:#e2a04d;">${esc(job.type)}</span>
+          ${fitBadge("over")}
+        </div>
+        <div class="job__rationale">${esc(job.rationale)}</div>
+        <div class="job__cmd"><span class="px" style="color:#7a5010;">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
+      </div>
+      <div class="job__meta" style="border-left-color:#7a5010;">
+        <div class="job__cost" style="color:#b59478;">DEPTH ${job.depth}/10</div>
+        <div class="job__sub" style="color:#7a5e44;">DEPTH</div>
+        <div class="job__value" style="color:#e2a04d;">${esc(job.value)}</div>
+        <div class="job__sub" style="color:#7a5e44;">VALUE</div>
+      </div>
+    </div>`;
+  }
+
+  function blockedCard(job){
     return `
     <div class="job job--dim" style="border-left:3px solid #3a2615;">
       <div class="job__rank">&mdash;</div>
@@ -267,9 +296,9 @@ const COA = __COA_JSON__;
         <div class="job__head">
           <span class="job__title">${esc(job.title)}</span>
           <span class="type" style="border-color:#3a2615;color:#8a6a52;">${esc(job.type)}</span>
-          <span class="job__stamp">DID NOT FIT</span>
+          ${fitBadge("blocked")}
         </div>
-        <div class="job__rationale">${esc(job.note)}</div>
+        <div class="job__rationale">${esc(job.rationale)}</div>
       </div>
       <div class="job__meta" style="border-left-color:#3a2615;">
         <div class="job__cost" style="color:#b59478;">DEPTH ${job.depth}/10</div>
@@ -280,13 +309,16 @@ const COA = __COA_JSON__;
     </div>`;
   }
 
+  const overBudgetJobs = DATA.overBudget || [];
+  const blockedJobs = DATA.blocked || [];
+
   const html = `
     <div class="hdr">
       <canvas class="hdr__scene" width="360" height="60"></canvas>
       <div class="hdr__top">
         <div class="hdr__tag">
           <span class="dot blink" style="background:${V.color};box-shadow:0 0 8px ${V.color};"></span>
-          <span>// COA &middot; ${esc(COA.sector)} &middot; ${esc(COA.date)}</span>
+          <span>// COA &middot; ${esc(DATA.sector)} &middot; ${esc(DATA.date)}</span>
         </div>
         <span class="pill" style="border-color:${V.color};color:${V.color};">
           <span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>
@@ -294,7 +326,7 @@ const COA = __COA_JSON__;
         </span>
       </div>
       <h1 class="hdr__title">COURSE OF ACTION</h1>
-      <div class="hdr__sub">BUDGET-MATCHED BATTLE PLAN &middot; ${COA.queue.length} JOBS COMMITTED &middot; ${COA.skipped.length} HELD BACK</div>
+      <div class="hdr__sub">BUDGET-MATCHED BATTLE PLAN &middot; ${DATA.queue.length} JOBS COMMITTED &middot; ${overBudgetJobs.length} OVER BUDGET &middot; ${blockedJobs.length} BLOCKED</div>
     </div>
 
     <div class="deck">
@@ -302,22 +334,22 @@ const COA = __COA_JSON__;
       <!-- 2. AMMUNITION -->
       <div class="ammo">
         <div class="ammo__accent" style="background:${V.color};"></div>
-        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">AMMUNITION</span><span class="r">BUDGET ENVELOPE &middot; ${esc(env.unit)}</span></div>
+        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">AMMUNITION</span><span class="r">HEADROOM &middot; WINDOWS</span></div>
         <div class="ammo__row">
           <div class="ammo__big">
-            <b>${fmt(env.spent)}</b><i> / ${fmt(env.available)}</i> <small>${esc(env.unit)}</small>
-            <div class="ammo__lbl">COMMITTED OF AVAILABLE</div>
+            <b>${fmt(headroom)}</b> <small>WIN</small>
+            <div class="ammo__lbl">CURRENT WINDOW HEADROOM</div>
           </div>
           <div class="ammo__side">
-            FORFEIT AT RESET
-            <b>${fmt(forfeit)} ${esc(env.unit.slice(0,3))}</b>
-            <div class="reset">RELOAD IN<br><b>${esc(env.resetIn)}</b></div>
+            WEEKLY RESERVE
+            <b>${fmt(weeklyReservePct)}%</b>
+            <div class="reset">RELOAD IN<br><b>${esc(DATA.resetIn)}</b></div>
           </div>
         </div>
         <div class="gauge">
-          <div class="gauge__fill" style="width:${spentPct.toFixed(2)}%;"></div>
-          <div class="gauge__forfeit" style="left:${spentPct.toFixed(2)}%;right:0;"></div>
-          <div class="gauge__tick" style="left:${spentPct.toFixed(2)}%;"></div>
+          <div class="gauge__fill" style="width:${headroomPct.toFixed(2)}%;"></div>
+          <div class="gauge__forfeit" style="left:${headroomPct.toFixed(2)}%;right:0;"></div>
+          <div class="gauge__tick" style="left:${headroomPct.toFixed(2)}%;"></div>
           <div class="gauge__rounds"></div>
         </div>
       </div>
@@ -326,21 +358,29 @@ const COA = __COA_JSON__;
       <div class="mod">
         <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT</span><span class="r">ROE // STANDING ORDERS</span></div>
         <ul class="roe">
-          ${COA.roe.map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
+          ${DATA.roe.map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
         </ul>
       </div>
 
       <!-- 4. BATTLE PLAN -->
       <div class="sec"><h2>BATTLE PLAN</h2><span class="rule"></span><span class="rt">FIRING ORDER &middot; HIGH \u2192 LOW</span></div>
       <div class="jobs">
-        ${COA.queue.map((j,i)=>jobCard(j,i+1)).join("")}
+        ${DATA.queue.map((j,i)=>jobCard(j,i+1)).join("")}
       </div>
 
-      <!-- 5. LEFT ON THE TABLE -->
-      <div class="sec" style="margin-top:6px;"><h2 style="color:#8a6a52;">LEFT ON THE TABLE</h2><span class="rule" style="background:linear-gradient(90deg,#3a2615,transparent);"></span><span class="rt" style="color:#7a5e44;">SPILLOVER &middot; UNFUNDED</span></div>
+      <!-- 5. OVER BUDGET (QUEUE ANYWAY) -->
+      ${overBudgetJobs.length > 0 ? `
+      <div class="sec" style="margin-top:6px;"><h2 style="color:#e2a04d;">OVER BUDGET</h2><span class="rule" style="background:linear-gradient(90deg,#7a5010,transparent);"></span><span class="rt" style="color:#9a7030;">BEYOND HEADROOM &middot; QUEUE ANYWAY</span></div>
       <div class="jobs">
-        ${COA.skipped.map(skipCard).join("")}
-      </div>
+        ${overBudgetJobs.map(overCard).join("")}
+      </div>` : ""}
+
+      <!-- 5b. BLOCKED BY ROE -->
+      ${blockedJobs.length > 0 ? `
+      <div class="sec" style="margin-top:6px;"><h2 style="color:#8a6a52;">BLOCKED BY ROE</h2><span class="rule" style="background:linear-gradient(90deg,#3a2615,transparent);"></span><span class="rt" style="color:#7a5e44;">ROE-DISALLOWED &middot; STANDING ORDERS</span></div>
+      <div class="jobs">
+        ${blockedJobs.map(blockedCard).join("")}
+      </div>` : ""}
 
       <!-- 6. VERDICT -->
       <div class="verdict">
@@ -351,11 +391,11 @@ const COA = __COA_JSON__;
             <span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>${esc(V.level)}
           </span>
         </div>
-        <div class="verdict__note">${esc(COA.note)}</div>
+        <div class="verdict__note">${esc(DATA.note)}</div>
       </div>
 
       <div class="meta">
-        <span>GENERATED ${esc(COA.date)}</span>
+        <span>GENERATED ${esc(DATA.date)}</span>
         <span>// FIELD INTEL &middot; COURSE OF ACTION</span>
       </div>
 

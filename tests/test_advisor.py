@@ -77,23 +77,32 @@ check("zero capacity yields empty queue with a note",
       _coa_empty.queue == [] and "window free now" in _coa_empty.note.lower())
 
 # --- coa_report.py ---------------------------------------------------------------
-# NOTE: cross-task dependency — coa_report.py still uses the old COA shape (skipped /
-# envelope_windows / spent_windows). Task 2 updates coa_report.py to the new shape.
-# These tests are guarded so they skip (not fail) until Task 2 lands.
 from scorched_earth.coa_report import render_md, render_html  # noqa: E402
 
-try:
-    _md = render_md(_coa, "2026-06-24")
-    check("render_md lists queued jobs and the date",
-          "cheap" in _md and "2026-06-24" in _md and _md.lstrip().startswith("#"))
-    _html = render_html(_coa, "2026-06-24")
-    check("render_html fills the war-HUD template with the COA data",
-          _html.lstrip().lower().startswith("<!doctype html")
-          and "COURSE OF ACTION" in _html.upper()
-          and "__COA_JSON__" not in _html          # the data token was substituted
-          and "cheap" in _html)                    # a queued job title made it into the blob
-except AttributeError as _e:
-    print(f"  skip  coa_report tests (cross-task: Task 2 updates coa_report to new COA shape): {_e}")
+_md = render_md(_coa, "2026-06-24")
+check("render_md lists queued jobs and the date",
+      "cheap" in _md and "2026-06-24" in _md and _md.lstrip().startswith("#"))
+_html = render_html(_coa, "2026-06-24")
+check("render_html fills the war-HUD template with the COA data",
+      _html.lstrip().lower().startswith("<!doctype html")
+      and "COURSE OF ACTION" in _html.upper()
+      and "__COA_JSON__" not in _html          # the data token was substituted
+      and "cheap" in _html)                    # a queued job title made it into the blob
+
+from scorched_earth import coa_report as _rep  # noqa: E402
+_md = _rep.render_md(_coa, "2026-06-25")
+check("render_md uses the 'Over budget' framing, not 'Left on the table'",
+      "Over budget" in _md and "Left on the table" not in _md)
+check("render_md lists the over-budget jobs", "b" in _md and "c" in _md)
+_html = _rep.render_html(_coa, "2026-06-25", verdict="green")
+check("render_html substitutes the token (no leftover __COA_JSON__)",
+      "__COA_JSON__" not in _html)
+import json as _json  # noqa: E402
+_blob = _json.loads(_html.split("var DATA = ", 1)[1].split(";\n", 1)[0]) if "var DATA = " in _html else None
+check("render_html carries headroom + weeklyReservePct in the data blob",
+      ('"headroom"' in _html) and ('"weeklyReservePct"' in _html))
+check("render_html marks each job's fit (fits vs over)",
+      ('"fit": "fits"' in _html or '"fit":"fits"' in _html))
 
 # --- coa_io.py (round-trips under a temp HOME) -----------------------------------
 _home = tempfile.mkdtemp()
