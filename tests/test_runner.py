@@ -277,6 +277,30 @@ _ocb = run_one(_repo, Job(id="z2", repo=_repo, title="Z2", type="test", est_wind
                ROE(), _repo, 4, execute=_ex_boom)
 check("run_one turns an executor raise into a fail outcome", _ocb.outcome == "fail")
 
+# --- Phase 2c: killable executor primitive ----------------------------------------
+import threading as _kt, time as _ktime  # noqa: E402
+from scorched_earth.runner import _run_killable  # noqa: E402
+
+# a long child gets killed promptly when the event is set
+_ev = _kt.Event()
+_sleeper = [sys.executable, "-c", "import time; time.sleep(30)"]
+_res = {}
+def _go():
+    _res["r"] = _run_killable(_sleeper, None, _ev, grace=2.0, poll=0.05)
+_th = _kt.Thread(target=_go); _th.start()
+_ktime.sleep(0.3)              # let it spawn
+_ev.set()                      # request kill
+_th.join(5)
+check("_run_killable returns 'killed' when the event is set", _res.get("r") == "killed")
+check("_run_killable actually terminated the child (thread finished)", not _th.is_alive())
+
+# a fast child runs to completion -> 'done' (kill_event present but never set)
+check("_run_killable returns 'done' when the process exits on its own",
+      _run_killable([sys.executable, "-c", "pass"], None, _kt.Event(), poll=0.02) == "done")
+# no kill_event -> waits to completion
+check("_run_killable with no kill_event waits to completion",
+      _run_killable([sys.executable, "-c", "pass"], None, None) == "done")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

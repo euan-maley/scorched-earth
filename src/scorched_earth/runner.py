@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -232,6 +234,42 @@ def _diffstat(worktree: str, base_sha: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Killable executor primitive (Phase 2c)
+# ---------------------------------------------------------------------------
+
+# Ambient handle to the currently-running job's kill Event, set by the cockpit Engine on the
+# same worker thread execute_job runs on (so no execute/run_one signature change). None in the
+# batch `scorch coa run` path.
+_kill_ctx = threading.local()
+
+
+def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1):
+    """Run cmd; if kill_event is set, terminate (SIGTERM, then SIGKILL after `grace`) and return
+    'killed'. Returns 'done' when the process exits on its own (or kill_event is None)."""
+    p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if kill_event is None:
+        p.wait()
+        return "done"
+    while p.poll() is None:
+        if kill_event.is_set():
+            p.terminate()
+            try:
+                p.wait(timeout=grace)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+            return "killed"
+        time.sleep(poll)
+    return "done"
+
+
+def _discard_worktree(root, job_id):
+    """Always-discard: drop a killed job's worktree + branch (no keep option)."""
+    _git(root, "worktree", "remove", "--force", worktree_path(root, job_id))
+    _git(root, "branch", "-D", branch_name(job_id))
+
+
+# ---------------------------------------------------------------------------
 # execute_job — real per-job work
 # ---------------------------------------------------------------------------
 
@@ -266,8 +304,11 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
         if roe.setup_cmd:           # pre-warm deps with network (trusted, runner-run)
             subprocess.run(roe.setup_cmd, cwd=wt, shell=True,
                            capture_output=True, text=True)
-        subprocess.run(build_claude_cmd(job, wt), cwd=wt,
-                       capture_output=True, text=True)
+        # Killable claude step: the cockpit Engine may set _kill_ctx.event for this job.
+        if _run_killable(build_claude_cmd(job, wt), wt,
+                         getattr(_kill_ctx, "event", None)) == "killed":
+            _discard_worktree(root, job.id)        # always discard the partial work
+            return "killed", None, "killed by operator — work discarded."
         diff = _diffstat(wt, base_sha)
         gate = build_gate_cmd(job, roe)
         if gate is None:
