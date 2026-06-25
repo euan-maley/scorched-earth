@@ -1,6 +1,24 @@
 # TODO
 
-## Current Session (2026-06-25, pt.2) — DEFCON COA refactor COMPLETE + MERGED to local main
+## Current Session (2026-06-25, pt.3) — "no rush" statusline tier + first-run setup, both MERGED to local main
+
+**DONE this session** (subagent-driven-development, lean: spec→implementer→task-review→fix per feature; each single-task branch's review doubled as the whole-branch gate):
+- [x] **Visible "no rush" tier** (`bd7945f`, `4265242`; branch `feat/no-rush-tier`, merged FF). Split `compute()`'s overloaded `off` into **`low`** (deep reserves → statusline shows **`⚪ no rush`**, dim) and **`off`** (weekly budget exhausted). Ladder is now `low → amber → green`; amber/green and the thresholds (GREEN 1.0, AMBER 0.70) untouched. Also fixed a latent bug — the exhausted case used to print `HEADLINE["off"]` = *"Well stocked…"*; each state now gets its true banner. Touched `core.py` · `statusline.py` · `report.py` · `bin/scorch` + the-math/README; 8 new checks (`test_scorched` 57→65). Review caught 2 doc gaps the spec mandated + a loose test assert — all fixed.
+- [x] **First-run setup for `/scorched-earth`** (`b136a6a`→`e94855a`; branch `feat/first-run-setup`, merged --no-ff). New `skills/scorched-earth/setup.md` (self-contained primer + guided flow); SKILL.md gate keyed on sentinel `~/.claude/scorched-earth/onboarded`. Flow: familiarize Claude → tour user → pick light style → link repos (`scorch link`, optional) → write sentinel + fall through to verdict. Re-runnable; never loaded once onboarded (zero routine cost). Review caught an **Important** path bug (bare CWD-relative `setup.md` ref broke when run from any other repo) → now resolves via the skill's own directory w/ `~/scorched-earth/...` fallback. Note: `scorch list` doesn't exist (spec assumed it did) → used `cat repos.json`.
+- [x] Docs folded in: CLAUDE.md (setup.md architecture line + `onboarded` sentinel), `docs/the-math.md` (5-state enum), README (three-tier readout), `docs/playbook.md` (flow + Current Status + test count), this TODO.
+- [x] **Suites green on merged main: 65 + 34 + 78 + 70 = 247.** Feature branches deleted.
+
+**Specs:** `docs/superpowers/specs/2026-06-25-no-rush-tier-design.md`, `docs/superpowers/specs/2026-06-25-first-run-setup-design.md`.
+
+**NOT pushed:** local `main` is now **26 commits ahead of `origin/main`** (DEFCON refactor + these two features). Same keep-WIP-local pattern.
+
+**RESUME / open:**
+1. Still pending from pt.2: decide whether to **push** local `main` to public `origin/main`, and the **demo-video DEFCON COA swap** (unblocked).
+2. Optional polish: in setup the repo-list confirmation reads raw `repos.json` (no `scorch list` verb exists) — a clean `scorch list` subcommand could replace the `cat`.
+
+---
+
+## Prior Session (2026-06-25, pt.2) — DEFCON COA refactor COMPLETE + MERGED to local main
 
 **DONE this session:**
 - [x] **DEFCON COA refactor** (full SDD run: 11 tasks + opus whole-branch final review + fix wave, every gate reviewed clean): budget/effort estimation removed entirely from the COA layer. Jobs rated by **DEFCON 1-5** criticality (1 = most critical / biggest blast radius); `auto_run_min_defcon` approval gate (DEFCON 1-2 need approval; batch `scorch coa run --approve`, cockpit auto-approves as operator-driven); `max_jobs` caps the run. Runner/cockpit drain in DEFCON order, halt on the **real** usage-limit (predictive EnvelopeTracker/headroom deleted; `_run_killable` untouched). Scan prompt hunts **overnight DEFCON-1 campaigns** alongside knockouts. All HUDs (COA, After-Action, cockpit) render DEFCON badges + approval markers; no budget UI.

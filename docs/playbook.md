@@ -39,7 +39,8 @@ Flow:
    - appends a `(now, five_hour%, seven_day%)` sample and updates the calibration of
      **R** (weekly% burned by one full 5h window),
    - writes the latest snapshot to `~/.claude/scorched-earth/state.json`,
-   - returns the light (green / amber / off) + recommended per-window burn %.
+   - returns the verdict (green / amber / low=⚪ no rush / off=exhausted) + recommended
+     per-window burn %.
 3. `scorch` CLI and the `/scorched-earth` skill read `state.json` so they work even
    outside the statusline (terminal, in-session).
 
@@ -113,14 +114,20 @@ ahead, with projected plots dimmed/"PLANNED" and today tagged "NOW").
 Working end-to-end. Core math + R self-calibration, `scorch` CLI, statusline light (fire
 gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast layer with
 a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
-marketplace + installer. War-general voice throughout. Phase 2a (COA queue-runner) and Phase
+marketplace + installer. War-general voice throughout. The statusline now shows three tiers,
+not two: the lowest verdict surfaces a visible **`⚪ no rush`** (deep reserves) instead of
+going blank — `compute()`'s old overloaded `off` was split into `low` (no rush) and `off`
+(weekly budget exhausted), each with its own banner. The `/scorched-earth` skill opens with a
+**first-run setup** (sentinel-gated `~/.claude/scorched-earth/onboarded`): it primes Claude on
+the model, tours the user, sets the light style, and links repos, then falls through to the
+verdict; re-runnable, and never loaded once onboarded. Phase 2a (COA queue-runner) and Phase
 2b (live cockpit) are built and DEFCON-native: jobs are rated by criticality (DEFCON 1-5,
 1 = most critical) — budget estimation removed. ROE gates DEFCON 1-2 jobs behind
 `auto_run_min_defcon` approval; `max_jobs` caps the run. The runner drains in DEFCON order
 and halts on the real usage-limit (no predicted envelope). The scan role hunts overnight
 DEFCON-1 campaigns. The cockpit kanban pushes live SSE board state per repo. All reports
-(COA, After-Action) carry DEFCON badges; no budget columns. 57 unit checks
+(COA, After-Action) carry DEFCON badges; no budget columns. 65 unit checks
 (`python3 tests/test_scorched.py`) + 34 advisor checks (`python3 tests/test_advisor.py`) +
 78 runner checks (`python3 tests/test_runner.py`) + 70 cockpit checks
-(`python3 tests/test_cockpit.py`) = 239 total; all gated in CI via
+(`python3 tests/test_cockpit.py`) = 247 total; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.
