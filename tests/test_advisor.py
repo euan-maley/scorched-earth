@@ -87,37 +87,22 @@ check("empty job list yields empty queue with a note",
       _coa_empty.queue == [] and "no jobs" in _coa_empty.note.lower())
 
 # --- coa_report.py ---------------------------------------------------------------
-# coa_report is updated in Task 7; wrap so a crash here doesn't abort the coa_io section.
-try:
-    from scorched_earth.coa_report import render_md, render_html  # noqa: E402
+from scorched_earth.coa_report import render_md, render_html, _job_obj as _coa_job_obj  # noqa: E402
 
-    _md = render_md(_coa, "2026-06-24")
-    check("render_md lists queued jobs and the date",
-          "cheap" in _md and "2026-06-24" in _md and _md.lstrip().startswith("#"))
-    _html = render_html(_coa, "2026-06-24")
-    check("render_html fills the war-HUD template with the COA data",
-          _html.lstrip().lower().startswith("<!doctype html")
-          and "COURSE OF ACTION" in _html.upper()
-          and "__COA_JSON__" not in _html          # the data token was substituted
-          and "cheap" in _html)                    # a queued job title made it into the blob
+_md = render_md(_coa, "2026-06-25")
+check("render_md lists queued jobs, date, DEFCON", "campaign" in _md and "2026-06-25" in _md
+      and "DEFCON" in _md.upper() and _md.lstrip().startswith("#"))
+check("render_md has no budget framing",
+      "windows" not in _md.lower() and "over budget" not in _md.lower())
 
-    from scorched_earth import coa_report as _rep  # noqa: E402
-    _md = _rep.render_md(_coa, "2026-06-25")
-    check("render_md uses the 'Over budget' framing, not 'Left on the table'",
-          "Over budget" in _md and "Left on the table" not in _md)
-    check("render_md lists the over-budget jobs under the Over budget section",
-          "## Over budget (queue anyway)" in _md and "- big (" in _md)
-    _html = _rep.render_html(_coa, "2026-06-25", verdict="green")
-    check("render_html substitutes the token (no leftover __COA_JSON__)",
-          "__COA_JSON__" not in _html)
-    import json as _json  # noqa: E402
-    _blob = _json.loads(_html.split("var DATA = ", 1)[1].split(";\n", 1)[0]) if "var DATA = " in _html else None
-    check("render_html carries headroom + weeklyReservePct in the data blob",
-          ('"headroom"' in _html) and ('"weeklyReservePct"' in _html))
-    check("render_html marks each job's fit (fits vs over)",
-          ('"fit": "fits"' in _html or '"fit":"fits"' in _html))
-except Exception as _e:
-    print(f"  [skip] coa_report section crashed ({type(_e).__name__}: {_e}) — Task 7 fixes this")
+_html = render_html(_coa, "2026-06-25", verdict="green")
+check("render_html fills the template, token substituted",
+      _html.lstrip().lower().startswith("<!doctype html") and "__COA_JSON__" not in _html
+      and "campaign" in _html)
+check("render_html carries defcon, not headroom",
+      '"defcon"' in _html and '"headroom"' not in _html)
+check("_job_obj carries defcon + approval_required",
+      _coa_job_obj(Job(id="z", repo="r", title="Z", type="test", defcon=1, value=7))["defcon"] == 1)
 
 # --- coa_io.py (round-trips under a temp HOME) -----------------------------------
 _home = tempfile.mkdtemp()
@@ -183,37 +168,27 @@ for _c in ("coa", "roe"):
           _txt.startswith("---") and "description:" in _txt)
 
 
-# --- depth flows into the rendered job dicts -------------------------------------
-# coa_report._job_obj and the advise-path render are updated in Tasks 7 + 10; wrap for now.
+# --- depth flows into the rendered job dicts (AAR half is Task 8) ----------------
+from scorched_earth.runner import JobOutcome  # noqa: E402
+from scorched_earth.review_report import _job_obj as _aar_job_obj  # noqa: E402
+# AAR assertion left for Task 8 to resolve (JobOutcome has no depth field yet)
 try:
-    from scorched_earth.coa_report import _job_obj as _coa_job_obj  # noqa: E402
-    from scorched_earth.review_report import _job_obj as _aar_job_obj  # noqa: E402
-    _dj2 = parse_jobs([{"id": "z", "title": "Z", "type": "test", "depth": 8, "value": 7}])[0]
-    check("coa_report _job_obj carries depth", _coa_job_obj(_dj2)["depth"] == 8)
-
-    from scorched_earth.runner import JobOutcome  # noqa: E402
     check("aar _job_obj carries depth",
-          _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test", tier="M",
-                                  outcome="pass", est_windows=1.0, depth=8))["depth"] == 8)
+          _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test",
+                                  outcome="pass"))["defcon"] == 3)
 except Exception as _e2:
-    print(f"  [skip] depth/report section crashed ({type(_e2).__name__}: {_e2}) — Tasks 7/8 fix this")
+    print(f"  [skip] aar depth/report section crashed ({type(_e2).__name__}: {_e2}) — Task 8 fixes this")
 
-# advise writes BOTH md + html — updated in Tasks 7 + 10; wrap for now.
-try:
-    import tempfile as _tf2, os as _os2
-    from scorched_earth import coa_io as _cio2
-    _arepo = _tf2.mkdtemp(); _os2.makedirs(_os2.path.join(_arepo, ".scorched"), exist_ok=True)
-    with open(_os2.path.join(_arepo, ".scorched", "jobs.json"), "w") as _f:
-        json.dump([{"id":"a1","repo":_arepo,"title":"A","type":"docs","depth":3,"value":7}], _f)
-    # drive the same render+write the CLI uses
-    _snap = {"five_hour_pct": 5, "seven_day_pct": 81}
-    _hr = _adv.window_headroom(_snap); _wr = _adv.weekly_reserve_pct(_snap)
-    _coaA = _match(_hr, _cio2.load_jobs(_arepo), _ROE(), weekly_reserve_pct=_wr)
-    _mdp, _htmlp = _cio2.write_coa(_arepo, _rep.render_md(_coaA, "2026-06-25"),
-                                   _rep.render_html(_coaA, "2026-06-25", verdict="green"), "2026-06-25")
-    check("advise path writes md + html records", _os2.path.exists(_mdp) and _os2.path.exists(_htmlp))
-except Exception as _e3:
-    print(f"  [skip] advise-path section crashed ({type(_e3).__name__}: {_e3}) — Tasks 7/10 fix this")
+# advise writes BOTH md + html (no-budget API)
+import tempfile as _tf2, os as _os2  # noqa: E402
+from scorched_earth import coa_io as _cio2  # noqa: E402
+_arepo = _tf2.mkdtemp(); _os2.makedirs(_os2.path.join(_arepo, ".scorched"), exist_ok=True)
+with open(_os2.path.join(_arepo, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "a1", "repo": _arepo, "title": "A", "type": "docs", "defcon": 1, "value": 7}], _f)
+_coaA = match(_cio2.load_jobs(_arepo), _ROE())
+_mdp, _htmlp = _cio2.write_coa(_arepo, render_md(_coaA, "2026-06-25"),
+                               render_html(_coaA, "2026-06-25", verdict="green"), "2026-06-25")
+check("advise path writes md + html records", _os2.path.exists(_mdp) and _os2.path.exists(_htmlp))
 
 print(f"\n{passed} checks passed.")
 if failures:

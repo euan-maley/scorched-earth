@@ -3,7 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Scorched Earth — Course of Action</title>
 <!--
-  COURSE OF ACTION (COA) — the budget-matched work plan. Sibling of the weekly SITREP;
+  COURSE OF ACTION (COA) — DEFCON-ordered work plan. Sibling of the weekly SITREP;
   same scorched-earth war-HUD look. Single self-contained file, no external assets/CDNs,
   opens offline, ships in the plugin.
 
@@ -14,28 +14,25 @@
   Everything on screen is derived from DATA in render(). Shape:
 
     DATA = {
-      sector:          string,                       // header tag, e.g. "SECTOR 07"
-      date:            string,                       // pre-formatted timestamp string
-      verdict:         'green'|'amber'|'off'|'unknown',   // drives the accent across the report
-      note:            string,                       // the COA verdict line (prose)
-      headroom:        number,                       // current-window headroom in window-units
-      weeklyReservePct: number,                      // weekly budget still available (%)
-      resetIn:         string,                       // countdown string to reset/reload
-      roe:             string[],                     // Rules of Engagement (1 line each)
-      queue:           Job[],                        // fits within headroom, run order
-      overBudget:      Job[],                        // eligible but beyond headroom — queue anyway
-      blocked:         Job[]                         // ROE-disallowed
+      sector:           string,                       // header tag, e.g. "SECTOR 07"
+      date:             string,                       // pre-formatted timestamp string
+      verdict:          'green'|'amber'|'off'|'unknown',   // drives the accent across the report
+      note:             string,                       // the COA verdict line (prose)
+      weeklyReservePct: number,                       // weekly budget still available (%) — context only
+      resetIn:          string,                       // countdown string to reset/reload
+      roe:              string[],                     // Rules of Engagement (1 line each)
+      queue:            Job[],                        // DEFCON-ordered run plan
+      blocked:          Job[]                         // ROE-disallowed
     }
 
     Job = {
-      title:     string,
-      tier:      'S'|'M'|'L'|'XL',           // XL = hottest / biggest (drives visual weight)
-      type:      string,                     // free tag: REFACTOR, TESTS, DOCS, FIX, INFRA…
-      cost:      string,                     // e.g. "2.6 win"
-      value:     'CRITICAL'|'HIGH'|'MEDIUM'|'LOW',
-      rationale: string,                     // one-line why
-      command:   string,                     // launch command (queue jobs)
-      fit:       'fits'|'over'|'blocked'     // annotation from the matcher
+      title:            string,
+      defcon:           number,   // 1..5 criticality (1 = most critical)
+      type:             string,   // free tag: REFACTOR, TEST, DOCS, FIX, INFRA…
+      value:            string,   // numeric value, e.g. "9"
+      approval_required: boolean, // defcon < auto_run_min_defcon
+      rationale:        string,   // one-line why
+      command:          string    // launch command (queue jobs)
     }
 -->
 <style>
@@ -157,6 +154,20 @@
   .job__sub{font-size:12px;letter-spacing:2px;color:var(--muted);margin-top:2px}
   .job__value{font-size:18px;font-weight:700;letter-spacing:1px;margin-top:11px;line-height:1}
 
+  /* DEFCON badges */
+  .defcon{flex:none;display:inline-flex;align-items:center;justify-content:center;
+          min-width:72px;height:22px;padding:0 8px;font-size:12px;font-weight:800;letter-spacing:1.5px}
+  .defcon-1{background:#c0392b;color:#fff;border:1px solid #ff4040;box-shadow:0 0 8px rgba(192,57,43,.7)}
+  .defcon-2{background:#e2541d;color:#190d05;border:1px solid #ff6a1f}
+  .defcon-3{background:#e2a04d;color:#190d05;border:1px solid #ffb84a}
+  .defcon-4{background:#5e7a7a;color:#eef3f3;border:1px solid #7a9d9d}
+  .defcon-5{background:transparent;color:#86abab;border:1px solid #3a5a5a}
+
+  /* approval marker */
+  .approval{flex:none;font-size:11px;letter-spacing:1.5px;font-weight:800;
+             color:#ff4040;border:1px solid #c0392b;padding:2px 7px;
+             animation:blink 1.4s steps(1,end) infinite}
+
   /* skipped / charred */
   .job--dim{opacity:.62;background:linear-gradient(#120c08,#0d0907);border-color:#2a1c12}
   .job--dim .job__rank{color:#3a2615}
@@ -223,67 +234,42 @@ var DATA = __COA_JSON__;
     off:    { color:"#c0392b", level:"OFF",    op:"HOLD FIRE" },
     unknown:{ color:"#6f8a8a", level:"UNKNOWN", op:"GATHER INTEL" }
   };
-  const TIER = {
-    XL:{ bar:"#ff6a1f", barW:6, title:23, badgeBg:"linear-gradient(135deg,#ffd24a,#ff6a1f)", badgeFg:"#190d05", badgeBd:"#ff6a1f", glow:true },
-    L: { bar:"#ff9a3d", barW:5, title:20, badgeBg:"#ff9a3d", badgeFg:"#190d05", badgeBd:"#ff9a3d", glow:false },
-    M: { bar:"#e2a04d", barW:4, title:18, badgeBg:"#e2a04d", badgeFg:"#190d05", badgeBd:"#e2a04d", glow:false },
-    S: { bar:"#5e7a7a", barW:3, title:16, badgeBg:"transparent", badgeFg:"#9ec1c1", badgeBd:"#3a5a5a", glow:false }
-  };
-  const VALUE = { CRITICAL:"#ff6a1f", HIGH:"#e2a04d", MEDIUM:"#c1dada", LOW:"#86abab" };
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
   const V = VERDICT[DATA.verdict] || VERDICT.unknown;
-  const headroom = DATA.headroom || 0;
-  const headroomPct = Math.min(100, headroom * 100);
   const weeklyReservePct = DATA.weeklyReservePct || 0;
   const fmt = n => (Math.round(n*10)/10).toString();
 
-  function fitBadge(fit){
-    if(fit === "fits") return `<span style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#7cb342;border:1px solid #3a6020;padding:2px 7px;">FITS</span>`;
-    if(fit === "over") return `<span style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#e2a04d;border:1px solid #7a5010;padding:2px 7px;">OVER</span>`;
-    return `<span style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#8a6a52;border:1px solid #3a2615;padding:2px 7px;">BLOCKED</span>`;
+  const DEFCON_BORDER = ["","#c0392b","#e2541d","#e2a04d","#5e7a7a","#3a5a5a"];
+
+  function defconBadge(defcon){
+    const d = Math.min(5, Math.max(1, defcon|0));
+    return `<span class="defcon defcon-${d}">DEFCON ${d}</span>`;
+  }
+
+  function approvalBadge(){
+    return `<span class="approval">APPROVAL REQUIRED</span>`;
   }
 
   function jobCard(job, idx){
+    const d = Math.min(5, Math.max(1, (job.defcon|0)||3));
+    const borderColor = DEFCON_BORDER[d] || "#5e8080";
     return `
-    <div class="job" style="border-left:4px solid #5e8080;">
+    <div class="job" style="border-left:4px solid ${borderColor};">
       <div class="job__rank">${String(idx).padStart(2,"0")}</div>
       <div class="job__body">
         <div class="job__head">
+          ${defconBadge(job.defcon)}
           <span class="job__title">${esc(job.title)}</span>
           <span class="type">${esc(job.type)}</span>
-          ${fitBadge(job.fit)}
+          ${job.approval_required ? approvalBadge() : ""}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
         <div class="job__cmd"><span class="px">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
       </div>
       <div class="job__meta">
-        <div class="job__cost">DEPTH ${job.depth}/10</div>
-        <div class="job__sub">DEPTH</div>
-        <div class="job__value" style="color:${VALUE[job.value]||"#c1dada"};">${esc(job.value)}</div>
+        <div class="job__cost" style="font-size:20px;">${esc(job.value)}</div>
         <div class="job__sub">VALUE</div>
-      </div>
-    </div>`;
-  }
-
-  function overCard(job){
-    return `
-    <div class="job job--dim" style="border-left:3px solid #7a5010;">
-      <div class="job__rank">&mdash;</div>
-      <div class="job__body">
-        <div class="job__head">
-          <span class="job__title">${esc(job.title)}</span>
-          <span class="type" style="border-color:#7a5010;color:#e2a04d;">${esc(job.type)}</span>
-          ${fitBadge("over")}
-        </div>
-        <div class="job__rationale">${esc(job.rationale)}</div>
-        <div class="job__cmd"><span class="px" style="color:#7a5010;">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
-      </div>
-      <div class="job__meta" style="border-left-color:#7a5010;">
-        <div class="job__cost" style="color:#b59478;">DEPTH ${job.depth}/10</div>
-        <div class="job__sub" style="color:#7a5e44;">DEPTH</div>
-        <div class="job__value" style="color:#e2a04d;">${esc(job.value)}</div>
-        <div class="job__sub" style="color:#7a5e44;">VALUE</div>
       </div>
     </div>`;
   }
@@ -294,22 +280,19 @@ var DATA = __COA_JSON__;
       <div class="job__rank">&mdash;</div>
       <div class="job__body">
         <div class="job__head">
+          ${defconBadge(job.defcon)}
           <span class="job__title">${esc(job.title)}</span>
           <span class="type" style="border-color:#3a2615;color:#8a6a52;">${esc(job.type)}</span>
-          ${fitBadge("blocked")}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
       </div>
       <div class="job__meta" style="border-left-color:#3a2615;">
-        <div class="job__cost" style="color:#b59478;">DEPTH ${job.depth}/10</div>
-        <div class="job__sub" style="color:#7a5e44;">DEPTH</div>
-        <div class="job__value" style="color:#8a6a52;">${esc(job.value)}</div>
+        <div class="job__cost" style="font-size:20px;color:#b59478;">${esc(job.value)}</div>
         <div class="job__sub" style="color:#7a5e44;">VALUE</div>
       </div>
     </div>`;
   }
 
-  const overBudgetJobs = DATA.overBudget || [];
   const blockedJobs = DATA.blocked || [];
 
   const html = `
@@ -326,31 +309,24 @@ var DATA = __COA_JSON__;
         </span>
       </div>
       <h1 class="hdr__title">COURSE OF ACTION</h1>
-      <div class="hdr__sub">BUDGET-MATCHED BATTLE PLAN &middot; ${(DATA.queue||[]).length} JOBS COMMITTED &middot; ${overBudgetJobs.length} OVER BUDGET &middot; ${blockedJobs.length} BLOCKED</div>
+      <div class="hdr__sub">DEFCON BATTLE PLAN &middot; ${(DATA.queue||[]).length} JOBS COMMITTED &middot; ${blockedJobs.length} BLOCKED</div>
     </div>
 
     <div class="deck">
 
-      <!-- 2. AMMUNITION -->
+      <!-- 2. WEEKLY RESERVE (context only, not a gate) -->
       <div class="ammo">
         <div class="ammo__accent" style="background:${V.color};"></div>
-        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">AMMUNITION</span><span class="r">HEADROOM &middot; WINDOWS</span></div>
+        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">WEEKLY RESERVE</span><span class="r">CONTEXT &middot; NOT A GATE</span></div>
         <div class="ammo__row">
           <div class="ammo__big">
-            <b>${fmt(headroom)}</b> <small>WIN</small>
-            <div class="ammo__lbl">CURRENT WINDOW HEADROOM</div>
+            <b>${fmt(weeklyReservePct)}</b> <small>%</small>
+            <div class="ammo__lbl">WEEKLY BUDGET REMAINING</div>
           </div>
           <div class="ammo__side">
-            WEEKLY RESERVE
-            <b>${fmt(weeklyReservePct)}%</b>
-            <div class="reset">RELOAD IN<br><b>${esc(DATA.resetIn)}</b></div>
+            RELOAD IN
+            <b>${esc(DATA.resetIn)}</b>
           </div>
-        </div>
-        <div class="gauge">
-          <div class="gauge__fill" style="width:${headroomPct.toFixed(2)}%;"></div>
-          <div class="gauge__forfeit" style="left:${headroomPct.toFixed(2)}%;right:0;"></div>
-          <div class="gauge__tick" style="left:${headroomPct.toFixed(2)}%;"></div>
-          <div class="gauge__rounds"></div>
         </div>
       </div>
 
@@ -368,14 +344,7 @@ var DATA = __COA_JSON__;
         ${(DATA.queue||[]).map((j,i)=>jobCard(j,i+1)).join("")}
       </div>
 
-      <!-- 5. OVER BUDGET (QUEUE ANYWAY) -->
-      ${overBudgetJobs.length > 0 ? `
-      <div class="sec" style="margin-top:6px;"><h2 style="color:#e2a04d;">OVER BUDGET</h2><span class="rule" style="background:linear-gradient(90deg,#7a5010,transparent);"></span><span class="rt" style="color:#9a7030;">BEYOND HEADROOM &middot; QUEUE ANYWAY</span></div>
-      <div class="jobs">
-        ${overBudgetJobs.map(overCard).join("")}
-      </div>` : ""}
-
-      <!-- 5b. BLOCKED BY ROE -->
+      <!-- 5. BLOCKED BY ROE -->
       ${blockedJobs.length > 0 ? `
       <div class="sec" style="margin-top:6px;"><h2 style="color:#8a6a52;">BLOCKED BY ROE</h2><span class="rule" style="background:linear-gradient(90deg,#3a2615,transparent);"></span><span class="rt" style="color:#7a5e44;">ROE-DISALLOWED &middot; STANDING ORDERS</span></div>
       <div class="jobs">

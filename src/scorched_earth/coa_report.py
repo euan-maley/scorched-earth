@@ -12,61 +12,49 @@ from .advisor import COA
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "coa_template.html")
 
-# Bucket the scan agent's numeric `value` into the labels the template colour-codes by.
-_VALUE_LABELS = ((9.0, "CRITICAL"), (7.0, "HIGH"), (4.0, "MEDIUM"))
-
-
-def _value_label(value: float) -> str:
-    for threshold, label in _VALUE_LABELS:
-        if value >= threshold:
-            return label
-    return "LOW"
+_DEFCON_LABELS = {1: "DEFCON 1", 2: "DEFCON 2", 3: "DEFCON 3", 4: "DEFCON 4", 5: "DEFCON 5"}
 
 
 def _row(j):
-    return (j.id, j.tier, f"{j.est_windows:.1f}", f"{j.value:g}", j.type, j.title)
+    return (j.id, _DEFCON_LABELS[j.defcon], f"{j.value:g}", j.type, j.title)
 
 
 def render_md(coa: COA, generated_at: str) -> str:
     lines = [f"# Course of Action — {generated_at}", "", coa.note, "",
-             "## Queue", "", "| id | tier | windows | value | type | title |",
-             "|----|------|---------|-------|------|-------|"]
+             "## Battle plan (most critical first)", "",
+             "| id | defcon | value | type | title |",
+             "|----|--------|-------|------|-------|"]
     for j in coa.queue:
         lines.append("| " + " | ".join(_row(j)) + " |")
     if not coa.queue:
-        lines.append("| _(none)_ | | | | | |")
+        lines.append("| _(none)_ | | | | |")
     lines += ["", "## Launch", ""]
     for j in coa.queue:
-        lines += [f"### {j.id} — {j.title}", "", f"> {j.rationale}", "", "```", j.launch, "```", ""]
-    if coa.over_budget:
-        lines += ["## Over budget (queue anyway)", ""]
-        for j in coa.over_budget:
-            lines.append(f"- {j.id} ({j.tier}, {j.est_windows:.1f}w): {j.title}")
+        appr = "  **(approval required)**" if j.defcon < 3 else ""
+        lines += [f"### {j.id} — {j.title} [{_DEFCON_LABELS[j.defcon]}]{appr}", "",
+                  f"> {j.rationale}", "", "```", j.launch, "```", ""]
     if coa.blocked:
-        lines += ["", "## Blocked by ROE", ""]
+        lines += ["## Blocked by ROE", ""]
         for j in coa.blocked:
             lines.append(f"- {j.id} ({j.type}): {j.title}")
     return "\n".join(lines) + "\n"
 
 
-def _job_obj(j, fit="fits") -> dict:
-    """Map our Job onto the template's job shape. Values stay raw strings; the template's own
-    `esc()` escapes them at render, so we must not double-escape here."""
+def _job_obj(j) -> dict:
     return {
         "title": j.title,
-        "tier": j.tier,
+        "defcon": j.defcon,
         "type": (j.type or "").upper(),
-        "cost": f"{j.est_windows:.1f} win",
-        "value": _value_label(j.value),
-        "depth": j.depth,
+        "value": f"{j.value:g}",
+        "approval_required": j.defcon < 3,
         "rationale": j.rationale,
         "command": j.launch,
-        "fit": fit,
     }
 
 
 def render_html(coa: COA, generated_at: str, *, verdict: str = "unknown",
-                roe_lines=None, reset_in: str = "") -> str:
+                roe_lines=None, reset_in: str = "",
+                weekly_reserve_pct: float = 0.0) -> str:
     """Fill the war-HUD COA template with this plan. `verdict` (green|amber|off|unknown) drives
     the accent, `roe_lines` is the human-readable rules of engagement, `reset_in` is a display
     string for time-to-reset. All optional so the renderer works standalone (e.g. in tests); the
@@ -76,13 +64,11 @@ def render_html(coa: COA, generated_at: str, *, verdict: str = "unknown",
         "date": generated_at,
         "verdict": (verdict or "unknown").lower(),
         "note": coa.note,
-        "headroom": round(coa.headroom_windows, 2),
-        "weeklyReservePct": round(coa.weekly_reserve_pct, 0),
+        "weeklyReservePct": round(weekly_reserve_pct or 0.0, 0),
         "resetIn": reset_in,
         "roe": list(roe_lines or []),
-        "queue": [_job_obj(j, "fits") for j in coa.queue],
-        "overBudget": [_job_obj(j, "over") for j in coa.over_budget],
-        "blocked": [_job_obj(j, "blocked") for j in coa.blocked],
+        "queue": [_job_obj(j) for j in coa.queue],
+        "blocked": [_job_obj(j) for j in coa.blocked],
     }
     with open(_TEMPLATE_PATH, encoding="utf-8") as f:
         template = f.read()
