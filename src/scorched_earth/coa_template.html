@@ -140,6 +140,8 @@
             border:1px solid var(--track-bd);padding:7px 11px;font-size:16px;letter-spacing:.5px;
             color:var(--primary);overflow:auto}
   .job__cmd .px{flex:none;color:var(--ember);font-weight:800}
+  .job__cmdlbl{flex:none;font-size:11px;letter-spacing:1px;font-weight:700;color:var(--ember2);
+               opacity:.7;border-right:1px solid var(--track-bd);padding-right:9px}
   .job__cmdtext{flex:1;min-width:0;overflow:auto;white-space:nowrap}
   .job__copy{flex:none;cursor:pointer;font:inherit;font-size:12px;letter-spacing:1px;
              background:transparent;color:var(--ember);border:1px solid var(--ember);
@@ -262,7 +264,7 @@ var DATA = __COA_JSON__;
           ${job.approval_required ? approvalBadge() : ""}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
-        <div class="job__cmd"><span class="px">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
+        <div class="job__cmd" title="Run/execute command — copy this into a Claude session to launch the job"><span class="px">&#9656;</span><span class="job__cmdlbl">RUN CMD</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
       </div>
       <div class="job__meta">
         <div class="job__value" style="font-size:20px;">${esc(job.value)}</div>
@@ -329,7 +331,7 @@ var DATA = __COA_JSON__;
 
       <!-- 3. ROE -->
       <div class="mod">
-        <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT</span><span class="r">ROE // STANDING ORDERS</span></div>
+        <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT <span style="opacity:.55;font-weight:400;">(as set by user)</span></span><span class="r">ROE // STANDING ORDERS</span></div>
         <ul class="roe">
           ${(DATA.roe||[]).map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
         </ul>
