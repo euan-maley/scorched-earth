@@ -227,6 +227,20 @@ _coa2 = _match(5.0, _mj, _ROE(allowed_types=["test"]))
 check("match routes ROE-disallowed jobs to blocked (distinct from over_budget)",
       len(_coa2.blocked) == 3 and _coa2.queue == [] and _coa2.over_budget == [])
 
+# advise writes BOTH md + html (html is the artifact to open, md is the record)
+import tempfile as _tf2, os as _os2
+from scorched_earth import coa_io as _cio2
+_arepo = _tf2.mkdtemp(); _os2.makedirs(_os2.path.join(_arepo, ".scorched"), exist_ok=True)
+with open(_os2.path.join(_arepo, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id":"a1","repo":_arepo,"title":"A","type":"docs","depth":3,"value":7}], _f)
+# drive the same render+write the CLI uses
+_snap = {"five_hour_pct": 5, "seven_day_pct": 81}
+_hr = _adv.window_headroom(_snap); _wr = _adv.weekly_reserve_pct(_snap)
+_coaA = _match(_hr, _cio2.load_jobs(_arepo), _ROE(), weekly_reserve_pct=_wr)
+_mdp, _htmlp = _cio2.write_coa(_arepo, _rep.render_md(_coaA, "2026-06-25"),
+                               _rep.render_html(_coaA, "2026-06-25", verdict="green"), "2026-06-25")
+check("advise path writes md + html records", _os2.path.exists(_mdp) and _os2.path.exists(_htmlp))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

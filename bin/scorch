@@ -190,22 +190,36 @@ def _coa_cli(raw):
 
     # advise
     state = st.load_state()
+    snap = (state or {}).get("snapshot") or {}
     rec = (state or {}).get("recommendation") or {}
-    wl = rec.get("windows_left")
-    if not _has_usable_snapshot(state) or wl is None:
+    from scorched_earth import advisor as _adv
+    headroom = _adv.window_headroom(snap)
+    if not _has_usable_snapshot(state) or headroom is None:
         print("No live budget reading yet, so there's nothing to plan against. "
               "Open a Claude Code session to capture a snapshot, then try again.")
         return 0
+    no_open = "--no-open" in rest
+    rest = [a for a in rest if a != "--no-open"]
     repos = [rest[0]] if rest else coa_io.list_repos()
     if not repos:
         print("No repos linked. Use: scorch link <path>")
         return 0
     date = time.strftime("%Y-%m-%d", time.localtime())
+    wrp = _adv.weekly_reserve_pct(snap) or 0.0
+    level = rec.get("level", "unknown")
+    written = []
     for repo in repos:
         roe = coa_io.load_roe(repo)
-        coa = advisor.match(wl, coa_io.load_jobs(repo), roe)
+        coa = advisor.match(headroom, coa_io.load_jobs(repo), roe, weekly_reserve_pct=wrp)
+        md = coa_report.render_md(coa, date)
+        html = coa_report.render_html(coa, date, verdict=level)
+        md_path, html_path = coa_io.write_coa(repo, md, html, date)
+        written.append(html_path)
         print(f"\n=== {repo} ===")
-        print(coa_report.render_md(coa, date))
+        print(coa.note)
+        print(f"COA written: {html_path}")
+    if not no_open and len(written) == 1:
+        _open_file(written[0])
     return 0
 
 
