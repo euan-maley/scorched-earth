@@ -48,20 +48,22 @@ These are occasional, so handle them conversationally here rather than as separa
 
 ## What to do
 
-0. **First-run gate.** Before anything else, check whether setup has completed and
-   whether the user explicitly asked to redo it (e.g. "redo scorched-earth setup",
-   "re-run setup"):
+0. **First-run gate.** Before anything else, route as follows:
 
-   ```bash
-   test -f ~/.claude/scorched-earth/onboarded && echo onboarded || echo first-run
-   ```
+   1. **Explicit re-run request** (e.g. "redo scorched-earth setup", "re-run
+      setup"): read `setup.md` from this skill's own directory (the same directory
+      this SKILL.md lives in); if you can't locate it there, try
+      `~/scorched-earth/skills/scorched-earth/setup.md`. It ends with the normal
+      readout — stop following these steps, setup.md takes over from here.
+   2. **Otherwise**, check the sentinel:
 
-   - **Explicit re-run request** (regardless of the sentinel): read and follow
-     `skills/scorched-earth/setup.md`. It ends with the normal readout — stop
-     following these steps, `setup.md` takes over from here.
-   - **`first-run`**: read and follow `skills/scorched-earth/setup.md` (same as
-     above).
-   - **`onboarded`** and no explicit re-run: continue with step 1 below.
+      ```bash
+      test -f ~/.claude/scorched-earth/onboarded && echo onboarded || echo first-run
+      ```
+
+      - **`first-run`**: read and follow setup.md (same path instructions as
+        above).
+      - **`onboarded`**: continue with step 1 below.
 
 1. Run the CLI and show its output verbatim (it reads the live snapshot the statusline
    caches at `~/.claude/scorched-earth/state.json`):

@@ -208,5 +208,8 @@ To redo setup at any time:
   `/scorched-earth` — the gate detects the missing sentinel and runs setup
   again automatically.
 
-When re-running, read this file from STEP 1 to refresh the model for the
-current session, then work through all five steps again.
+When re-running, read `setup.md` from this skill's own directory (the same
+directory this SKILL.md lives in); if you can't locate it there, try
+`~/scorched-earth/skills/scorched-earth/setup.md`. Start from STEP 1 to
+refresh the model for the current session, then work through all five steps
+again.
