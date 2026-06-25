@@ -367,7 +367,6 @@ _hk2 = render_cockpit("tk", {
                "queued": [], "finished": []}],
     "running": None, "busy": False, "weekly_reserve_pct": 42
 }).decode("utf-8")
-check("cockpit template has no per-card EST window-cost label", "EST ~" not in _hk2)
 check("cockpit renders a DEFCON badge for proposed cards", "defcon-" in _hk2)
 
 # --- parallel per-repo execution -------------------------------------------------

@@ -34,7 +34,7 @@ def render_md(coa: COA, generated_at: str) -> str:
         lines += [f"### {j.id} — {j.title} [{_DEFCON_LABELS[j.defcon]}]{appr}", "",
                   f"> {j.rationale}", "", "```", j.launch, "```", ""]
     if coa.blocked:
-        lines += ["## Blocked by ROE", ""]
+        lines += ["", "## Blocked by ROE", ""]
         for j in coa.blocked:
             lines.append(f"- {j.id} ({j.type}): {j.title}")
     return "\n".join(lines) + "\n"

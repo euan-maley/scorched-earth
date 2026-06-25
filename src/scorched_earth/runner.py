@@ -18,8 +18,6 @@ from . import coa_io
 from .jobs import Job
 from .roe import ROE
 
-_EPS = 1e-9
-
 # Default unattended leash: additive / verifiable work only. A repo widens this via ROE
 # unattended_types. Transformative types (refactor/fix/infra) never run unattended by default.
 SAFE_UNATTENDED = ["test", "docs", "perf", "audit"]

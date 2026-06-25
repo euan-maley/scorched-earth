@@ -180,7 +180,6 @@ def _job_brief(j: Job, roe=None) -> dict:
 
 
 def board_state(repo_path: str, running_ids=()) -> dict:
-    from . import advisor  # noqa: F401  (kept local to avoid import cycle)
     ap = os.path.realpath(os.path.expanduser(repo_path))
     roe = load_roe(repo_path)
     queued = read_queue(repo_path)
