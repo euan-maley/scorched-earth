@@ -113,11 +113,14 @@ ahead, with projected plots dimmed/"PLANNED" and today tagged "NOW").
 Working end-to-end. Core math + R self-calibration, `scorch` CLI, statusline light (fire
 gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast layer with
 a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
-marketplace + installer. War-general voice throughout. Phase 2a (COA queue-runner) is built:
-queue/run/review flow wired, live After-Action Report rendering, predictive budget accounting,
-ROE-gated sandbox execution. Phase 2b (live cockpit) is built: localhost kanban board with
-per-repo tabs, drag/queue/reorder/run, event-driven runner, SSE board updates. 57 unit checks passing
-(`python3 tests/test_scorched.py`) + 25 advisor checks (`python3 tests/test_advisor.py`) + 60 runner
-checks (`python3 tests/test_runner.py`) + 36 cockpit checks (`python3 tests/test_cockpit.py`) = 178
-total; all gated in CI via `.github/workflows/test.yml`. Forecast and R both start provisional and
-sharpen with real usage.
+marketplace + installer. War-general voice throughout. Phase 2a (COA queue-runner) and Phase
+2b (live cockpit) are built and DEFCON-native: jobs are rated by criticality (DEFCON 1-5,
+1 = most critical) — budget estimation removed. ROE gates DEFCON 1-2 jobs behind
+`auto_run_min_defcon` approval; `max_jobs` caps the run. The runner drains in DEFCON order
+and halts on the real usage-limit (no predicted envelope). The scan role hunts overnight
+DEFCON-1 campaigns. The cockpit kanban pushes live SSE board state per repo. All reports
+(COA, After-Action) carry DEFCON badges; no budget columns. 57 unit checks
+(`python3 tests/test_scorched.py`) + 34 advisor checks (`python3 tests/test_advisor.py`) +
+78 runner checks (`python3 tests/test_runner.py`) + 70 cockpit checks
+(`python3 tests/test_cockpit.py`) = 239 total; all gated in CI via
+`.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.

@@ -1,6 +1,14 @@
 # TODO
 
-## Current Session (2026-06-25) — published COA stack to public `main`; DEFCON refactor WIP; full CRT demo video built
+## Current Session (2026-06-25) — DEFCON COA refactor landed; full sweep + docs
+
+**DONE this session:**
+- [x] **DEFCON COA refactor** (Tasks 1-10): budget estimation removed entirely. Jobs rated by DEFCON 1-5 criticality (1 = most critical); `auto_run_min_defcon` approval gate replaces budget threshold; `max_jobs` caps the run. Runner drains in DEFCON order, halts on real usage-limit (no predicted envelope). Scan hunts overnight DEFCON-1 campaigns. All four reports (COA HTML/MD, After-Action HTML/MD) carry DEFCON badges; no budget columns.
+- [x] **Task 11 (sweep + docs):** straggler grep clean; dead code removed (`_EPS`, `board_state` dead advisor import, `.cdepth` CSS, redundant test assertions); `render_md` markdown spacing fixed; CLAUDE.md, playbook, TODO updated. Test counts: 57 + 34 + 78 + 70 = 239 all green.
+
+---
+
+## Prior Session — published COA stack to public `main`; DEFCON refactor WIP; full CRT demo video built
 
 **Repo state:**
 - **public `main`** (origin, `df0dd5b`): the full COA advisor stack SHIPPED — Phase 1 + 2a/2b/2c + depth + multi-repo + **parallel per-repo execution** + the **budget→headroom UX revision** + `/war-room`. Installable via `/plugin marketplace add euan-maley/scorched-earth`. Internal `docs/superpowers/` stripped from the public tree (kept at `~/Downloads/scorched-earth-planning-docs/`); they remain in git history (offer a history scrub if it matters).
