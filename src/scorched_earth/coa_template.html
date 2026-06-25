@@ -132,8 +132,6 @@
              min-width:34px;text-align:center;letter-spacing:0}
   .job__body{min-width:0}
   .job__head{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
-  .tier{flex:none;display:inline-flex;align-items:center;justify-content:center;
-        min-width:34px;height:24px;padding:0 9px;font-size:14px;font-weight:800;letter-spacing:1px}
   .job__title{font-weight:700;color:var(--strong);letter-spacing:.3px}
   .type{flex:none;font-size:13px;letter-spacing:1.5px;color:var(--muted);
         border:1px solid var(--mod-bd);padding:2px 8px}
@@ -150,9 +148,8 @@
   .job__copy.copied{background:#7cb342;border-color:#7cb342;color:#0b0705}
   .job__meta{align-self:center;text-align:right;flex:none;padding-left:6px;border-left:1px solid var(--mod-bd);
              min-width:104px}
-  .job__cost{font-size:26px;color:var(--strong);line-height:1;font-weight:700}
+  .job__value{font-size:26px;color:var(--strong);line-height:1;font-weight:700}
   .job__sub{font-size:12px;letter-spacing:2px;color:var(--muted);margin-top:2px}
-  .job__value{font-size:18px;font-weight:700;letter-spacing:1px;margin-top:11px;line-height:1}
 
   /* DEFCON badges */
   .defcon{flex:none;display:inline-flex;align-items:center;justify-content:center;
@@ -268,7 +265,7 @@ var DATA = __COA_JSON__;
         <div class="job__cmd"><span class="px">&#9656;</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
       </div>
       <div class="job__meta">
-        <div class="job__cost" style="font-size:20px;">${esc(job.value)}</div>
+        <div class="job__value" style="font-size:20px;">${esc(job.value)}</div>
         <div class="job__sub">VALUE</div>
       </div>
     </div>`;
@@ -287,7 +284,7 @@ var DATA = __COA_JSON__;
         <div class="job__rationale">${esc(job.rationale)}</div>
       </div>
       <div class="job__meta" style="border-left-color:#3a2615;">
-        <div class="job__cost" style="font-size:20px;color:#b59478;">${esc(job.value)}</div>
+        <div class="job__value" style="font-size:20px;color:#b59478;">${esc(job.value)}</div>
         <div class="job__sub" style="color:#7a5e44;">VALUE</div>
       </div>
     </div>`;
