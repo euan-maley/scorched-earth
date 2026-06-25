@@ -377,6 +377,43 @@ check("board_state brief carries depth", _io.board_state(_rb2)["proposed"][0]["d
 _hk2 = render_cockpit("tk", {"repos": [], "running": None, "busy": False}).decode("utf-8")
 check("cockpit template renders job depth", "depth" in _hk2.lower())
 
+# --- multi-repo run: one job at a time across repos, shared budget --------------
+# NOTE: jobs use depth=3 (-> 0.5 windows each) so the depth-wins rule in parse_jobs
+# round-trips est_windows correctly.  Repos are created with prefix "A"/"B"/"C" so
+# os.path.basename matches the sweep-order assertion.
+from scorched_earth.roe import DEFAULT_ROE as _DR  # noqa: E402
+_mr_ran = []
+def _mr_exec(repo, job, roe):
+    _mr_ran.append((os.path.basename(repo)[0], job.id))
+    return ("pass", None, "ok")
+_mr_base = tempfile.mkdtemp()
+_mrA = _mk_repo([Job(id="a1", repo=".", title="A1", type="test", est_windows=0.5, value=5, depth=3),
+                 Job(id="a2", repo=".", title="A2", type="test", est_windows=0.5, value=4, depth=3)])
+os.rename(_mrA, os.path.join(_mr_base, "A")); _mrA = os.path.join(_mr_base, "A")
+_mrB = _mk_repo([Job(id="b1", repo=".", title="B1", type="test", est_windows=0.5, value=5, depth=3)])
+os.rename(_mrB, os.path.join(_mr_base, "B")); _mrB = os.path.join(_mr_base, "B")
+_mrC = _mk_repo([Job(id="c1", repo=".", title="C1", type="test", est_windows=0.5, value=5, depth=3)])
+os.rename(_mrC, os.path.join(_mr_base, "C")); _mrC = os.path.join(_mr_base, "C")
+_mr_eng = Engine([_mrA, _mrB, _mrC], execute=_mr_exec, load_state=lambda: _STATE, now=lambda: 1)
+_mr_eng.run([_mrA, _mrB, _mrC])
+check("multi-repo run drains all checked repos (sweeps A then B then C)",
+      [r for r, _ in _mr_ran] == ["A", "A", "B", "C"][:len(_mr_ran)] and
+      sorted(j for _, j in _mr_ran) == ["a1", "a2", "b1", "c1"])
+check("multi-repo run leaves every queue empty",
+      _io.read_queue(_mrA) == [] and _io.read_queue(_mrB) == [] and _io.read_queue(_mrC) == [])
+check("multi-repo run ends idle", _mr_eng.state_json()["busy"] is False)
+
+# shared global budget: 2.5 windows, 6 jobs @1.0 across two repos -> only ~2 run, rest wait
+_mr_ran2 = []
+def _mr_exec2(repo, job, roe):
+    _mr_ran2.append(job.id); return ("pass", None, "ok")
+_bgA = _mk_repo([Job(id="A"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5) for i in range(3)])
+_bgB = _mk_repo([Job(id="B"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5) for i in range(3)])
+_bg_eng = Engine([_bgA, _bgB], execute=_mr_exec2, load_state=lambda: _STATE, now=lambda: 1)  # windows_left 2.5
+_bg_eng.run([_bgA, _bgB])
+check("shared budget caps the whole run (2 jobs of 6 fit 2.5 windows, not 2-per-repo)",
+      len(_mr_ran2) == 2)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

@@ -17,6 +17,7 @@ from urllib.parse import urlparse, parse_qs
 from . import coa_io
 from . import runner
 from . import state as st
+from .roe import DEFAULT_ROE
 
 
 class Engine:
@@ -36,7 +37,8 @@ class Engine:
         self._stop = False
         self._running = None                       # {"repo","id"} or None
         self._kill_event = None                    # threading.Event or None (when idle)
-        self._trackers = {}                        # repo -> EnvelopeTracker
+        self._tracker = None                       # one global EnvelopeTracker (budget is one pool)
+        self._active = []                          # repos armed for the current run
         self._results = {}                         # repo -> RunResult (accumulating)
 
     # ---- public mutations (called by HTTP handlers) ----
@@ -49,8 +51,12 @@ class Engine:
         if job_id in jobs:
             with self._lock:
                 coa_io.enqueue(repo, [jobs[job_id]])
+        rp = os.path.realpath(os.path.expanduser(repo))
+        with self._lock:
+            if rp not in self._active:
+                self._active = self._active + [rp]   # a dragged-in card joins the active run
         self._broadcast()
-        self.advance(repo)
+        self.advance()
 
     def unqueue(self, repo, job_id):
         with self._lock:
@@ -62,10 +68,14 @@ class Engine:
             coa_io.reorder(repo, ids)
         self._broadcast()
 
-    def run(self, repo):
+    def run(self, repos):
+        if isinstance(repos, str):
+            repos = [repos]
+        active = [os.path.realpath(os.path.expanduser(r)) for r in repos]
         with self._lock:
-            self._stop = False          # Run = go/resume: clear any prior Stop
-        self.advance(repo)
+            self._active = active
+            self._stop = False                     # Run = go/resume
+        self.advance()
 
     def stop(self):
         with self._lock:
@@ -87,58 +97,53 @@ class Engine:
                 "running": running, "busy": busy}
 
     # ---- the event-driven step ----
-    def advance(self, repo):
-        repo = os.path.realpath(os.path.expanduser(repo))
+    def advance(self):
         while True:
-            # one-at-a-time guard + stop check, atomically
             with self._lock:
                 if self._busy or self._stop:
                     return
-                roe = coa_io.load_roe(repo)
-                tracker = self._trackers.get(repo)
-                if tracker is None:
-                    tracker = runner.EnvelopeTracker(roe)
-                    self._trackers[repo] = tracker
-                avail = tracker.available(self._load_state(), self._now())
+                if self._tracker is None:
+                    self._tracker = runner.EnvelopeTracker(DEFAULT_ROE)  # global budget, no per-repo cap
+                avail = self._tracker.available(self._load_state(), self._now())
                 if avail is None:
-                    return                              # stale/absent snapshot -> refuse
-                job = runner.pick_next(coa_io.read_queue(repo), avail, roe)
-                if job is None:
-                    return                              # idle: nothing eligible/affordable
+                    return                          # stale/absent snapshot -> refuse the run
+                picked = None
+                for rp in self._active:             # first active repo (in order) with eligible work
+                    roe = coa_io.load_roe(rp)
+                    job = runner.pick_next(coa_io.read_queue(rp), avail, roe)
+                    if job is not None:
+                        picked = (rp, roe, job)
+                        break
+                if picked is None:
+                    return                          # idle: nothing eligible/affordable anywhere
+                rp, roe, job = picked
                 self._busy = True
-                self._running = {"repo": repo, "id": job.id}
+                self._running = {"repo": rp, "id": job.id}
                 self._kill_event = threading.Event()
                 kill_event = self._kill_event
-                coa_io.unqueue(repo, job.id)            # remove-on-pick: can never run twice
-                rr = self._results.get(repo)
+                coa_io.unqueue(rp, job.id)          # remove-on-pick
+                rr = self._results.get(rp)
                 if rr is None:
                     rr = runner.RunResult(
                         generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
-                        state="running", repo=repo, verdict="unknown", note="",
+                        state="running", repo=rp, verdict="unknown", note="",
                         available_windows=avail, spent_estimated=0.0)
-                    self._results[repo] = rr
+                    self._results[rp] = rr
                 seq = len(rr.jobs) + 1
             self._broadcast()
 
-            # execute OUTSIDE the lock (long-running, sandboxed).
-            # Set/clear the kill event thread-local on this worker thread (not under the lock).
             runner._kill_ctx.event = kill_event
             try:
-                oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
+                oc = runner.run_one(rp, job, roe, rp, seq, execute=self._execute)
             finally:
                 runner._kill_ctx.event = None
 
             with self._lock:
-                if oc.outcome not in ("pass", "fail"):
-                    # killed (or other non-terminal): do NOT charge, do NOT append to the run
-                    # record. The job was already unqueued; board_state derives it back to
-                    # "proposed" (in jobs.json, not in queue, not in finished) — nothing to do.
-                    pass
-                else:
-                    tracker.charge(job.est_windows)
+                if oc.outcome in ("pass", "fail"):
+                    self._tracker.charge(job.est_windows)           # global budget
                     rr.jobs.append(oc)
-                    rr.spent_estimated = tracker.spent
-                    self._persist(repo, rr)
+                    rr.spent_estimated = rr.spent_estimated + job.est_windows   # this repo's own spend
+                    self._persist(rp, rr)
                 self._kill_event = None
                 self._busy = False
                 self._running = None
@@ -147,7 +152,6 @@ class Engine:
 
             if stopped:
                 return
-            # loop to the next card (chain) — O(1) stack
 
     def _persist(self, repo, rr):
         from . import review_report
