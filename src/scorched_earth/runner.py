@@ -256,13 +256,28 @@ _kill_ctx = threading.local()
 
 
 def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1):
-    """Run cmd capturing stdout (for rate-limit detection). Returns (status, output) where status
-    is 'killed' or 'done'. Honors kill_event (SIGTERM then SIGKILL after grace)."""
+    """Run cmd capturing stdout (for rate-limit detection). Returns (status, output, returncode)
+    where status is 'killed' or 'done'. Honors kill_event (SIGTERM then SIGKILL after grace).
+
+    The command streams continuous JSON (`claude -p --output-format stream-json --verbose`). A
+    DAEMON READER THREAD drains p.stdout to EOF concurrently so the child never blocks on a full
+    OS pipe buffer (~64KB) while the main loop only polls poll()/kill_event. Without this drain a
+    long run deadlocks: the child blocks on write(), poll() stays None forever, the worker hangs."""
     p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if kill_event is None:
-        out, _ = p.communicate()
-        return "done", out or ""
+        out, _ = p.communicate()        # communicate() already drains both pipes
+        return "done", out or "", p.returncode
     chunks = []
+
+    def _drain():
+        try:
+            for line in p.stdout:       # reads to EOF; keeps the pipe empty so the child never blocks
+                chunks.append(line)
+        except Exception:  # noqa: BLE001 — reader is best-effort; status/returncode still authoritative
+            pass
+
+    reader = threading.Thread(target=_drain, daemon=True)
+    reader.start()
     while p.poll() is None:
         if kill_event.is_set():
             p.terminate()
@@ -270,15 +285,11 @@ def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1):
                 p.wait(timeout=grace)
             except subprocess.TimeoutExpired:
                 p.kill(); p.wait()
-            try:
-                rest = p.stdout.read() if p.stdout else ""
-            except Exception:  # noqa: BLE001
-                rest = ""
-            return "killed", "".join(chunks) + (rest or "")
+            reader.join(timeout=grace)
+            return "killed", "".join(chunks), p.returncode
         time.sleep(poll)
-    out = p.stdout.read() if p.stdout else ""
-    chunks.append(out or "")
-    return ("killed" if kill_event.is_set() else "done"), "".join(chunks)
+    reader.join(timeout=grace)          # let the reader finish draining the now-closed pipe
+    return ("killed" if kill_event.is_set() else "done"), "".join(chunks), p.returncode
 
 
 def _discard_worktree(root, job_id):
@@ -323,7 +334,7 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
             subprocess.run(roe.setup_cmd, cwd=wt, shell=True,
                            capture_output=True, text=True)
         # Killable claude step: the cockpit Engine may set _kill_ctx.event for this job.
-        status, out = _run_killable(build_claude_cmd(job, wt), wt, getattr(_kill_ctx, "event", None))
+        status, out, rc = _run_killable(build_claude_cmd(job, wt), wt, getattr(_kill_ctx, "event", None))
         if status == "killed":
             _discard_worktree(root, job.id)
             return "killed", None, "killed by operator — work discarded."
@@ -331,6 +342,13 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
             _discard_worktree(root, job.id)             # nothing landed; job returns to the queue
             return "limit", None, "stopped: usage limit reached — re-queued, resume after reset."
         diff = _diffstat(wt, base_sha)
+        # A nonzero claude exit with no changes is a real failure (e.g. a rejected flag / version
+        # mismatch), not a phantom 'pass' — catch it before the gate, which would otherwise let an
+        # empty no-gate run report 'pass'.
+        if rc != 0 and not diff:
+            return ("fail", diff,
+                    "claude exited {} with no changes — flag/version error? "
+                    "(check the invocation)".format(rc))
         gate = build_gate_cmd(job, roe)
         if gate is None:
             return "pass", diff, "no gate configured (ROE test_cmd unset) — review manually."

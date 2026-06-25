@@ -12,3 +12,4 @@ __pycache__/
 
 # Playwright MCP scratch
 .playwright-mcp/
+.scorched/

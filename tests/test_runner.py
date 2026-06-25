@@ -311,6 +311,29 @@ check("_run_killable: a kill requested before the child exits still returns 'kil
 _capout = _run_killable([sys.executable, "-c", "print('hello-from-child')"], None, None)
 check("_run_killable captures child stdout", "hello-from-child" in (_capout[1] or ""))
 
+# REGRESSION (final review): a child that writes MORE than one OS pipe buffer (~64KB) must NOT
+# deadlock. Pre-fix the main loop never drained p.stdout, so once the ~64KB pipe filled the child
+# blocked on write(), poll() stayed None forever, and the worker hung. With a concurrent reader
+# thread it drains to EOF and returns 'done' promptly. kill_event is present but NEVER set.
+_flood = [sys.executable, "-c",
+          "import sys\n[sys.stdout.write('x'*1024+chr(10)) for _ in range(200)]"]  # ~200KB
+_flood_res = {}
+def _flood_go():
+    _flood_res["r"] = _run_killable(_flood, None, _kt.Event(), grace=2.0, poll=0.05)
+_flood_th = _kt.Thread(target=_flood_go); _flood_th.start()
+_flood_th.join(8)               # generous ceiling; un-drained version never returns at all
+check("_run_killable does not deadlock on >pipe-buffer output (drains concurrently)",
+      not _flood_th.is_alive() and _flood_res.get("r", (None,))[0] == "done")
+check("_run_killable returns the FULL flooded output (nothing lost to the buffer)",
+      len(_flood_res.get("r", (None, ""))[1]) >= 200 * 1025)
+
+# _run_killable now also surfaces the child returncode (Fix 3: execute_job needs it to catch a
+# nonzero claude exit with no changes — a phantom 'pass' otherwise).
+_rc_ok = _run_killable([sys.executable, "-c", "pass"], None, None)
+check("_run_killable returns returncode 0 on a clean exit (no kill_event)", _rc_ok[2] == 0)
+_rc_bad = _run_killable([sys.executable, "-c", "import sys; sys.exit(7)"], None, _kt.Event())
+check("_run_killable surfaces a nonzero child returncode", _rc_bad[2] == 7)
+
 # --- Task 3 (new): pick_next no-budget-gate, detect_rate_limit, read_headroom, ROE caps ---
 from scorched_earth import runner as _rn  # noqa: E402
 from scorched_earth.jobs import Job as _RJ  # noqa: E402

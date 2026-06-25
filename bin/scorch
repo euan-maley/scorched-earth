@@ -260,17 +260,22 @@ def _coa_run_cli(rest):
         ids = [a for a in args if not a.startswith("-")]
         repo = ids.pop(0) if ids and os.path.isdir(os.path.expanduser(ids[0])) else "."
         state = st.load_state()
-        rec = (state or {}).get("recommendation") or {}
-        wl = rec.get("windows_left")
-        if wl is None:
+        snap = (state or {}).get("snapshot") or {}
+        # Mirror the advise branch's budget model: plan against the CURRENT 5-hour window's
+        # headroom, never the weekly windows_left, and never forfeit over-budget jobs.
+        headroom = advisor.window_headroom(snap)
+        if not _has_usable_snapshot(state) or headroom is None:
             print("No live budget reading yet — open a Claude Code session, then queue.")
             return 0
         roe = coa_io.load_roe(repo)
-        coa = advisor.match(wl, coa_io.load_jobs(repo), roe)
+        coa = advisor.match(headroom, coa_io.load_jobs(repo), roe,
+                            weekly_reserve_pct=advisor.weekly_reserve_pct(snap) or 0.0)
         if not all_flag and not ids:
             print("Nothing specified. Use `scorch coa queue --all` or pass job ids.")
             return 0
-        pick = coa.queue if all_flag else [j for j in coa.queue if j.id in ids]
+        # Nothing forfeited: draw from queue + over_budget so over-budget jobs are still queueable.
+        eligible = coa.queue + coa.over_budget
+        pick = eligible if all_flag else [j for j in eligible if j.id in ids]
         if not pick:
             print("Nothing to queue (the latest COA produced no eligible jobs).")
             return 0
