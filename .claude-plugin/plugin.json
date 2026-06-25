@@ -1,7 +1,7 @@
 {
   "name": "scorched-earth",
   "description": "A green light for Claude usage: signals when remaining weekly budget can only be spent by maxing out every remaining 5-hour window, plus a habit-based forecast that nudges you preemptively before you leave credit unused. A Course of Action layer then turns that signal into work, scanning your linked repos for high-impact jobs, ranking them by DEFCON, and running them under a leash.",
-  "version": "1.6.10",
+  "version": "2.6.9",
   "author": {
     "name": "Euan Maley"
   },
