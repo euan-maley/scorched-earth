@@ -1,11 +1,11 @@
-"""Budget-to-job matcher: the tier-and-fill core. Given the available burn (window-units) and
-a list of Jobs, greedily select the highest value-per-window jobs that fit, honoring the ROE
-cost and task rules. Pure, stdlib only. Reads no files."""
+"""Budget-to-job matcher: the tier-and-fill core. Given the current-window headroom and a list
+of Jobs, annotates every job as fits / over_budget / blocked — nothing is forfeited.
+Pure, stdlib only. Reads no files."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from .jobs import Job
 from .roe import ROE
@@ -15,47 +15,74 @@ _EPS = 1e-9
 
 @dataclass
 class COA:
-    queue: List[Job] = field(default_factory=list)      # selected, in run order
-    skipped: List[Job] = field(default_factory=list)    # didn't fit or disallowed
-    envelope_windows: float = 0.0                       # capacity used for matching
-    spent_windows: float = 0.0                          # sum of selected est_windows
+    queue: List[Job] = field(default_factory=list)          # fits within headroom, run order
+    over_budget: List[Job] = field(default_factory=list)    # eligible but beyond headroom — queue anyway
+    blocked: List[Job] = field(default_factory=list)        # ROE-disallowed (type / per-job cap)
+    headroom_windows: float = 0.0                           # current-window headroom used for the split
+    weekly_reserve_pct: float = 0.0                         # context only
+    fits_windows: float = 0.0                               # sum of queue est_windows
     note: str = ""
 
 
-def match(available_windows: float, jobs: List[Job], roe: ROE) -> COA:
-    envelope = max(0.0, available_windows)
+def window_headroom(snapshot) -> Optional[float]:
+    """Unused capacity of the CURRENT 5-hour window, in window-units (0..1.0). This is the COA
+    execution headroom — NOT windows-until-weekly-reset. None when five_hour_pct is absent."""
+    five = (snapshot or {}).get("five_hour_pct")
+    if five is None:
+        return None
+    return max(0.0, (100.0 - float(five)) / 100.0)
+
+
+def weekly_reserve_pct(snapshot) -> Optional[float]:
+    """Weekly budget still unspent, as a percent — shown as CONTEXT next to headroom, never a gate."""
+    seven = (snapshot or {}).get("seven_day_pct")
+    if seven is None:
+        return None
+    return max(0.0, 100.0 - float(seven))
+
+
+def match(headroom: float, jobs: List[Job], roe: ROE, *, weekly_reserve_pct: float = 0.0) -> COA:
+    """Annotate every job against the current-window headroom: fits / over_budget / blocked.
+    Nothing is forfeited for budget — `over_budget` jobs are still queueable. ROE-disallowed
+    jobs (type / per-job cap) are `blocked` (distinct). roe.max_windows, if set, lowers the
+    fit threshold but never drops a job."""
+    cap = max(0.0, headroom)
     if roe.max_windows is not None:
-        envelope = min(envelope, roe.max_windows)
+        cap = min(cap, roe.max_windows)
 
     eligible: List[Job] = []
-    skipped: List[Job] = []
+    blocked: List[Job] = []
     for j in jobs:
         if roe.allowed_types is not None and j.type not in roe.allowed_types:
-            skipped.append(j)
+            blocked.append(j)
             continue
         if roe.per_job_max_windows is not None and j.est_windows > roe.per_job_max_windows:
-            skipped.append(j)
+            blocked.append(j)
             continue
         eligible.append(j)
 
-    # Highest value-per-window first; ties by raw value.
     eligible.sort(key=lambda j: (j.value / j.est_windows if j.est_windows > 0 else 0.0, j.value),
                   reverse=True)
 
     queue: List[Job] = []
+    over: List[Job] = []
     spent = 0.0
     for j in eligible:
-        if spent + j.est_windows <= envelope + _EPS:
+        if spent + j.est_windows <= cap + _EPS:
             queue.append(j)
             spent += j.est_windows
         else:
-            skipped.append(j)
+            over.append(j)
 
-    if envelope <= _EPS:
-        note = "Nothing to burn right now: no available capacity."
+    if not eligible:
+        note = "No eligible jobs (all blocked by the rules of engagement)." if blocked \
+            else "No jobs proposed."
     elif not queue:
-        note = "Budget available but no eligible jobs fit the rules of engagement."
+        note = (f"~{cap:.2f} window free now — every job is bigger than that. "
+                f"Queue what's worth it; it runs until the real limit.")
     else:
-        note = f"Queued {len(queue)} job(s), ~{spent:.1f} of {envelope:.1f} windows."
-    return COA(queue=queue, skipped=skipped, envelope_windows=envelope,
-               spent_windows=spent, note=note)
+        note = (f"{len(queue)} job(s) fit ~{cap:.2f} window free now"
+                + (f", {len(over)} over budget (queue anyway)." if over else "."))
+    return COA(queue=queue, over_budget=over, blocked=blocked,
+               headroom_windows=round(cap, 4), weekly_reserve_pct=weekly_reserve_pct,
+               fits_windows=round(spent, 4), note=note)
