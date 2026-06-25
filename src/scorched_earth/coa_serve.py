@@ -295,7 +295,13 @@ def make_server(engine, token, *, render=None):
                 return
             path = self.path.split("?", 1)[0]
             repo = body.get("repo")
-            if path in ("/queue", "/unqueue", "/reorder", "/run", "/kill"):
+            run_repos = None
+            if path == "/run":
+                run_repos = list(body.get("repos") or ([] if body.get("repo") is None else [body.get("repo")]))
+                for _rp in run_repos:
+                    if os.path.realpath(os.path.expanduser(_rp or "")) not in engine.repos:
+                        self._send(400, b'{"error":"unknown repo"}'); return
+            if path in ("/queue", "/unqueue", "/reorder", "/kill"):
                 if os.path.realpath(os.path.expanduser(repo or "")) not in engine.repos:
                     self._send(400, b'{"error":"unknown repo"}'); return
             # job-ids ONLY: any cmd/launch field in the body is never read.
@@ -312,7 +318,7 @@ def make_server(engine, token, *, render=None):
                 elif path == "/run":
                     threading.Thread(
                         target=engine.run,
-                        args=(repo,),
+                        args=(run_repos,),
                         daemon=True).start()
                 elif path == "/stop":
                     engine.stop()

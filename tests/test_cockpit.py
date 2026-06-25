@@ -414,6 +414,25 @@ _bg_eng.run([_bgA, _bgB])
 check("shared budget caps the whole run (2 jobs of 6 fit 2.5 windows, not 2-per-repo)",
       len(_mr_ran2) == 2)
 
+# /run accepts a repos list; every repo validated
+_rrA = _mk_repo([Job(id="z", repo=".", title="Z", type="test", est_windows=0.5, value=5)])
+_rrB = _mk_repo([Job(id="y", repo=".", title="Y", type="test", est_windows=0.5, value=5)])
+_run_eng = Engine([_rrA, _rrB], execute=lambda *a: ("pass", None, "ok"),
+                  load_state=lambda: _STATE, now=lambda: 1)
+_run_eng.stop()                                   # paused so the POST just validates/dispatches
+_hr, _pr = make_server(_run_eng, "r-tok")
+import threading as _rth
+_rth.Thread(target=_hr.serve_forever, daemon=True).start()
+def _rpost(body):
+    c = http.client.HTTPConnection("127.0.0.1", _pr, timeout=3)
+    c.request("POST", "/run", json.dumps(body), {"Content-Type": "application/json", "X-Scorch-Token": "r-tok"})
+    r = c.getresponse(); r.read(); c.close(); return r.status
+check("POST /run with a repos list is accepted (200)", _rpost({"repos": [_rrA, _rrB]}) == 200)
+check("POST /run with an unknown repo in the list is 400",
+      _rpost({"repos": [_rrA, tempfile.mkdtemp()]}) == 400)
+check("POST /run with single {repo} still works (back-compat)", _rpost({"repo": _rrA}) == 200)
+_hr.shutdown()
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
