@@ -58,28 +58,33 @@ check("merge_roe: override wins where set, base kept otherwise",
       _merged.max_jobs == 2 and _merged.goals == ["a"])
 
 # --- advisor.py (matcher) --------------------------------------------------------
-from scorched_earth.advisor import COA, match  # noqa: E402
+from scorched_earth.advisor import COA, match, approval_required, weekly_reserve_pct  # noqa: E402
+from scorched_earth.roe import ROE as _ROE  # noqa: E402
 
 _jobs = [
-    Job(id="big", repo="r", title="big", type="audit", est_windows=3.0, value=6),
-    Job(id="cheap", repo="r", title="cheap", type="test", est_windows=1.0, value=5),  # best density
-    Job(id="docs", repo="r", title="docs", type="docs", est_windows=1.0, value=2),
+    Job(id="minor", repo="r", title="minor", type="docs", defcon=4, value=5),
+    Job(id="campaign", repo="r", title="campaign", type="audit", defcon=1, value=2),
+    Job(id="feature", repo="r", title="feature", type="test", defcon=3, value=9),
 ]
-_coa = match(2.5, _jobs, DEFAULT_ROE)
-check("match fills by value-per-window within headroom",
-      [j.id for j in _coa.queue] == ["cheap", "docs"] and _coa.fits_windows == 2.0)
-check("match records what spilled over budget", [j.id for j in _coa.over_budget] == ["big"])
+_coa = match(_jobs, DEFAULT_ROE)
+check("match sorts by DEFCON then value",
+      [j.id for j in _coa.queue] == ["campaign", "feature", "minor"])
+check("match leaves over_budget/headroom behind", not hasattr(_coa, "over_budget"))
 
-_coa_cap = match(10, _jobs, roe_from_dict({"max_windows": 1.0}))
-check("match honors ROE max_windows", [j.id for j in _coa_cap.queue] == ["cheap"])
+_coa_type = match(_jobs, roe_from_dict({"allowed_types": ["docs"]}))
+check("match routes disallowed types to blocked",
+      [j.id for j in _coa_type.blocked] == ["campaign", "feature"]
+      and [j.id for j in _coa_type.queue] == ["minor"])
 
-_coa_type = match(10, _jobs, roe_from_dict({"allowed_types": ["docs"]}))
-check("match routes disallowed types to blocked", [j.id for j in _coa_type.blocked] == ["big", "cheap"]
-      and [j.id for j in _coa_type.queue] == ["docs"])
+check("approval_required: defcon below gate needs approval",
+      approval_required(Job(id="x", repo="r", title="", type="test", defcon=2), DEFAULT_ROE)
+      and not approval_required(Job(id="y", repo="r", title="", type="test", defcon=3), DEFAULT_ROE))
 
-_coa_empty = match(0.0, _jobs, DEFAULT_ROE)
-check("zero capacity yields empty queue with a note",
-      _coa_empty.queue == [] and "window free now" in _coa_empty.note.lower())
+check("weekly_reserve_pct = 100 - seven_day_pct", weekly_reserve_pct({"seven_day_pct": 81}) == 19)
+
+_coa_empty = match([], DEFAULT_ROE)
+check("empty job list yields empty queue with a note",
+      _coa_empty.queue == [] and "no jobs" in _coa_empty.note.lower())
 
 # --- coa_report.py ---------------------------------------------------------------
 from scorched_earth.coa_report import render_md, render_html  # noqa: E402
@@ -183,35 +188,6 @@ from scorched_earth.runner import JobOutcome  # noqa: E402
 check("aar _job_obj carries depth",
       _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test", tier="M",
                               outcome="pass", est_windows=1.0, depth=8))["depth"] == 8)
-
-# --- headroom model (replaces the windows-until-reset envelope) ------------------
-from scorched_earth import advisor as _adv  # noqa: E402
-from scorched_earth.advisor import COA as _COA, match as _match  # noqa: E402
-from scorched_earth.jobs import Job as _J  # noqa: E402
-
-check("window_headroom = unused fraction of the current 5h window",
-      abs(_adv.window_headroom({"five_hour_pct": 5}) - 0.95) < 1e-9)
-check("window_headroom None when five_hour_pct missing",
-      _adv.window_headroom({}) is None)
-check("weekly_reserve_pct = 100 - seven_day_pct",
-      _adv.weekly_reserve_pct({"seven_day_pct": 81}) == 19)
-
-# annotate, never forfeit: 3 jobs @0.5w, headroom 0.6 -> 1 fits, 2 over, 0 dropped
-_mj = [_J(id="a", repo=".", title="A", type="docs", est_windows=0.5, value=9, depth=3),
-       _J(id="b", repo=".", title="B", type="docs", est_windows=0.5, value=8, depth=3),
-       _J(id="c", repo=".", title="C", type="docs", est_windows=0.5, value=7, depth=3)]
-from scorched_earth.roe import ROE as _ROE  # noqa: E402
-_coa = _match(0.6, _mj, _ROE())
-check("match keeps every eligible job (nothing forfeited)",
-      len(_coa.queue) + len(_coa.over_budget) == 3)
-check("match: only the highest-value job fits 0.6 windows",
-      [j.id for j in _coa.queue] == ["a"] and [j.id for j in _coa.over_budget] == ["b", "c"])
-check("match exposes headroom on the COA", _coa.headroom_windows == 0.6)
-
-# ROE-disallowed types go to `blocked`, not `over_budget`
-_coa2 = _match(5.0, _mj, _ROE(allowed_types=["test"]))
-check("match routes ROE-disallowed jobs to blocked (distinct from over_budget)",
-      len(_coa2.blocked) == 3 and _coa2.queue == [] and _coa2.over_budget == [])
 
 # advise writes BOTH md + html (html is the artifact to open, md is the record)
 import tempfile as _tf2, os as _os2
