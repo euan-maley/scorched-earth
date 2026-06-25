@@ -93,7 +93,7 @@ def _queue_path(repo_path: str) -> str:
 def _job_to_dict(j: Job) -> dict:
     return {
         "id": j.id, "repo": j.repo, "title": j.title, "type": j.type,
-        "est_windows": j.est_windows, "value": j.value, "depth": j.depth,
+        "defcon": j.defcon, "value": j.value,
         "rationale": j.rationale, "launch": j.launch, "verify": j.verify,
         "status": j.status,
     }
@@ -172,13 +172,17 @@ def read_run_record(repo_path: str, date: Optional[str] = None):
     return rec
 
 
-def _job_brief(j: Job) -> dict:
-    return {"id": j.id, "title": j.title, "type": j.type, "tier": j.tier,
-            "depth": j.depth, "est_windows": j.est_windows, "value": j.value}
+def _job_brief(j: Job, roe=None) -> dict:
+    from . import advisor
+    appr = advisor.approval_required(j, roe) if roe is not None else (j.defcon < 3)
+    return {"id": j.id, "title": j.title, "type": j.type,
+            "defcon": j.defcon, "value": j.value, "approval_required": appr}
 
 
 def board_state(repo_path: str, running_ids=()) -> dict:
+    from . import advisor  # noqa: F401  (kept local to avoid import cycle)
     ap = os.path.realpath(os.path.expanduser(repo_path))
+    roe = load_roe(repo_path)
     queued = read_queue(repo_path)
     rec = read_run_record(repo_path) or {}
     finished = [j for j in (rec.get("jobs") or []) if j.get("outcome") in ("pass", "fail")]
@@ -187,7 +191,7 @@ def board_state(repo_path: str, running_ids=()) -> dict:
     # still in jobs.json. The Engine passes the currently-running id(s) so the live board
     # shows it only as RUNNING, never simultaneously in the proposed column.
     spoken = {j.id for j in queued} | {j.get("id") for j in finished} | set(running_ids)
-    proposed = [_job_brief(j) for j in load_jobs(repo_path) if j.id not in spoken]
+    proposed = [_job_brief(j, roe) for j in load_jobs(repo_path) if j.id not in spoken]
     return {"repo": ap, "name": os.path.basename(ap),
-            "proposed": proposed, "queued": [_job_brief(j) for j in queued],
+            "proposed": proposed, "queued": [_job_brief(j, roe) for j in queued],
             "finished": finished}
