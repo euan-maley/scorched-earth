@@ -24,7 +24,8 @@ AMBER_THRESHOLD = 0.70
 HEADLINE = {
     "green": "Torch it all. Leave them nothing.",
     "amber": "Almost full throttle. Not quite scorched earth yet.",
-    "off": "Well stocked. Burn at whatever pace suits you.",
+    "low": "Well stocked. Burn at whatever pace suits you.",
+    "off": "Mission accomplished. Burned to the last drop.",
     "unknown": "No read yet. Hold your horses.",
 }
 
@@ -61,7 +62,7 @@ class Snapshot:
 
 @dataclass
 class Recommendation:
-    level: str                       # "green" | "amber" | "off" | "unknown"
+    level: str                       # "green" | "amber" | "low" | "off" | "unknown"
     weekly_left: Optional[float]     # % of weekly budget remaining
     windows_left: Optional[float]    # fractional 5h-window capacity left before weekly reset
     target_per_window: Optional[float]  # fraction of a full window to burn each window (None if no R)
@@ -169,6 +170,6 @@ def compute(snap: Snapshot, r: Optional[float], r_provisional: bool = False,
     if target >= AMBER_THRESHOLD:
         return base("amber", target, burn, max_burnable,
                     f"Sustain ~{burn:.0f}% each window and it's all spent by reset. Hold the line.")
-    return base("off", target, burn, max_burnable,
+    return base("low", target, burn, max_burnable,
                 f"Reserves are deep. Even a relaxed ~{burn:.0f}% per window spends it all by reset. "
                 f"That's the easy pace, not a cap. Push harder anytime.")

@@ -25,8 +25,8 @@ from scorched_earth import gradient  # noqa: E402
 from scorched_earth import habits  # noqa: E402
 import math  # noqa: E402
 
-LIGHT = {"green": "🟢", "amber": "🟡", "off": "⚪", "unknown": "❔"}
-COLOR = {"green": "\033[32m", "amber": "\033[33m", "off": "\033[2m", "unknown": "\033[2m"}
+LIGHT = {"green": "🟢", "amber": "🟡", "low": "⚪", "off": "⚪", "unknown": "❔"}
+COLOR = {"green": "\033[32m", "amber": "\033[33m", "low": "\033[2m", "off": "\033[2m", "unknown": "\033[2m"}
 RESET = "\033[0m"
 # HEADLINE (war-general verdict per status) is imported from core so the CLI and the HTML
 # sitrep stay in lockstep.

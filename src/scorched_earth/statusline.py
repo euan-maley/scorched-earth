@@ -20,15 +20,19 @@ import time
 # Real ANSI escapes (the host captures these verbatim and re-emits them).
 GREEN = "\033[1;32m"   # bold green
 AMBER = "\033[33m"
+DIM = "\033[2m"
 RESET = "\033[0m"
 
 # Styles: fire (animated flames, the installed default seeded by the hook/installer), emoji,
 # text (colored words, no emoji), minimal (just a dot). `_resolve_style` falls back to emoji
 # only if the style file is unset/missing.
 STYLES = {
-    "emoji": {"green": f"🟢 {GREEN}BURN IT ALL{RESET}", "amber": "🟡 {amber}"},
-    "text": {"green": f"{GREEN}BURN IT ALL{RESET}", "amber": "{amber}"},
-    "minimal": {"green": f"{GREEN}●{RESET}", "amber": f"{AMBER}●{RESET}"},
+    "emoji": {"green": f"🟢 {GREEN}BURN IT ALL{RESET}", "amber": "🟡 {amber}",
+              "low": f"⚪ {DIM}no rush{RESET}"},
+    "text": {"green": f"{GREEN}BURN IT ALL{RESET}", "amber": "{amber}",
+             "low": f"{DIM}no rush{RESET}"},
+    "minimal": {"green": f"{GREEN}●{RESET}", "amber": f"{AMBER}●{RESET}",
+                "low": f"{DIM}●{RESET}"},
 }
 
 
@@ -43,6 +47,8 @@ def token(rec, style: str) -> str:
             return "🔥 " + gradient.fire("BURN IT ALL", phase=phase)
         if rec.level == "amber" and rec.burn_pct is not None:
             return f"🟡 {AMBER}burn {rec.burn_pct:.0f}%{RESET}"
+        if rec.level == "low":
+            return f"⚪ {DIM}no rush{RESET}"
         return ""
 
     s = STYLES.get(style, STYLES["emoji"])
@@ -51,6 +57,8 @@ def token(rec, style: str) -> str:
     if rec.level == "amber" and rec.burn_pct is not None:
         amber_txt = f"{AMBER}burn {rec.burn_pct:.0f}%{RESET}"
         return s["amber"].format(amber=amber_txt)
+    if rec.level == "low":
+        return s["low"]
     return ""  # off / unknown -> nothing
 
 

@@ -60,8 +60,23 @@ slack = Snapshot(
     seven_day_pct=20, seven_day_reset=NOW + 6 * 24 * HOUR,  # ~6 days left
 )
 rec_off = compute(slack, r=0.05)
-check("off when plenty of runway", rec_off.level == "off")
-check("off burn_pct < 70", rec_off.burn_pct < 70)
+check("low when plenty of runway", rec_off.level == "low")
+check("low burn_pct < 70", rec_off.burn_pct < 70)
+
+# --- exhausted: weekly_left <= 0.5 -> "off" ------------------------------------
+empty = Snapshot(
+    now=NOW,
+    five_hour_pct=100, five_hour_reset=NOW + 1 * HOUR,
+    seven_day_pct=99.7, seven_day_reset=NOW + 3 * 24 * HOUR,
+)
+rec_empty = compute(empty, r=0.05)
+check("off when budget exhausted", rec_empty.level == "off")
+
+# --- banner correctness regression -------------------------------------------
+from scorched_earth.core import HEADLINE as _HEADLINE
+check("low and off have distinct banners", _HEADLINE["low"] != _HEADLINE["off"])
+check("exhausted banner doesn't say well stocked",
+      "well stocked" not in _HEADLINE["off"].lower())
 
 # --- unknown: no weekly data ---------------------------------------------------
 noweek = Snapshot(now=NOW, five_hour_pct=50, five_hour_reset=NOW + HOUR)
@@ -121,6 +136,43 @@ for i in range(6):  # weekly jumps 5pp per 10pp window -> R=0.5, out of band, al
         "five_hour_reset": h_reset, "seven_day_pct": 10.0 + i * 5.0, "seven_day_reset": w_reset})
 r_spk, prov_spk = calibrate.estimate_r(spike)
 check("implausible R spikes are discarded -> default", r_spk == calibrate.DEFAULT_R and prov_spk is True)
+
+# --- statusline token for "low" level -----------------------------------------
+from scorched_earth.statusline import token as _sl_token
+from scorched_earth.core import Recommendation as _Rec
+
+_low_rec = _Rec(
+    level="low",
+    weekly_left=80.0,
+    windows_left=20.0,
+    target_per_window=0.1,
+    burn_pct=10.0,
+    max_burnable_weekly=50.0,
+    hours_to_weekly_reset=120.0,
+    hours_to_window_reset=2.0,
+    r=0.05,
+    r_provisional=False,
+    reason="Reserves are deep.",
+)
+_off_rec = _Rec(
+    level="off",
+    weekly_left=0.0,
+    windows_left=10.0,
+    target_per_window=0.0,
+    burn_pct=0.0,
+    max_burnable_weekly=None,
+    hours_to_weekly_reset=72.0,
+    hours_to_window_reset=1.0,
+    r=0.05,
+    r_provisional=False,
+    reason="Mission accomplished.",
+)
+for _style in ("fire", "emoji", "text"):
+    _tok = _sl_token(_low_rec, _style)
+    check(f"low token ({_style}) contains 'no rush'", "no rush" in _tok and len(_tok) > 0)
+_tok_min = _sl_token(_low_rec, "minimal")
+check("low token (minimal) is a dim dot", "●" in _tok_min and len(_tok_min) > 0)
+check("off token (emoji) returns empty string", _sl_token(_off_rec, "emoji") == "")
 
 # --- habits / forecast ---------------------------------------------------------
 from scorched_earth import habits  # noqa: E402

@@ -20,7 +20,7 @@ from . import habits
 from .core import HEADLINE, Snapshot, compute  # canonical voice + math, shared with the CLI
 
 # green = "burn it all", so its accent is fire, not green.
-STATUS_COLOR = {"green": "#ff6a1f", "amber": "#e2a04d", "off": "#8a9a3c", "unknown": "#6f8a8a"}
+STATUS_COLOR = {"green": "#ff6a1f", "amber": "#e2a04d", "low": "#8a9a3c", "off": "#6f8a8a", "unknown": "#6f8a8a"}
 
 
 def _num(x):
