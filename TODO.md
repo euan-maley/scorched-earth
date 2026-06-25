@@ -1,27 +1,30 @@
 # TODO
 
-## Current Session — COA advisor (Phase 1 BUILT, Phase 2 next) · branch `feat/burn-advisor` (LOCAL, unpushed)
+## Current Session — COA advisor + cockpit, FULLY built through multi-repo · branch `feat/burn-advisor` (LOCAL, unpushed) · 215 checks green
 
-New feature: the **COA advisor** — turns the budget signal into actionable work. Link repos →
-adversarial+constructive scan agent finds expensive jobs → pure-Python tier-and-fill matcher
-sizes them to the available burn → ranked Course of Action (MD record + war-HUD HTML). All on
-`feat/burn-advisor`, kept **local and unpushed** by choice so public `main` stays clean.
+Huge session (61 commits). Built the entire **COA execution stack** on top of Phase 1, each
+phase brainstorm→spec→plan→subagent-driven-dev (fresh implementer + independent review per
+task, opus on the security/concurrency/budget cores, opus whole-branch final review). All
+**LOCAL/unpushed** by choice so public `main` stays clean. Suite: 57 core + 34 advisor + 65
+runner + 59 cockpit = **215 green**.
 
-Phase 1 (advisor) — DONE, brainstormed → spec → plan → built via subagent-driven dev:
-- [x] Modules: `jobs.py` (schema), `roe.py` (rules of engagement), `advisor.py` (tier-and-fill matcher), `coa_report.py` (MD + HTML), `coa_io.py` (registry/ROE/jobs/COA I/O, JSON throughout)
-- [x] CLI verbs `scorch link|advise|roe`; standalone `/coa` + `/roe` commands
-- [x] War-HUD HTML template `coa_template.html` (from design handoff) wired into `render_html`; per-job **COPY** buttons (clipboard + execCommand fallback)
-- [x] Scan-agent **personality** defined (spec + `/coa`): fit-for-burn-window (compute-hungry, bounded/verifiable, low-coordination, batchable), ground in user intent first, adversarial fills gaps, additive-leaning for autonomy, size to tokens, skip trivia
-- [x] Dogfooded live vs `~/wake-up` (green, 1.4 win): grounded suggestions, tier-and-fill forfeits big high-value jobs that don't fit; **surfaced + fixed** the `.gitignore`-on-link gotcha
-- [x] 25 advisor checks + 57 existing, both green; final whole-branch review: Ready to merge
-- Spec: `docs/superpowers/specs/2026-06-24-coa-advisor-design.md`; plan: `docs/superpowers/plans/2026-06-24-coa-advisor-phase1.md`; SDD ledger + Phase-1 Minor findings: `.superpowers/sdd/progress.md`
+**DONE this session (all reviewed "ready to merge"):**
+- [x] **Phase 2a — queue-runner** (`runner.py`): drains `.scorched/queue.json`, runs each job headless `claude -p` in a sandboxed git worktree (Claude Code OS sandbox via worktree-local `.claude/settings.json`: API-only network, `failIfUnavailable`, no escape hatch — confirmed flags via claude-code-guide), additive-only ROE leash, commit-not-push, test gate, predictive budget (can't read live rate_limits — predict + re-sync on snapshot advance). HTML **After-Action Report** (`review_report.py` + `review_template.html`) doubles as live monitor (auto-refresh) and debrief.
+- [x] **AAR + COA + cockpit design HTMLs** integrated from Claude-design handoffs (briefs in `docs/design/`): `review.html`→`review_template.html`, `cockpit.html` (War Room)→`cockpit_template.html`. Drop-in via `__*_JSON__` token contract; I caught/fixed contract collisions each time (token-in-comment, `<head>` injection, `.cwin`→`.cdepth` styling).
+- [x] **Phase 2b — live cockpit** (`coa_serve.py` + `cockpit_template.html`): `scorch coa --serve` → 127.0.0.1 ThreadingHTTPServer (one-time token every request, job-ids-not-commands, repo validated, ROE server-side) hosting a kanban War Room; event-driven `Engine.advance` (no bg loop, while-loop, 4 runaway guards); SSE pushes board state; drag queue/reorder, Run/Stop. EnvelopeTracker (predict-then-resync), pick_next, board_state, queue I/O.
+- [x] **Phase 2c — Kill** a running job (`_run_killable` Popen SIGTERM→SIGKILL + thread-local `_kill_ctx`; `Engine.kill` + `POST /kill`; KILL button). Always discards work, no refund, killed→Proposed, chain continues. Operator-intent-wins fix.
+- [x] **DEPTH 1–10 rating** replaces shown window cost: agent emits `depth`, `est_windows` derived (coarse band, internal for matcher/runner, never shown per-card). Backward-compat both ways. Cards show DEPTH, drop window cost + S/M/L/XL tier; aggregate gauges keep windows.
+- [x] **Multi-repo run** (one job at a time, GLOBALLY): per-repo trackers → ONE global EnvelopeTracker (shared budget, honest); `run(repos)` sweeps an active set sequentially; `/run` accepts a repos list; cockpit repo **checkboxes** (default armed, seenRepos auto-arm) + Run-all.
+- [x] **Cockpit UX polish**: starts **paused** (stage queue, then Run); bigger Run/Stop; **REPOS** tab-strip label; global **NOW RUNNING** header readout + active-repo tab marker; **fixed** depth-snapping-on-queue (`_job_to_dict` now persists `depth`); fixed Stop-is-permanent (Run clears stop); fixed rapid-/queue lost-update (mutations under the lock) + atomic write_queue.
 
-**What's next — Phase 2** (brainstorm was just initiated, resume there):
-- [ ] Queue-runner: drain the COA queue, autonomous local exec with guardrails (worktree/branch isolation, commit-not-push, tests-after, re-check budget between jobs, morning-after review surface). Execution path B.
-- [ ] `scorch coa --serve` bridge: localhost server, **Queue** then **Run** buttons; security model (bind 127.0.0.1, one-time token, accept only COA job-ids not raw commands, enforce ROE server-side) is in the spec's Phase-2 section.
-- Phase 3 (later): scheduling + cloud routine.
+**IN PROGRESS — resume HERE next session:**
+- [ ] **Parallel per-repo execution** — user wants checked repos to run **concurrently** (separate queues, one job per repo, repos at the same time), NOT the one-at-a-time sweep I built. **PLAN WRITTEN, NOT BUILT**: `docs/superpowers/plans/2026-06-24-parallel-repos.md` (commit 817dccd). 2 tasks: (1) Engine — one drain worker per repo + ONE global EnvelopeTracker with **charge-at-pick reservation under the lock** so concurrent workers can't overspend the shared pool; per-repo `_running`/`_kill_events`/`_workers`; `state_json.running` becomes a LIST. (2) Cockpit — render multiple RUNNING. **Next session: dispatch Task 1 via subagent-driven-development** (fresh ledger, opus review on the concurrency/budget core). Was mid-sentence presenting the plan when the user said switch out.
 
-Voice/approach decisions (don't lose): officer-briefs-you (not commander barking); additive-leaning for unsupervised runs (transformative = review-required); JSON config; standalone commands. Phase-1 Minors deferred to backlog (roe_from_dict null-clear; advisor epsilon side; render_md markdown-fidelity escaping; write_coa plain open).
+**Live demo (throwaway, NOT in repo):** `<scratchpad>/warroom_demo.py` — real server + War Room template but a STUB executor (no real claude, no budget burned, no repos touched). Two fake repos for the tab toggle; jobs honor Kill; paused-default. Re-create from the session log if needed.
+
+**Decisions to keep:** officer-briefs-you voice; additive-only unattended (transformative=review-required); one global budget pool (sequential now / reserve-concurrently in the parallel plan); cockpit URL embeds the token (don't paste/screenshot); per-repo `max_windows` yields to the global pool in multi-repo. **scorched-earth has ZERO dependency on superpowers** (that's just my build tooling); `docs/superpowers/` is committed planning docs only.
+
+**Backlog (none merge-blocking):** setup_cmd pre-warm still `capture_output=True` (pipe-buffer deadlock risk → DEVNULL); torn/atomic writes for `_persist` HTML; cookie-based SSE auth (keep token out of URLs); dead `TIER` const in coa/review templates; KILL button optimistic UI nudge; assorted Phase-1 Minors (roe null-clear; advisor epsilon; render_md escaping).
 
 ## Earlier Session
 
