@@ -24,18 +24,22 @@ def check(name, cond):
 
 
 # --- jobs.py ---------------------------------------------------------------------
-from scorched_earth.jobs import Job, parse_jobs, tier_for  # noqa: E402
+from scorched_earth.jobs import Job, parse_jobs, clamp_defcon  # noqa: E402
 
-check("tier_for buckets by est_windows",
-      (tier_for(0.4), tier_for(1.0), tier_for(2.5), tier_for(6)) == ("S", "M", "L", "XL"))
+check("clamp_defcon bounds to 1..5",
+      (clamp_defcon(0), clamp_defcon(3), clamp_defcon(9)) == (1, 3, 5))
 
 _parsed = parse_jobs([
-    {"id": "a", "title": "x", "type": "test", "est_windows": 2.0, "value": 8},
-    {"id": "b", "est_windows": 0.3, "value": 1},        # minimal valid
-    {"title": "no id"},                                  # dropped: no id
+    {"id": "a", "title": "x", "type": "test", "defcon": 1, "value": 8},
+    {"id": "b", "defcon": 4},                 # minimal valid (value defaults 0)
+    {"id": "c"},                              # no defcon -> default 3
+    {"title": "no id"},                       # dropped: no id
 ], repo="/tmp/r")
-check("parse_jobs keeps valid, drops malformed", len(_parsed) == 2)
-check("parse_jobs fills repo + tier", _parsed[0].repo == "/tmp/r" and _parsed[0].tier == "L")
+check("parse_jobs keeps valid (incl. defcon-defaulted), drops id-less", len(_parsed) == 3)
+check("parse_jobs fills repo + defcon", _parsed[0].repo == "/tmp/r" and _parsed[0].defcon == 1)
+check("parse_jobs defaults missing defcon to 3", _parsed[2].defcon == 3)
+check("parse_jobs clamps out-of-range defcon",
+      parse_jobs([{"id": "z", "defcon": 99}])[0].defcon == 5)
 
 # --- roe.py ----------------------------------------------------------------------
 from scorched_earth.roe import ROE, DEFAULT_ROE, roe_from_dict, merge_roe  # noqa: E402
@@ -167,25 +171,6 @@ for _c in ("coa", "roe"):
     check(f"/{_c} command exists with description frontmatter",
           _txt.startswith("---") and "description:" in _txt)
 
-# --- depth rating ----------------------------------------------------------------
-from scorched_earth.jobs import windows_for_depth, depth_for_windows  # noqa: E402
-
-check("windows_for_depth coarse bands",
-      (windows_for_depth(1), windows_for_depth(4), windows_for_depth(6),
-       windows_for_depth(8), windows_for_depth(10)) == (0.25, 0.5, 1.0, 2.0, 3.5))
-check("windows_for_depth clamps out-of-range", windows_for_depth(0) == 0.25 and windows_for_depth(99) == 3.5)
-check("depth_for_windows inverse bands",
-      (depth_for_windows(0.25), depth_for_windows(0.5), depth_for_windows(1.0),
-       depth_for_windows(2.0), depth_for_windows(3.5)) == (2, 4, 6, 8, 10))
-
-_dj = parse_jobs([{"id": "a", "title": "A", "type": "test", "depth": 7, "value": 8}])[0]
-check("parse_jobs: depth job derives est_windows", _dj.depth == 7 and _dj.est_windows == 2.0)
-_lj = parse_jobs([{"id": "b", "title": "B", "type": "test", "est_windows": 1.0, "value": 5}])[0]
-check("parse_jobs: legacy est_windows job derives a display depth", _lj.est_windows == 1.0 and _lj.depth == 6)
-check("parse_jobs: when both depth and est_windows given, depth wins",
-      parse_jobs([{"id": "x", "depth": 5, "est_windows": 99, "value": 1}])[0].est_windows == 1.0)
-check("parse_jobs: a dict with neither depth nor est_windows is skipped",
-      parse_jobs([{"id": "c", "value": 3}]) == [])
 
 # --- depth flows into the rendered job dicts -------------------------------------
 from scorched_earth.coa_report import _job_obj as _coa_job_obj  # noqa: E402
