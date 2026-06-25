@@ -64,7 +64,7 @@ three views:
   <img src="assets/sitrep-thisweek.png" alt="THE FIELD: this week (projected)" width="240">
 </p>
 
-<sub><i>Sample data. The clip and stills are rendered from the real report pipeline (<a href="assets/sitrep-demo.mp4">download the mp4</a>).</i></sub>
+<sub><i>Sample data. The clip and stills are rendered from the real report pipeline (<a href="[assets/52706f21-19d8-49f1-b5cc-1a5ec865a508])">download the mp4</a>).</i></sub>
 
 ## Burn it on something
 
