@@ -295,6 +295,49 @@ check("rapid concurrent /queue loses no cards (mutations serialized under the lo
       sorted(j.id for j in _io.read_queue(_cc_repo)) == list("abcdef"))
 _cc_httpd.shutdown()
 
+# --- Phase 2c: engine kill -------------------------------------------------------
+import threading as _k2th, time as _k2time  # noqa: E402
+import scorched_earth.runner as _k2runner  # noqa: E402
+
+_k2_started = _k2th.Event()
+def _exec_killable(repo, job, roe):
+    # mimic a long job: block on the engine-provided kill event (thread-local), like execute_job
+    ev = getattr(_k2runner._kill_ctx, "event", None)
+    _k2_started.set()
+    if ev is not None and ev.wait(3):
+        return ("killed", None, "killed by operator — work discarded.")
+    return ("pass", None, "ran to completion")
+_rk = _mk_repo([Job(id="kill-me", repo=".", title="Kill me", type="test", est_windows=1.0, value=5),
+                Job(id="next-up", repo=".", title="Next", type="test", est_windows=0.5, value=4)])
+_engk = Engine([_rk], execute=_exec_killable, load_state=lambda: _STATE, now=lambda: 1)
+_tk = _k2th.Thread(target=_engk.run, args=(_rk,), daemon=True); _tk.start()
+_k2_started.wait(3)                                  # kill-me is now "running"
+_engk.kill(_rk, "kill-me")                           # operator kills it
+_tk.join(5)
+_fin = [j["id"] for j in _io.board_state(_rk)["finished"]]
+_prop = [j["id"] for j in _io.board_state(_rk)["proposed"]]
+check("engine.kill ends the running job (not left busy)", _engk.state_json()["busy"] is False)
+check("killed job is NOT in finished (pass/fail only)", "kill-me" not in _fin)
+check("killed job returns to proposed (re-queueable)", "kill-me" in _prop)
+check("after a kill the chain continues to the next job (next-up ran)", "next-up" in _fin)
+
+# /kill: token-guarded, repo-validated, job-ids only
+_rkill = _mk_repo([Job(id="z", repo=".", title="Z", type="test", est_windows=1.0, value=5)])
+_engkill = Engine([_rkill], execute=lambda *a: ("pass", None, "ok"), load_state=lambda: _STATE, now=lambda: 1)
+_hk, _pk = make_server(_engkill, "k-tok")
+import threading as _k3
+_k3.Thread(target=_hk.serve_forever, daemon=True).start()
+def _kpost(body, token):
+    c = http.client.HTTPConnection("127.0.0.1", _pk, timeout=3)
+    h = {"Content-Type": "application/json"}
+    if token: h["X-Scorch-Token"] = token
+    c.request("POST", "/kill", json.dumps(body), h); r = c.getresponse(); r.read(); c.close(); return r.status
+check("POST /kill without token is 403", _kpost({"repo": _rkill, "id": "z"}, None) == 403)
+check("POST /kill with unknown repo is 400", _kpost({"repo": tempfile.mkdtemp(), "id": "z"}, "k-tok") == 400)
+check("POST /kill with token + known repo is 200 (no-op when nothing running)",
+      _kpost({"repo": _rkill, "id": "z"}, "k-tok") == 200)
+_hk.shutdown()
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

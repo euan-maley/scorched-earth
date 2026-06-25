@@ -35,6 +35,7 @@ class Engine:
         self._busy = False
         self._stop = False
         self._running = None                       # {"repo","id"} or None
+        self._kill_event = None                    # threading.Event or None (when idle)
         self._trackers = {}                        # repo -> EnvelopeTracker
         self._results = {}                         # repo -> RunResult (accumulating)
 
@@ -70,6 +71,13 @@ class Engine:
         with self._lock:
             self._stop = True
 
+    def kill(self, repo, job_id):
+        target = os.path.realpath(os.path.expanduser(repo))
+        with self._lock:
+            if (self._running and self._running == {"repo": target, "id": job_id}
+                    and self._kill_event is not None):
+                self._kill_event.set()
+
     # ---- state ----
     def state_json(self):
         with self._lock:
@@ -99,6 +107,8 @@ class Engine:
                     return                              # idle: nothing eligible/affordable
                 self._busy = True
                 self._running = {"repo": repo, "id": job.id}
+                self._kill_event = threading.Event()
+                kill_event = self._kill_event
                 coa_io.unqueue(repo, job.id)            # remove-on-pick: can never run twice
                 rr = self._results.get(repo)
                 if rr is None:
@@ -110,14 +120,26 @@ class Engine:
                 seq = len(rr.jobs) + 1
             self._broadcast()
 
-            # execute OUTSIDE the lock (long-running, sandboxed)
-            oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
+            # execute OUTSIDE the lock (long-running, sandboxed).
+            # Set/clear the kill event thread-local on this worker thread (not under the lock).
+            runner._kill_ctx.event = kill_event
+            try:
+                oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
+            finally:
+                runner._kill_ctx.event = None
 
             with self._lock:
-                tracker.charge(job.est_windows)
-                rr.jobs.append(oc)
-                rr.spent_estimated = tracker.spent
-                self._persist(repo, rr)
+                if oc.outcome not in ("pass", "fail"):
+                    # killed (or other non-terminal): do NOT append to finished; do NOT charge.
+                    # The job was already unqueued; re-enqueue it so the board shows it proposed.
+                    # (board_state derives "proposed" from jobs.json minus queue minus finished.)
+                    pass
+                else:
+                    tracker.charge(job.est_windows)
+                    rr.jobs.append(oc)
+                    rr.spent_estimated = tracker.spent
+                    self._persist(repo, rr)
+                self._kill_event = None
                 self._busy = False
                 self._running = None
                 stopped = self._stop
@@ -269,7 +291,7 @@ def make_server(engine, token, *, render=None):
                 return
             path = self.path.split("?", 1)[0]
             repo = body.get("repo")
-            if path in ("/queue", "/unqueue", "/reorder", "/run"):
+            if path in ("/queue", "/unqueue", "/reorder", "/run", "/kill"):
                 if os.path.realpath(os.path.expanduser(repo or "")) not in engine.repos:
                     self._send(400, b'{"error":"unknown repo"}'); return
             # job-ids ONLY: any cmd/launch field in the body is never read.
@@ -290,6 +312,11 @@ def make_server(engine, token, *, render=None):
                         daemon=True).start()
                 elif path == "/stop":
                     engine.stop()
+                elif path == "/kill":
+                    threading.Thread(
+                        target=engine.kill,
+                        args=(repo, body.get("id")),
+                        daemon=True).start()
                 else:
                     self._send(404, b'{"error":"not found"}')
                     return
