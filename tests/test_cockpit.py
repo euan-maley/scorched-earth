@@ -22,31 +22,19 @@ def check(name, cond):
         print(f"  FAIL  {name}")
 
 
-# --- Task 2: pick_next + EnvelopeTracker ------------------------------------------
+# --- Task 2: pick_next (ungated; budget envelope retired) -------------------------
 from scorched_earth.jobs import Job  # noqa: E402
 from scorched_earth.roe import ROE, roe_from_dict  # noqa: E402
-from scorched_earth.runner import pick_next, EnvelopeTracker  # noqa: E402
+from scorched_earth.runner import pick_next  # noqa: E402
 
-_q = [Job(id="big", repo="r", title="big", type="test", est_windows=3.0, value=5),
-      Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.2, value=9),  # ROE-blocked
+_q = [Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.2, value=9),  # ROE-blocked
       Job(id="ok",  repo="r", title="ok",  type="docs", est_windows=1.0, value=4)]
-check("pick_next skips too-big top and ROE-blocked, returns first that fits",
-      pick_next(_q, 1.5, ROE()).id == "ok")
-check("pick_next returns None when nothing fits", pick_next(_q, 0.1, ROE()) is None)
-
-_fresh = {"snapshot": {"now": 1000, "five_hour_reset": 9_999_999_999, "seven_day_pct": 50},
-          "recommendation": {"windows_left": 2.0, "level": "green"}}
-_tr = EnvelopeTracker(ROE())
-check("EnvelopeTracker available = windows_left initially", _tr.available(_fresh, 1) == 2.0)
-_tr.charge(0.5)
-check("EnvelopeTracker subtracts predictive spend", _tr.available(_fresh, 1) == 1.5)
-_adv = {"snapshot": {"now": 2000, "five_hour_reset": 9_999_999_999, "seven_day_pct": 50},
-        "recommendation": {"windows_left": 1.8, "level": "green"}}
-check("EnvelopeTracker re-syncs (spent->0) when snapshot timestamp advances",
-      _tr.available(_adv, 1) == 1.8)
-_stale = {"snapshot": {"now": 3000, "seven_day_pct": 50},
-          "recommendation": {"windows_left": 1.0}}
-check("EnvelopeTracker returns None on stale snapshot", _tr.available(_stale, 1) is None)
+check("pick_next skips ROE-blocked, returns the first ROE-allowed job (no budget gate)",
+      pick_next(_q, ROE()).id == "ok")
+check("pick_next returns None when nothing is ROE-allowed",
+      pick_next([Job(id="ref", repo="r", title="ref", type="refactor", est_windows=0.2, value=9)], ROE()) is None)
+check("pick_next returns an over-headroom job (no budget gate)",
+      pick_next([Job(id="big", repo="r", title="big", type="docs", est_windows=9.0, value=5)], ROE()).id == "big")
 
 
 # --- Task 3: queue ops ------------------------------------------------------------
@@ -141,15 +129,16 @@ _STATE = {"snapshot": {"now": 1, "five_hour_reset": 9_999_999_999, "seven_day_pc
 _r = _mk_repo([Job(id="t1", repo=".", title="T1", type="test", est_windows=1.0, value=5),
                Job(id="r1", repo=".", title="R1", type="refactor", est_windows=0.2, value=9),  # ROE block
                Job(id="t2", repo=".", title="T2", type="test", est_windows=1.0, value=4),
-               Job(id="t3", repo=".", title="T3", type="test", est_windows=1.0, value=3)])  # over budget
+               Job(id="t3", repo=".", title="T3", type="test", est_windows=1.0, value=3)])  # over headroom (runs anyway)
 _beats = []
 _eng = Engine([_r], execute=_exec, broadcast=lambda: _beats.append(1),
               load_state=lambda: _STATE, now=lambda: 1)
 _eng.run(_r); _wait_idle(_eng)
-check("engine drains the affordable additive cards in order", _ran == ["t1", "t2"])
+# no budget envelope anymore: every ROE-allowed card drains in order, regardless of headroom
+check("engine drains all ROE-allowed additive cards in order (no budget gate)", _ran == ["t1", "t2", "t3"])
 check("engine skips the ROE-blocked card (refactor never ran)", "r1" not in _ran)
-check("engine stops when the next card is over budget (t3 left queued)",
-      [j.id for j in _io.read_queue(_r)] == ["r1", "t3"])
+check("engine leaves only the ROE-blocked card queued (t3 ran)",
+      [j.id for j in _io.read_queue(_r)] == ["r1"])
 check("engine broadcast fired across the run", len(_beats) >= 4)
 check("engine not busy after draining", _eng.state_json()["busy"] is False)
 
@@ -392,18 +381,44 @@ while _ptime.time() < _end and _par.state_json()["busy"]:
 check("both repos drain after release (queues empty, idle)",
       _par.state_json()["busy"] is False and _io.read_queue(_pA) == [] and _io.read_queue(_pB) == [])
 
-# shared budget via reservation: 2 repos x 3 jobs @1.0, 2.5 windows -> only 2 run total
-_sb_ran = []
-def _sb_exec(repo, job, roe):
-    _sb_ran.append(job.id); return ("pass", None, "ok")
-_sbA = _mk_repo([Job(id="A"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5, depth=5) for i in range(3)])
-_sbB = _mk_repo([Job(id="B"+str(i), repo=".", title="x", type="test", est_windows=1.0, value=5, depth=5) for i in range(3)])
-_sb = Engine([_sbA, _sbB], execute=_sb_exec, load_state=lambda: _STATE, now=lambda: 1)
-_sb.run([_sbA, _sbB])
+# a usage-limit on one repo's job HALTS all workers (no shared budget envelope anymore)
+_hl_gate = _pth.Event()
+def _hl_exec(repo, job, roe):
+    if job.id.endswith("1"):
+        return ("limit", None, "usage limit")     # first job in each repo trips the limit
+    _hl_gate.wait(2)
+    return ("pass", None, "ok")
+_hlA = _mk_repo([Job(id="A1", repo=".", title="x", type="docs", est_windows=0.5, value=9, depth=3),
+                 Job(id="A2", repo=".", title="x", type="docs", est_windows=0.5, value=8, depth=3)])
+_hl = Engine([_hlA], execute=_hl_exec, load_state=lambda: _STATE, now=lambda: 1)
+_hl.run([_hlA])
 _end = _ptime.time() + 3
-while _ptime.time() < _end and _sb.state_json()["busy"]:
+while _ptime.time() < _end and _hl.state_json()["busy"]:
     _ptime.sleep(0.02)
-check("shared budget caps the WHOLE parallel run (2 of 6 jobs, not 3-per-repo)", len(_sb_ran) == 2)
+check("a usage-limit halts the engine; the limit job is re-queued (resumable)",
+      "A1" in [j["id"] for j in _io.board_state(_hlA)["queued"]]
+      and "A1" not in [j["id"] for j in _io.board_state(_hlA)["finished"]])
+
+# state_json carries headroom context + per-job fit flags
+_sjs = _hl.state_json()
+check("state_json exposes headroom + weekly reserve context",
+      "headroom" in _sjs and "weekly_reserve_pct" in _sjs)
+
+# optional ROE max_jobs cap stops the drain after N jobs (off by default)
+_capdir = tempfile.mkdtemp(); os.makedirs(os.path.join(_capdir, ".scorched"), exist_ok=True)
+with open(os.path.join(_capdir, ".scorched", "roe.json"), "w") as _f:
+    json.dump({"max_jobs": 1}, _f)
+with open(os.path.join(_capdir, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "c1", "title": "C1", "type": "test", "est_windows": 0.5, "value": 5},
+               {"id": "c2", "title": "C2", "type": "test", "est_windows": 0.5, "value": 4}], _f)
+_io.write_queue(_capdir, [Job(id="c1", repo=".", title="C1", type="test", est_windows=0.5, value=5),
+                          Job(id="c2", repo=".", title="C2", type="test", est_windows=0.5, value=4)])
+_cap_ran = []
+_capeng = Engine([_capdir], execute=lambda repo, job, roe: (_cap_ran.append(job.id), ("pass", None, "ok"))[1],
+                 load_state=lambda: _STATE, now=lambda: 1)
+_capeng.run([_capdir]); _wait_idle(_capeng)
+check("ROE max_jobs cap stops the drain after one job (c2 left queued)",
+      _cap_ran == ["c1"] and "c2" in [j["id"] for j in _io.board_state(_capdir)["queued"]])
 
 # per-repo kill targets one repo's in-flight job; the other keeps running
 import scorched_earth.runner as _krun  # noqa: E402

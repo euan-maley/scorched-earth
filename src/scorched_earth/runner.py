@@ -213,6 +213,7 @@ def build_claude_cmd(job: "Job", worktree: str) -> List[str]:
     """
     return [
         "claude", "-p", _PRELUDE + (job.launch or job.title),
+        "--output-format", "stream-json", "--verbose",
         "--dangerously-skip-permissions",
     ]
 
@@ -255,26 +256,29 @@ _kill_ctx = threading.local()
 
 
 def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1):
-    """Run cmd; if kill_event is set, terminate (SIGTERM, then SIGKILL after `grace`) and return
-    'killed'. Returns 'done' when the process exits on its own (or kill_event is None)."""
-    p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Run cmd capturing stdout (for rate-limit detection). Returns (status, output) where status
+    is 'killed' or 'done'. Honors kill_event (SIGTERM then SIGKILL after grace)."""
+    p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if kill_event is None:
-        p.wait()
-        return "done"
+        out, _ = p.communicate()
+        return "done", out or ""
+    chunks = []
     while p.poll() is None:
         if kill_event.is_set():
             p.terminate()
             try:
                 p.wait(timeout=grace)
             except subprocess.TimeoutExpired:
-                p.kill()
-                p.wait()
-            return "killed"
+                p.kill(); p.wait()
+            try:
+                rest = p.stdout.read() if p.stdout else ""
+            except Exception:  # noqa: BLE001
+                rest = ""
+            return "killed", "".join(chunks) + (rest or "")
         time.sleep(poll)
-    # process exited on its own — but honor a kill the operator requested in the meantime
-    if kill_event.is_set():
-        return "killed"
-    return "done"
+    out = p.stdout.read() if p.stdout else ""
+    chunks.append(out or "")
+    return ("killed" if kill_event.is_set() else "done"), "".join(chunks)
 
 
 def _discard_worktree(root, job_id):
@@ -319,10 +323,13 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
             subprocess.run(roe.setup_cmd, cwd=wt, shell=True,
                            capture_output=True, text=True)
         # Killable claude step: the cockpit Engine may set _kill_ctx.event for this job.
-        if _run_killable(build_claude_cmd(job, wt), wt,
-                         getattr(_kill_ctx, "event", None)) == "killed":
-            _discard_worktree(root, job.id)        # always discard the partial work
+        status, out = _run_killable(build_claude_cmd(job, wt), wt, getattr(_kill_ctx, "event", None))
+        if status == "killed":
+            _discard_worktree(root, job.id)
             return "killed", None, "killed by operator — work discarded."
+        if detect_rate_limit(out):
+            _discard_worktree(root, job.id)             # nothing landed; job returns to the queue
+            return "limit", None, "stopped: usage limit reached — re-queued, resume after reset."
         diff = _diffstat(wt, base_sha)
         gate = build_gate_cmd(job, roe)
         if gate is None:
@@ -403,6 +410,10 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None):
         oc = run_one(repo, job, roe, repo_disp, i, execute=execute,
                      on_running=lambda r: (rr.jobs.append(r), _persist()))
         rr.jobs[-1] = oc                      # replace the 'running' outcome with the finished one
+        if oc.outcome == "limit":
+            rr.state = "halted"
+            _persist()
+            return rr
         spent += job.est_windows
         rr.spent_estimated = spent
         _persist()

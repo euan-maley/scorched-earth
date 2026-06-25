@@ -291,20 +291,25 @@ _th = _kt.Thread(target=_go); _th.start()
 _ktime.sleep(0.3)              # let it spawn
 _ev.set()                      # request kill
 _th.join(5)
-check("_run_killable returns 'killed' when the event is set", _res.get("r") == "killed")
+# _run_killable now returns (status, output); status is index 0
+check("_run_killable returns 'killed' when the event is set", _res.get("r", (None,))[0] == "killed")
 check("_run_killable actually terminated the child (thread finished)", not _th.is_alive())
 
 # a fast child runs to completion -> 'done' (kill_event present but never set)
 check("_run_killable returns 'done' when the process exits on its own",
-      _run_killable([sys.executable, "-c", "pass"], None, _kt.Event(), poll=0.02) == "done")
+      _run_killable([sys.executable, "-c", "pass"], None, _kt.Event(), poll=0.02)[0] == "done")
 # no kill_event -> waits to completion
 check("_run_killable with no kill_event waits to completion",
-      _run_killable([sys.executable, "-c", "pass"], None, None) == "done")
+      _run_killable([sys.executable, "-c", "pass"], None, None)[0] == "done")
 
 # operator intent wins even if the child finishes coincidentally
 _pre = _kt.Event(); _pre.set()
 check("_run_killable: a kill requested before the child exits still returns 'killed'",
-      _run_killable([sys.executable, "-c", "pass"], None, _pre) == "killed")
+      _run_killable([sys.executable, "-c", "pass"], None, _pre)[0] == "killed")
+
+# _run_killable captures stdout so the runner can scan it for the rate-limit signal
+_capout = _run_killable([sys.executable, "-c", "print('hello-from-child')"], None, None)
+check("_run_killable captures child stdout", "hello-from-child" in (_capout[1] or ""))
 
 # --- Task 3 (new): pick_next no-budget-gate, detect_rate_limit, read_headroom, ROE caps ---
 from scorched_earth import runner as _rn  # noqa: E402
@@ -340,6 +345,26 @@ _disp, _ = _rn.plan_run([_RJ(id="d", repo=".", title="D", type="docs", est_windo
                         999, _RROE())
 check("plan_run never emits skipped-budget",
       all(d != "skipped-budget" for _, d in _disp))
+
+# --- Task 4: run_queue halts on a usage-limit outcome (resumable) -----------------
+# a job that returns outcome 'limit' halts the queue; the rest stay un-run (resumable)
+import tempfile as _tf, os as _os, json as _json2  # noqa: E402
+def _mk_runner_repo(jobs):
+    r = _tf.mkdtemp(); _os.makedirs(_os.path.join(r, ".scorched"), exist_ok=True)
+    from scorched_earth import coa_io as _cio
+    _cio.write_queue(r, jobs); return r
+_lim_repo = _mk_runner_repo([_RJ(id="j1", repo=".", title="1", type="docs", est_windows=0.5, value=9, depth=3),
+                             _RJ(id="j2", repo=".", title="2", type="docs", est_windows=0.5, value=8, depth=3)])
+_calls = []
+def _lim_exec(repo, job, roe):
+    _calls.append(job.id)
+    return ("limit", None, "usage limit") if job.id == "j1" else ("pass", None, "ok")
+_state_ok = {"snapshot": {"five_hour_pct": 5, "seven_day_pct": 50, "five_hour_reset": 9_999_999_999},
+             "recommendation": {"windows_left": 5, "level": "green"}}
+_rr = _rn.run_queue(_lim_repo, _state_ok, now=1, date="2026-06-25", execute=_lim_exec)
+check("run_queue halts the queue on a usage-limit outcome (j2 never runs)", _calls == ["j1"])
+check("run_queue records the limit job as 'limit', not 'fail'",
+      any(j.outcome == "limit" for j in _rr.jobs))
 
 print(f"\n{passed} checks passed.")
 if failures:

@@ -17,15 +17,14 @@ from urllib.parse import urlparse, parse_qs
 from . import coa_io
 from . import runner
 from . import state as st
-from .roe import DEFAULT_ROE
 
 
 class Engine:
-    """Cockpit engine with parallel per-repo workers sharing one global budget. Each armed repo
-    gets its own drain worker thread; a single EnvelopeTracker reserves (charges) a job's cost
-    at pick time under the lock so concurrent workers can't overspend the shared weekly budget.
-    Terminates by default: empty/over-budget/ROE-blocked queue or stop -> idle per repo.
-    A crashing job is recorded fail, dropped, and the worker continues."""
+    """Cockpit engine with parallel per-repo workers. Each armed repo gets its own drain worker
+    thread that picks ungated (no budget envelope — the old EnvelopeTracker is retired). The run
+    drains whatever is queued and halts ONLY on a real usage-limit (re-queueing the un-run job and
+    stopping every worker) or an optional ROE cap. Terminates by default: empty/ROE-blocked queue,
+    cap reached, or stop -> idle per repo. A crashing job is recorded fail, dropped, chain continues."""
 
     def __init__(self, repos, *, execute=None, broadcast=None, load_state=None, now=None):
         self.repos = [os.path.realpath(os.path.expanduser(r)) for r in repos]
@@ -35,7 +34,6 @@ class Engine:
         self._now = now or (lambda: int(time.time()))
         self._lock = threading.Lock()
         self._stop = False
-        self._tracker = None                       # one global shared-budget EnvelopeTracker
         self._running = {}                         # repo -> {"repo","id"} (one in-flight job per repo)
         self._kill_events = {}                     # repo -> threading.Event
         self._workers = set()                      # repos with a live drain worker
@@ -95,6 +93,11 @@ class Engine:
 
     # ---- state ----
     def state_json(self):
+        from . import advisor
+        state = self._load_state()
+        snap = (state or {}).get("snapshot") or {}
+        headroom = advisor.window_headroom(snap)
+        wrp = advisor.weekly_reserve_pct(snap)
         with self._lock:
             running = [dict(v) for v in self._running.values()]
             busy = bool(running) or bool(self._workers)
@@ -103,8 +106,19 @@ class Engine:
             running_by_repo = {}
             for v in self._running.values():
                 running_by_repo.setdefault(v["repo"], []).append(v["id"])
-        return {"repos": [coa_io.board_state(r, running_by_repo.get(r, ())) for r in self.repos],
-                "running": running, "busy": busy}
+        repos = []
+        for r in self.repos:
+            board = coa_io.board_state(r, running_by_repo.get(r, ()))
+            roe = coa_io.load_roe(r)
+            coa = advisor.match(headroom or 0.0, coa_io.read_queue(r) + coa_io.load_jobs(r), roe)
+            fits = {j.id for j in coa.queue}
+            for col in ("proposed", "queued"):
+                for jb in board[col]:
+                    jb["fit"] = "fits" if jb["id"] in fits else "over"
+            repos.append(board)
+        return {"repos": repos, "running": running, "busy": busy,
+                "headroom": round(headroom, 2) if headroom is not None else None,
+                "weekly_reserve_pct": round(wrp, 0) if wrp is not None else None}
 
     # ---- per-repo drain worker ----
     def _drain_repo(self, repo):
@@ -114,29 +128,28 @@ class Engine:
                     self._workers.discard(repo)
                     done = True
                 else:
-                    if self._tracker is None:
-                        self._tracker = runner.EnvelopeTracker(DEFAULT_ROE)   # global shared budget
-                    avail = self._tracker.available(self._load_state(), self._now())
                     roe = coa_io.load_roe(repo)
-                    job = None if avail is None else runner.pick_next(coa_io.read_queue(repo), avail, roe)
+                    rr = self._results.get(repo)
+                    done_n = len(rr.jobs) if rr else 0
+                    spent_w = sum(j.est_windows for j in rr.jobs) if rr else 0.0
+                    capped = ((roe.max_jobs is not None and done_n >= roe.max_jobs) or
+                              (roe.max_est_windows is not None and spent_w >= roe.max_est_windows))
+                    job = None if capped else runner.pick_next(coa_io.read_queue(repo), roe)
                     if job is None:
                         self._workers.discard(repo)                            # this repo: nothing to do
                         done = True
                     else:
                         done = False
-                        self._tracker.charge(job.est_windows)                  # RESERVE under the lock
                         self._running[repo] = {"repo": repo, "id": job.id}
                         ke = threading.Event()
                         self._kill_events[repo] = ke
                         coa_io.unqueue(repo, job.id)
-                        rr = self._results.get(repo)
                         if rr is None:
                             rr = runner.RunResult(
                                 generated_at=time.strftime("%Y-%m-%d", time.localtime(self._now())),
                                 state="running", repo=repo, verdict="unknown", note="",
-                                available_windows=avail, spent_estimated=0.0)
+                                available_windows=0.0, spent_estimated=0.0)
                             self._results[repo] = rr
-                        rr.spent_estimated = rr.spent_estimated + job.est_windows
                         seq = len(rr.jobs) + 1
             self._broadcast()
             if done:
@@ -149,9 +162,12 @@ class Engine:
                 runner._kill_ctx.event = None
 
             with self._lock:
-                if oc.outcome in ("pass", "fail"):
+                if oc.outcome == "limit":
+                    coa_io.enqueue(repo, [job])          # didn't run — put it back, resumable
+                    self._stop = True                    # halt every worker
+                elif oc.outcome in ("pass", "fail"):
                     rr.jobs.append(oc)
-                    self._persist(repo, rr)          # killed: not appended (board -> proposed); budget already reserved
+                    self._persist(repo, rr)          # killed: not appended (board -> proposed)
                 self._running.pop(repo, None)
                 self._kill_events.pop(repo, None)
                 if self._stop:
