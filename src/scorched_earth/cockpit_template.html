@@ -1,32 +1,708 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Scorched Earth — COA Cockpit</title>
-<!-- STUB cockpit. Replace with the Claude-design board (see docs/design brief). Contract:
-     TOKEN and STATE are injected by render_cockpit below the comment block; POSTs carry the
-     X-Scorch-Token header; GET /events is the SSE stream (event: board). Render STATE.repos
-     into columns (proposed/queued/running/finished); never send a command, only job ids. -->
+<title>Scorched Earth — War Room</title>
+<!--
+  COA COCKPIT — the live command surface. Fourth sibling of the weekly SITREP, the
+  COURSE OF ACTION, and the AFTER-ACTION REPORT; same scorched-earth war-HUD look.
+  Single self-contained file: no external assets, fonts, CDNs, or network calls beyond
+  the same-origin EventSource and the POSTs to /queue /reorder /run /stop.
+
+  HOW IT FILLS
+  ------------
+  render_cockpit(token, state) does a literal string replacement of the two injection
+  tokens at the const sites near the bottom, then returns UTF-8 bytes. Everything after
+  that first paint arrives over Server-Sent Events: the page opens GET /events?t=TOKEN
+  and applies each `event: board` payload by patching the DOM in place — no full reload.
+
+  SECURITY
+  --------
+  Every POST carries the X-Scorch-Token header. Bodies contain JOB IDS ONLY
+  ({repo,id} / {repo,ids} / {repo} / {}). This file never constructs a shell string.
+-->
 <style>
-  body{background:#0b0705;color:#f4e4c8;font-family:ui-monospace,Menlo,Consolas,monospace;padding:20px}
-  .col{display:inline-block;vertical-align:top;width:23%;min-width:180px}
-  .card{border:1px solid #6b4a2b;padding:6px;margin:4px 0}
-  @media (prefers-reduced-motion: reduce){*{animation:none!important}}
-</style></head><body>
-<h1>COA COCKPIT</h1><div id="board"></div>
+  :root{
+    color-scheme:dark;
+    --font:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --ground:#0b0705; --panel:#0b0f12; --mod:#10181d; --col:#0c1217;
+    --panel-bd:#243639; --mod-bd:#2b3d44; --track:#070b0d; --track-bd:#243a3a;
+    --strong:#eef3f3; --primary:#c1dada; --secondary:#9ec1c1; --muted:#86abab; --head:#8fb8b8;
+    --amber:#e2a04d; --ember:#e2541d; --ember2:#ff9a3d; --fire:#ff6a1f; --forfeit:#c0653a;
+    --secured:#7bb04a; --secured2:#9fd36a; --fail:#c0392b; --fail2:#e2705a;
+    --bracket:#3a5a5a; --charred:#1a120b; --teal:#6f8a8a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--ground);font-family:var(--font);padding:22px 14px 30px;-webkit-font-smoothing:antialiased}
+
+  .wrap{max-width:1320px;margin:0 auto;background:var(--panel);border:1px solid var(--panel-bd);
+        position:relative;overflow:hidden;box-shadow:0 0 0 1px var(--ground),0 18px 60px rgba(0,0,0,.6)}
+
+  .br{position:absolute;width:11px;height:11px;z-index:9;pointer-events:none}
+  .br.tl{left:6px;top:6px;border-left:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.tr{right:6px;top:6px;border-right:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.bl{left:6px;bottom:6px;border-left:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+  .br.brr{right:6px;bottom:6px;border-right:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+
+  /* ---- header ---- */
+  .hdr{position:relative;padding:18px 22px 152px;border-bottom:1px solid #243a44;
+       background:linear-gradient(#16222c,#0d141a);overflow:hidden}
+  .hdr__scene{position:absolute;left:0;bottom:0;width:100%;height:auto;display:block;
+             image-rendering:pixelated;pointer-events:none;z-index:0}
+  .hdr__top{position:relative;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .hdr__tag{display:flex;align-items:center;gap:11px;font-size:17px;letter-spacing:2px;color:var(--muted);padding-top:6px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .hdr__title{position:relative;z-index:2;margin:11px 0 0;
+    font-size:clamp(28px,5.4vw,50px);font-weight:800;letter-spacing:2px;line-height:.96;
+    background:linear-gradient(90deg,#ff3b1f,#ff8a1f,#ffd24a,#ff8a1f,#ff3b1f);
+    background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:firetext 2s linear infinite}
+  @keyframes firetext{to{background-position:200% 0}}
+  .hdr__sub{position:relative;z-index:2;margin-top:7px;font-size:18px;letter-spacing:2px;color:#e9c08a}
+
+  /* live/idle flag + controls */
+  .ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .liveflag{display:inline-flex;align-items:center;gap:8px;border:1px solid;padding:5px 13px 4px;
+        font-size:13px;font-weight:800;letter-spacing:2px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--font);font-weight:800;letter-spacing:1.5px;
+       font-size:13px;padding:7px 15px 6px;background:#0c1217;border:1px solid var(--mod-bd);color:var(--secondary);
+       cursor:pointer;transition:background .12s,color .12s,border-color .12s,box-shadow .12s}
+  .btn:hover{background:#15212a;color:var(--strong)}
+  .btn .gl{font-size:11px}
+  .btn--run.is-primary{border-color:var(--secured);color:#0c1206;background:var(--secured)}
+  .btn--run.is-primary:hover{background:var(--secured2)}
+  .btn--stop.is-primary{border-color:var(--fire);color:#190d05;
+        background:linear-gradient(180deg,#ff8a1f,#ff6a1f);box-shadow:0 0 18px rgba(255,90,20,.3)}
+  .btn--stop.is-primary:hover{background:linear-gradient(180deg,#ffa040,#ff7a2a)}
+
+  /* ---- repo tabs ---- */
+  .tabs{display:flex;gap:0;flex-wrap:wrap;padding:0 18px;background:#0a1014;border-bottom:1px solid #1b2a30}
+  .tab{font-family:var(--font);font-size:14px;font-weight:700;letter-spacing:1.5px;color:var(--muted);
+       background:transparent;border:0;border-bottom:2px solid transparent;padding:12px 16px 10px;cursor:pointer;
+       display:flex;align-items:center;gap:9px;transition:color .12s,border-color .12s}
+  .tab:hover{color:var(--secondary)}
+  .tab.active{color:var(--strong);border-bottom-color:var(--fire)}
+  .tab .cnt{font-size:11px;letter-spacing:1px;color:var(--muted);border:1px solid var(--mod-bd);padding:1px 6px}
+  .tab.active .cnt{color:var(--ember2);border-color:#5a3014}
+
+  /* ---- board ---- */
+  .board{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;padding:16px 18px}
+  .col{display:flex;flex-direction:column;background:var(--col);border:1px solid var(--mod-bd);min-width:0}
+  .col__hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+           padding:11px 13px 10px;border-bottom:1px solid var(--mod-bd);border-top:2px solid;letter-spacing:2px}
+  .col__hd .l{font-size:14px;font-weight:800;color:var(--head)}
+  .col__hd .r{font-size:12px;letter-spacing:1px;color:var(--muted)}
+  .col__cnt{font-size:12px;font-weight:800;letter-spacing:1px;border:1px solid var(--mod-bd);padding:1px 7px;color:var(--secondary)}
+  .col__body{flex:1;display:flex;flex-direction:column;gap:9px;padding:11px;min-height:160px}
+  .col.drop{outline:1px dashed var(--fire);outline-offset:-3px;background:#11181c}
+  .col.drop .col__body{background:repeating-linear-gradient(135deg,rgba(255,106,31,.05) 0 6px,transparent 6px 12px)}
+
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;min-height:90px;
+         border:1px dashed #1f3036;color:#46606a;font-size:12px;letter-spacing:2px;text-align:center;padding:14px}
+
+  /* ---- cards ---- */
+  .card{position:relative;background:var(--mod);border:1px solid var(--mod-bd);border-left:4px solid var(--teal);
+        padding:10px 11px 10px 12px;display:flex;flex-direction:column;gap:7px}
+  .card[draggable=true]{cursor:grab}
+  .card[draggable=true]:active{cursor:grabbing}
+  .card.dragging{opacity:.4}
+  .card__top{display:flex;align-items:center;gap:8px}
+  .grip{flex:none;width:11px;color:#46606a;font-size:13px;line-height:1;letter-spacing:-1px;user-select:none}
+  .cid{font-size:12px;letter-spacing:1px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ctype{flex:none;margin-left:auto;font-size:11px;letter-spacing:1.5px;color:var(--muted);
+         border:1px solid var(--mod-bd);padding:2px 7px;text-transform:uppercase}
+  .ctitle{font-size:15px;font-weight:700;line-height:1.22;color:var(--strong);overflow-wrap:anywhere}
+  .cfoot{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12px;letter-spacing:.6px;color:var(--muted)}
+  .cwin{color:var(--secondary)} .cwin b{color:var(--strong);font-weight:700}
+  .cval{margin-left:auto;font-weight:800;letter-spacing:1px}
+  .cpos{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;
+        font-size:11px;font-weight:800;color:#0c1206;background:var(--amber)}
+  .cpos--next{background:linear-gradient(180deg,#ff8a1f,#ff6a1f);color:#190d05;padding:0 7px;gap:6px}
+  .cnext{flex:none;font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--ember2)}
+  .cbadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;letter-spacing:1.5px;
+          border:1px solid;padding:3px 9px 2px}
+  .cbranch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--secondary);
+           background:#0c1217;border:1px solid var(--track-bd);padding:2px 8px;max-width:100%;overflow:hidden;
+           text-overflow:ellipsis;white-space:nowrap}
+  .cbranch .g{color:var(--muted)}
+
+  /* queued accent */
+  .card--queued{border-left-color:var(--amber)}
+  /* running */
+  .card--running{border-left-color:var(--fire);background:linear-gradient(#16110c,#100b08);
+        box-shadow:0 0 0 1px rgba(255,106,31,.22),0 0 26px rgba(255,90,20,.16)}
+  /* done */
+  .card--pass{border-left-color:var(--secured);background:linear-gradient(#0f140d,#0c0f0a)}
+  .card--fail{border-left-color:var(--fail);background:linear-gradient(#160c0a,#100806);opacity:.92}
+  .card--pass .ctitle{color:#e7f1dc}
+  .card--fail .ctitle{color:#e9c8bf}
+
+  .working{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;letter-spacing:2px;color:var(--ember2)}
+
+  /* ---- status bar ---- */
+  .statusbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+             padding:13px 20px;border-top:1px solid #1b2a30;background:linear-gradient(#0c1217,#0a0f13)}
+  .sb__group{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .sb__stat{display:flex;align-items:baseline;gap:8px;font-size:12px;letter-spacing:1.5px;color:var(--muted)}
+  .sb__stat b{font-size:22px;font-weight:800;letter-spacing:0;color:var(--strong);line-height:1}
+  .sb__sep{width:1px;height:24px;background:var(--mod-bd)}
+  .estbadge{font-size:10px;letter-spacing:1.5px;color:#d0a86a;border:1px solid #5a4426;background:rgba(226,160,77,.1);padding:1px 6px}
+  .sb__engine{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:800;letter-spacing:2px;
+              border:1px solid;padding:6px 13px 5px}
+
+  /* ---- overlays ---- */
+  .scan{position:absolute;inset:0;pointer-events:none;z-index:7;
+        background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+  .vig{position:absolute;inset:0;pointer-events:none;z-index:7;
+       background:radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.42) 100%)}
+
+  .blink{animation:blink 1.2s steps(1,end) infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .ember{animation:emberpulse 1s ease-in-out infinite}
+  @keyframes emberpulse{0%,100%{opacity:1;box-shadow:0 0 7px var(--fire)}50%{opacity:.45;box-shadow:0 0 3px var(--fire)}}
+
+  @media (prefers-reduced-motion:reduce){
+    .hdr__title,.blink,.ember{animation:none}
+    .hdr__title{background-position:0 0}
+  }
+  @media (max-width:1080px){ .board{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:620px){ .board{grid-template-columns:1fr} }
+</style></head>
+<body>
+<div class="wrap" id="cockpit">
+  <span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br brr"></span>
+
+  <div class="hdr">
+    <canvas class="hdr__scene" width="480" height="58"></canvas>
+    <div class="hdr__top">
+      <div class="hdr__tag">
+        <span class="dot" id="hdrDot"></span>
+        <span id="hdrStamp">// WAR ROOM</span>
+      </div>
+      <div class="ctl">
+        <span class="liveflag" id="liveFlag"></span>
+        <button class="btn btn--run" id="btnRun"><span class="gl">&#9654;</span> RUN</button>
+        <button class="btn btn--stop" id="btnStop"><span class="gl">&#9632;</span> STOP</button>
+      </div>
+    </div>
+    <h1 class="hdr__title">WAR ROOM</h1>
+    <div class="hdr__sub">SCORCHED EARTH &middot; LIVE QUEUE CONTROL</div>
+  </div>
+
+  <div class="tabs" id="tabs" hidden></div>
+
+  <div class="board" id="board">
+    <div class="col" data-col="proposed" style="--c:var(--teal)">
+      <div class="col__hd" style="border-top-color:var(--teal)"><span class="l">PROPOSED</span><span class="col__cnt" data-cnt="proposed">0</span></div>
+      <div class="col__body" data-body="proposed"></div>
+    </div>
+    <div class="col" data-col="queued" style="--c:var(--amber)">
+      <div class="col__hd" style="border-top-color:var(--amber)"><span class="l">QUEUED</span><span class="col__cnt" data-cnt="queued">0</span></div>
+      <div class="col__body" data-body="queued"></div>
+    </div>
+    <div class="col" data-col="running" style="--c:var(--fire)">
+      <div class="col__hd" style="border-top-color:var(--fire)"><span class="l">RUNNING</span><span class="col__cnt" data-cnt="running">&mdash;</span></div>
+      <div class="col__body" data-body="running"></div>
+    </div>
+    <div class="col" data-col="finished" style="--c:var(--secured)">
+      <div class="col__hd" style="border-top-color:var(--secured)"><span class="l">DONE</span><span class="col__cnt" data-cnt="finished">0</span></div>
+      <div class="col__body" data-body="finished"></div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <div class="sb__group" id="sbStats"></div>
+    <div class="sb__group">
+      <div class="sb__stat"><span>BUDGET SPENT</span><b id="sbBudget">~0.0</b><span>WIN</span><span class="estbadge">&#9650; EST</span></div>
+      <div class="sb__sep"></div>
+      <span class="sb__engine" id="sbEngine"></span>
+    </div>
+  </div>
+
+  <div class="scan"></div>
+  <div class="vig"></div>
+</div>
+
 <script>
+/* ======================================================================
+   INJECTION SITES — render_cockpit substitutes these two tokens, once each.
+   ====================================================================== */
 const TOKEN = __COCKPIT_TOKEN__;
 const STATE = __COCKPIT_JSON__;
-function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function render(state){
-  document.getElementById('board').innerHTML = state.repos.map(r =>
-    '<h2>'+esc(r.name)+(state.busy?' · BUSY':'')+'</h2>' +
-    [['PROPOSED','proposed'],['QUEUED','queued'],['RUNNING','running'],['DONE','finished']]
-      .map(([lab,key])=>'<div class=col><b>'+lab+'</b>'+
-        ((key==='running'? (state.running&&state.running.repo===r.repo?[state.running]:[]) : (r[key]||[]))
-          .map(j=>'<div class=card>'+esc(j.id||j.title||'')+'</div>').join('')+'</div>').join('')
-  ).join('');
-}
-render(STATE);
-const ev = new EventSource('/events?t='+encodeURIComponent(TOKEN));
-ev.addEventListener('board', e => render(JSON.parse(e.data)));
-</script></body></html>
+
+/* ======================================================================
+   Cockpit logic — board render, drag interactions, SSE live patching.
+   ====================================================================== */
+(function(){
+  const root = document.getElementById("cockpit");
+  const esc = s => String(s==null?"":s);
+  const fmt = n => (Math.round((+n||0)*10)/10).toFixed(1);
+  const VALCOL = v => v>=8?"#ff6a1f":v>=6?"#e2a04d":v>=4?"#c1dada":"#86abab";
+
+  let state = normalize(STATE);
+  let activeRepo = state.repos.length ? state.repos[0].repo : null;
+  let dragKind = null;            // 'proposed' | 'queued' while a drag is live
+
+  function normalize(s){
+    s = s || {};
+    return { repos: Array.isArray(s.repos)?s.repos:[], running: s.running||null, busy: !!s.busy };
+  }
+  const repoOf = key => state.repos.find(r=>r.repo===key) || null;
+  function activeRepoObj(){
+    let r = repoOf(activeRepo);
+    if(!r){ r = state.repos[0]||null; activeRepo = r?r.repo:null; }
+    return r;
+  }
+  // find a job's full record by id within the active repo (queued/proposed/finished)
+  function lookupJob(repo, id){
+    if(!repo) return null;
+    return (repo.queued||[]).find(j=>j.id===id)
+        || (repo.proposed||[]).find(j=>j.id===id)
+        || (repo.finished||[]).find(j=>j.id===id) || null;
+  }
+
+  /* ---------- POSTs — ids only, always token-headed ---------- */
+  function post(path, body){
+    return fetch(path, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "X-Scorch-Token": TOKEN },
+      body: JSON.stringify(body)
+    }).catch(()=>{});   // SSE is the source of truth; a failed POST self-corrects on next board event
+  }
+
+  /* ---------- card construction / update (no rebuild ⇒ no flicker) ---------- */
+  function buildCard(){
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML =
+      '<div class="card__top"><span class="grip"></span><span class="cid"></span><span class="ctype"></span></div>'+
+      '<div class="ctitle"></div>'+
+      '<div class="cfoot"></div>';
+    return el;
+  }
+
+  function updateCard(el, job, kind, idx){
+    el.dataset.id = job.id;
+    el.className = "card card--"+(kind==="finished"?(job.outcome==="fail"?"fail":"pass"):kind);
+    const grip = el.querySelector(".grip");
+    const draggable = (kind==="proposed"||kind==="queued");
+    el.setAttribute("draggable", draggable?"true":"false");
+    grip.textContent = draggable ? "\u2237\u2237" : "";
+    el.querySelector(".cid").textContent = job.id;
+    el.querySelector(".ctype").textContent = job.type || "job";
+    el.querySelector(".ctitle").textContent = job.title || job.id;
+
+    const foot = el.querySelector(".cfoot");
+    foot.innerHTML = "";
+    if(kind==="proposed"){
+      foot.appendChild(html('<span class="cwin">EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+      if(job.value!=null) foot.appendChild(html('<span class="cval" style="color:'+VALCOL(+job.value)+'">VAL '+esc(job.value)+'</span>'));
+    } else if(kind==="queued"){
+      const isNext = idx===0;
+      el.style.borderLeftColor = isNext ? "#ff6a1f" : "var(--amber)";
+      foot.appendChild(html('<span class="cpos'+(isNext?' cpos--next':'')+'">'+String(idx+1)+(isNext?' \u2191':'')+'</span>'));
+      if(isNext) foot.appendChild(html('<span class="cnext">NEXT UP</span>'));
+      foot.appendChild(html('<span class="cwin"'+(isNext?'':' style="margin-left:auto"')+'>EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+    } else if(kind==="running"){
+      foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
+      if(job.est_windows!=null) foot.appendChild(html('<span class="cwin" style="margin-left:auto">EST <b>~'+fmt(job.est_windows)+'w</b></span>'));
+    } else { // finished
+      const pass = job.outcome!=="fail";
+      const badge = pass
+        ? '<span class="cbadge" style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
+        : '<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
+      foot.appendChild(html(badge));
+      if(job.tier) foot.appendChild(html('<span class="cval" style="color:#86abab;font-weight:700">'+esc(job.tier)+'</span>'));
+      if(job.branch){
+        const br = html('<span class="cbranch" style="flex-basis:100%"><span class="g">&#9095;</span>'+esc(job.branch)+'</span>');
+        foot.appendChild(br);
+      }
+    }
+  }
+  function html(s){ const t=document.createElement("template"); t.innerHTML=s.trim(); return t.content.firstChild; }
+
+  /* ---------- keyed reconcile of one column body ---------- */
+  function reconcile(bodyKey, jobs, kind){
+    const body = root.querySelector('[data-body="'+bodyKey+'"]');
+    const existing = new Map();
+    [...body.children].forEach(ch=>{ if(ch.dataset && ch.dataset.id) existing.set(ch.dataset.id, ch); });
+    const seen = new Set();
+    const frag = document.createDocumentFragment();
+    jobs.forEach((job, i)=>{
+      seen.add(job.id);
+      let el = existing.get(job.id) || buildCard();
+      // don't re-touch the node the user is actively dragging
+      if(!el.classList.contains("dragging")) updateCard(el, job, kind, i);
+      frag.appendChild(el);   // appendChild moves the node, enforcing order
+    });
+    existing.forEach((el,id)=>{ if(!seen.has(id)) el.remove(); });
+    body.appendChild(frag);
+    setEmpty(body, jobs.length===0, kind);
+  }
+  function setEmpty(body, isEmpty, kind){
+    let e = [...body.children].find(c=>c.classList && c.classList.contains("empty"));
+    if(isEmpty){
+      if(!e){ e=document.createElement("div"); e.className="empty"; body.appendChild(e); }
+      e.textContent = kind==="proposed" ? "NO PROPOSALS\nNOTHING TO STAGE"
+                   : kind==="queued"   ? "QUEUE EMPTY\nDRAG A PROPOSAL HERE"
+                   : kind==="running"  ? "STANDBY\nNO JOB ON THE LINE"
+                   : "NONE COMPLETE YET";
+    } else if(e){ e.remove(); }
+  }
+
+  function renderRunning(repo){
+    const body = root.querySelector('[data-body="running"]');
+    const isHere = state.running && repo && state.running.repo===repo.repo;
+    const jobs = [];
+    if(isHere){
+      const base = lookupJob(repo, state.running.id) || { id: state.running.id };
+      jobs.push(Object.assign({}, base, { id: state.running.id }));
+    }
+    reconcile("running", jobs, "running");
+    root.querySelector('[data-cnt="running"]').textContent = isHere ? "1 ACTIVE" : "\u2014";
+  }
+
+  /* ---------- header / status / tabs ---------- */
+  function renderHeader(){
+    const busy = state.busy;
+    document.getElementById("hdrStamp").textContent =
+      "// WAR ROOM \u00b7 SECTOR 07 \u00b7 " + state.repos.length + (state.repos.length===1?" SECTOR":" SECTORS");
+    const dot = document.getElementById("hdrDot");
+    dot.style.background = busy?"#ff6a1f":"#6f8a8a";
+    dot.style.boxShadow = "0 0 8px "+(busy?"#ff6a1f":"#6f8a8a");
+    dot.className = "dot"+(busy?" blink":"");
+
+    const flag = document.getElementById("liveFlag");
+    if(busy){
+      flag.style.borderColor="#ff6a1f"; flag.style.color="#ff8a3f";
+      flag.innerHTML='<span class="dot blink" style="background:#ff6a1f;box-shadow:0 0 8px #ff6a1f"></span>LIVE';
+    } else {
+      flag.style.borderColor="#6f8a8a"; flag.style.color="#9ec1c1";
+      flag.innerHTML='<span class="dot" style="background:#6f8a8a;box-shadow:0 0 6px #6f8a8a"></span>IDLE';
+    }
+    document.getElementById("btnRun").classList.toggle("is-primary", !busy);
+    document.getElementById("btnStop").classList.toggle("is-primary", busy);
+  }
+
+  function renderTabs(){
+    const tabs = document.getElementById("tabs");
+    if(state.repos.length<=1){ tabs.hidden=true; tabs.innerHTML=""; return; }
+    tabs.hidden=false; tabs.innerHTML="";
+    state.repos.forEach(r=>{
+      const n = (r.proposed||[]).length+(r.queued||[]).length+(r.finished||[]).length+
+                ((state.running&&state.running.repo===r.repo)?1:0);
+      const b=document.createElement("button");
+      b.className="tab"+(r.repo===activeRepo?" active":"");
+      b.innerHTML='<span>'+esc(r.name||r.repo)+'</span><span class="cnt">'+n+'</span>';
+      b.onclick=()=>{ activeRepo=r.repo; render(); };
+      tabs.appendChild(b);
+    });
+  }
+
+  function renderStatus(repo){
+    const F = repo?(repo.finished||[]):[];
+    const passed = F.filter(j=>j.outcome!=="fail").length;
+    const failed = F.filter(j=>j.outcome==="fail").length;
+    const queued = repo?(repo.queued||[]).length:0;
+    const proposed = repo?(repo.proposed||[]).length:0;
+    const total = F.length+queued+proposed+((state.running&&repo&&state.running.repo===repo.repo)?1:0);
+
+    document.getElementById("sbStats").innerHTML =
+      stat(F.length+"/"+total, "DONE")+
+      stat(passed,"SECURED","#9fd36a")+
+      stat(failed,"CRATERED","#e2705a")+
+      stat(queued,"QUEUED","#e2a04d")+
+      stat(proposed,"PROPOSED","#9ec1c1");
+
+    // budget spent estimate = finished est + the running job's est (active repo)
+    let spent = F.reduce((a,j)=>a+(+j.est_windows||0),0);
+    if(state.running && repo && state.running.repo===repo.repo){
+      const rj = lookupJob(repo, state.running.id); if(rj) spent += (+rj.est_windows||0);
+    }
+    document.getElementById("sbBudget").textContent = "~"+fmt(spent);
+
+    const eng = document.getElementById("sbEngine");
+    if(state.busy){ eng.style.borderColor="#ff6a1f"; eng.style.color="#ff8a3f";
+      eng.innerHTML='<span class="dot blink" style="background:#ff6a1f"></span>ENGINE: WORKING'; }
+    else { eng.style.borderColor="#6f8a8a"; eng.style.color="#9ec1c1";
+      eng.innerHTML='<span class="dot" style="background:#6f8a8a"></span>ENGINE: IDLE'; }
+  }
+  function stat(val,label,col){
+    return '<div class="sb__stat"><b'+(col?' style="color:'+col+'"':'')+'>'+val+'</b><span>'+label+'</span></div>';
+  }
+
+  /* ---------- master render (idempotent) ---------- */
+  function render(){
+    const repo = activeRepoObj();
+    renderHeader();
+    renderTabs();
+    reconcile("proposed", repo?(repo.proposed||[]):[], "proposed");
+    reconcile("queued",   repo?(repo.queued||[]):[],   "queued");
+    renderRunning(repo);
+    reconcile("finished", repo?(repo.finished||[]):[], "finished");
+    root.querySelector('[data-cnt="proposed"]').textContent = repo?(repo.proposed||[]).length:0;
+    root.querySelector('[data-cnt="queued"]').textContent   = repo?(repo.queued||[]).length:0;
+    root.querySelector('[data-cnt="finished"]').textContent = repo?(repo.finished||[]).length:0;
+    renderStatus(repo);
+  }
+
+  /* ---------- engine controls ---------- */
+  document.getElementById("btnRun").addEventListener("click", ()=>{
+    if(!activeRepo) return;
+    state.busy = true; renderHeader(); renderStatus(activeRepoObj());   // optimistic
+    post("/run", { repo: activeRepo });
+  });
+  document.getElementById("btnStop").addEventListener("click", ()=>{
+    state.busy = false; renderHeader(); renderStatus(activeRepoObj());  // optimistic
+    post("/stop", {});
+  });
+
+  /* ---------- drag: Proposed → Queued, and reorder within Queued ---------- */
+  function getDragAfter(container, y){
+    const cards = [...container.querySelectorAll(".card:not(.dragging)")];
+    let closest = { off:-Infinity, el:null };
+    for(const c of cards){
+      const box = c.getBoundingClientRect();
+      const off = y - box.top - box.height/2;
+      if(off<0 && off>closest.off) closest = { off, el:c };
+    }
+    return closest.el;
+  }
+
+  root.addEventListener("dragstart", e=>{
+    const card = e.target.closest(".card"); if(!card) return;
+    const col = card.closest(".col"); const kind = col && col.dataset.col;
+    if(kind!=="proposed" && kind!=="queued"){ e.preventDefault(); return; }
+    dragKind = kind;
+    card.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try{ e.dataTransfer.setData("text/plain", card.dataset.id); }catch(_){}
+  });
+  root.addEventListener("dragend", ()=>{
+    root.querySelectorAll(".dragging").forEach(c=>c.classList.remove("dragging"));
+    root.querySelectorAll(".col.drop").forEach(c=>c.classList.remove("drop"));
+    dragKind = null;
+  });
+
+  const queuedCol = root.querySelector('.col[data-col="queued"]');
+  const queuedBody = root.querySelector('[data-body="queued"]');
+  const proposedCol = root.querySelector('.col[data-col="proposed"]');
+  const proposedBody = root.querySelector('[data-body="proposed"]');
+
+  // Proposed accepts a card dragged back out of Queued (dequeue).
+  proposedCol.addEventListener("dragover", e=>{
+    if(dragKind!=="queued") return;          // only queued cards come back here
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    proposedCol.classList.add("drop");
+  });
+  proposedCol.addEventListener("dragleave", e=>{
+    if(!proposedCol.contains(e.relatedTarget)) proposedCol.classList.remove("drop");
+  });
+  proposedCol.addEventListener("drop", e=>{
+    e.preventDefault();
+    proposedCol.classList.remove("drop");
+    if(dragKind!=="queued") return;
+    const id = (e.dataTransfer.getData("text/plain")||"").trim();
+    const repo = activeRepoObj(); if(!repo || !id) return;
+    const i = (repo.queued||[]).findIndex(j=>j.id===id);
+    if(i>=0){
+      const [job] = repo.queued.splice(i,1);
+      repo.proposed = repo.proposed || []; repo.proposed.push(job);
+      render();
+      // dequeue → /unqueue (server reorder keeps un-named jobs; unqueue removes by id) — ids only
+      post("/unqueue", { repo: repo.repo, id });
+    }
+  });
+
+  queuedCol.addEventListener("dragover", e=>{
+    if(dragKind!=="proposed" && dragKind!=="queued") return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    queuedCol.classList.add("drop");
+    if(dragKind==="queued"){
+      const dragging = queuedBody.querySelector(".dragging");
+      if(!dragging) return;
+      const after = getDragAfter(queuedBody, e.clientY);
+      const empty = queuedBody.querySelector(".empty"); if(empty) empty.remove();
+      if(after==null) queuedBody.appendChild(dragging);
+      else queuedBody.insertBefore(dragging, after);
+    }
+  });
+  queuedCol.addEventListener("dragleave", e=>{
+    if(!queuedCol.contains(e.relatedTarget)) queuedCol.classList.remove("drop");
+  });
+  queuedCol.addEventListener("drop", e=>{
+    e.preventDefault();
+    queuedCol.classList.remove("drop");
+    const id = (e.dataTransfer.getData("text/plain")||"").trim();
+    const repo = activeRepoObj(); if(!repo) return;
+
+    if(dragKind==="proposed" && id){
+      const i = (repo.proposed||[]).findIndex(j=>j.id===id);
+      if(i>=0){
+        const [job] = repo.proposed.splice(i,1);
+        repo.queued = repo.queued || []; repo.queued.push(job);   // appears at bottom
+        render();
+        post("/queue", { repo: repo.repo, id });                 // body: ids only
+      }
+    } else if(dragKind==="queued"){
+      const ids = [...queuedBody.children].filter(c=>c.dataset && c.dataset.id).map(c=>c.dataset.id);
+      const byId = {}; (repo.queued||[]).forEach(j=>byId[j.id]=j);
+      repo.queued = ids.map(x=>byId[x]).filter(Boolean);
+      render();
+      post("/reorder", { repo: repo.repo, ids });                // full ordered id list
+    }
+  });
+
+  /* ---------- SSE: live board patching, no full reload ---------- */
+  function connectSSE(retry){
+    let es;
+    try{ es = new EventSource("/events?t=" + encodeURIComponent(TOKEN)); }
+    catch(_){ return; }
+    es.addEventListener("board", ev=>{
+      try{
+        const next = normalize(JSON.parse(ev.data));
+        // preserve the operator's active repo tab across the patch
+        const keep = activeRepo;
+        state = next;
+        activeRepo = next.repos.some(r=>r.repo===keep) ? keep : (next.repos[0]?next.repos[0].repo:null);
+        render();
+      }catch(_){}
+    });
+    es.onopen = ()=>{ retry = 0; };
+    es.onerror = ()=>{
+      es.close();
+      if(retry < 5) setTimeout(()=>connectSSE(retry+1), Math.min(8000, 800*Math.pow(2,retry)));
+    };
+  }
+
+  /* ---------- pixel-art header scene: COMMAND OVERLOOK — HQ above the front line.
+       The cockpit's own setting (vs COA's dusk field & AAR's dawn camp): a fortified
+       command post at night — radar dish, antenna beacon, sweeping searchlights, and
+       artillery flashing on the distant battle line. The ops room watching the field. ---------- */
+  function buildScene(cv){
+    if(!cv) return;
+    const W=cv.width, H=cv.height, ctx=cv.getContext("2d"); ctx.imageSmoothingEnabled=false;
+    const rng=s=>{let v=(s>>>0)||1;return()=>{v=(v*1664525+1013904223)>>>0;return v/4294967296;};};
+    const gl=H-7, horizon=Math.round(H*0.62);   // distant battle line sits high; HQ ridge low
+    const off=document.createElement("canvas"); off.width=W; off.height=H;
+    const o=off.getContext("2d"); o.imageSmoothingEnabled=false;
+    const px=(x,y,f)=>{ if(x>=0&&x<W&&y>=0&&y<H){ o.fillStyle=f; o.fillRect(x|0,y|0,1,1);} };
+
+    // cold night sky, faint warm glow rising off the far front
+    const sky=o.createLinearGradient(0,0,0,gl);
+    sky.addColorStop(0,"#121924"); sky.addColorStop(.34,"#1a2740"); sky.addColorStop(.60,"#27304a");
+    sky.addColorStop(.78,"#44303a"); sky.addColorStop(1,"#5e3a2a");
+    o.fillStyle=sky; o.fillRect(0,0,W,gl);
+    // war-glow band hugging the horizon (the front, still burning)
+    const glow=o.createLinearGradient(0,horizon-9,0,horizon+4);
+    glow.addColorStop(0,"rgba(255,138,31,0)"); glow.addColorStop(.6,"rgba(255,106,31,.32)"); glow.addColorStop(1,"rgba(255,170,70,.52)");
+    o.fillStyle=glow; o.fillRect(0,horizon-9,W,13);
+    // scattered HUD stars
+    const rs=rng(41); for(let i=0;i<30;i++){ const x=Math.floor(rs()*W), y=Math.floor(rs()*horizon*0.7); px(x,y,rs()<0.4?"#acd0d0":"#3a4c54"); }
+
+    // distant front ridge + our foreground ridge
+    const hill=(amp,freq,ph,base,col)=>{ for(let x=0;x<W;x++){ const top=base-Math.round(amp*(0.5+0.5*Math.sin(x/W*freq+ph)));
+      for(let y=top;y<gl;y++) px(x,y,col); } };
+    hill(3,9,0.4,horizon,"#161c28");                 // far battle-line ridge
+    hill(3,5,1.6,gl-1,"#10141c"); hill(2,12,3.1,gl,"#0a0d13");  // HQ ridge (near)
+
+    // foreground ground — dug-in earthworks
+    const rg=rng(7);
+    for(let x=0;x<W;x++) for(let y=gl;y<H;y++){ const d=y-gl;
+      px(x,y, d===0?(rg()<0.5?"#3a2a1e":"#241810") : (rg()<0.16?"#0c0806":"#16100b")); }
+
+    // ---- sprite atlas: HQ silhouettes ----
+    const SPR={
+      bunker:["..ssssssssss..",".sssssssssssss","sssssssssssssss","sssAAsssssAAsss","sssAAsssssAAsss","sssssssssssssss"],
+      dish:["...rr...",".r....r","r..DD..r","r.DDDD.r","r..DD..r",".r....r","...||...","...||..."],
+      antenna:["....t","...t.","..ttt",".t...","t.t.t","..ttt",".t...t","t...t",".t.t.","..t..","..t..","..t..","..t.."],
+      tent:[".....A....","....bbb...","...bbbbb..","..bbbbbbb.","bbbbDDbbbb","rrrrrrrrrr"],
+      truck:[".cccccc..","ccccccccp.","cWcccccWp.",".o....o..."]
+    };
+    const PALS={
+      bunker:{s:"#202c38",A:"#ffc658"},
+      dish:{r:"#243240",D:"#3a4e58","|":"#1a242c"},
+      antenna:{t:"#22303c"},
+      tent:{A:"#9fc8c8",b:"#1c2730",D:"#0e1318",r:"#4a3626"},
+      truck:{c:"#1e2830",p:"#2a2018",W:"#0e1318",o:"#0a0d11"}
+    };
+    const place=(name,cx,flip)=>{ const m=SPR[name],p=PALS[name],wd=m[0].length,ht=m.length,ox=Math.round(cx-wd/2),oy=gl-ht+1;
+      for(let r=0;r<ht;r++){ const row=m[r]; for(let c=0;c<wd;c++){ const ch=row[flip?wd-1-c:c],f=p[ch]; if(f) px(ox+c,oy+r,f); } } };
+
+    // sandbag emplacement along the parapet
+    function sandbags(x0,x1){ for(let row=0;row<2;row++){ const y=gl-1-row*2;
+      for(let x=x0;x<=x1;x+=5){ for(let dx=0;dx<4;dx++){ px(x+dx,y,"#2a1e12"); px(x+dx,y-1,"#3a2a1a"); } px(x,y-1,"#5a4226"); } } }
+
+    // ---- composition: the command post strung along our ridge ----
+    place("truck",  W*0.07, false);
+    place("tent",   W*0.15, false);
+    place("bunker", W*0.30, false);
+    place("dish",   W*0.44, false);                 // radar dish (animated sweep below)
+    place("antenna",W*0.56, false);                 // tall mast (beacon below)
+    sandbags(Math.round(W*0.63), Math.round(W*0.80));
+    place("tent",   W*0.86, true);
+    place("truck",  W*0.94, true);
+
+    const dish = { x:Math.round(W*0.44), y:gl-7 };
+    const beaconTip = { x:Math.round(W*0.56), y:gl-13 };
+    // searchlight emitters anchored on the ridge, sweeping the night
+    const lights = [
+      { x:Math.round(W*0.22), base:-0.55, amp:0.45, sp:0.013, ph:0.0,  col:"150,200,200" },
+      { x:Math.round(W*0.72), base:-0.62, amp:0.40, sp:0.010, ph:2.1,  col:"180,215,215" }
+    ];
+    // artillery flash sites along the far front
+    const flashes = [];
+    const rf = rng(303);
+    for(let i=0;i<6;i++) flashes.push({ x:Math.round(rf()*W), y:horizon-1-Math.floor(rf()*2), next:Math.floor(rf()*120), life:0 });
+
+    const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let t=0;
+    function beam(L, ang){
+      const len=H*1.4, sx=L.x, sy=gl-1;
+      const ex=sx+Math.cos(ang)*len, ey=sy+Math.sin(ang)*len, spread=0.13;
+      const x1=sx+Math.cos(ang-spread)*len, y1=sy+Math.sin(ang-spread)*len;
+      const x2=sx+Math.cos(ang+spread)*len, y2=sy+Math.sin(ang+spread)*len;
+      const g=ctx.createLinearGradient(sx,sy,ex,ey);
+      g.addColorStop(0,"rgba("+L.col+",0.32)"); g.addColorStop(.5,"rgba("+L.col+",0.11)"); g.addColorStop(1,"rgba("+L.col+",0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(x1,y1); ctx.lineTo(x2,y2); ctx.closePath(); ctx.fill();
+      ctx.fillStyle="rgba("+L.col+",0.7)"; ctx.fillRect(sx-1,sy-1,2,2);   // the lamp itself
+    }
+    function frame(){
+      ctx.clearRect(0,0,W,H); ctx.drawImage(off,0,0);
+      ctx.globalCompositeOperation="lighter";
+      // sweeping searchlights
+      for(const L of lights){ const ang=L.base + L.amp*Math.sin(t*L.sp + L.ph); beam(L, ang); }
+      // radar sweep — a thin rotating spoke over the dish
+      const ra=(t*0.07)%(Math.PI*2);
+      ctx.strokeStyle="rgba(134,171,171,0.45)"; ctx.lineWidth=1; ctx.beginPath();
+      ctx.moveTo(dish.x+0.5,dish.y+0.5); ctx.lineTo(dish.x+0.5+Math.cos(-ra)*6, dish.y+0.5+Math.sin(-ra)*6); ctx.stroke();
+      ctx.globalCompositeOperation="source-over";
+      // artillery flashes on the far front
+      for(const F of flashes){
+        if(F.life>0){
+          const a=F.life/7;
+          const rgrad=ctx.createRadialGradient(F.x,F.y,0,F.x,F.y,5);
+          rgrad.addColorStop(0,"rgba(255,224,150,"+(0.9*a)+")"); rgrad.addColorStop(.5,"rgba(255,138,31,"+(0.4*a)+")"); rgrad.addColorStop(1,"rgba(255,106,31,0)");
+          ctx.fillStyle=rgrad; ctx.fillRect(F.x-5,F.y-5,10,10);
+          ctx.fillStyle="rgba(255,240,200,"+a+")"; ctx.fillRect(F.x,F.y,1,1);
+          if(!reduce) F.life--;
+        } else if(!reduce && --F.next<=0){ F.life=7; F.next=60+Math.floor(rf()*160); }
+        else if(reduce){ ctx.fillStyle="#ff8a1f"; ctx.fillRect(F.x,F.y,1,1); }   // static glow under reduced-motion
+      }
+      // antenna beacon — HUD red blink
+      if(reduce || Math.sin(t*0.2)>0){ ctx.fillStyle="#ff3b1f"; ctx.fillRect(beaconTip.x,beaconTip.y,1,1); }
+      if(!reduce) t++;
+    }
+    frame();
+    if(!reduce) setInterval(frame,90);
+  }
+
+  /* ---------- boot ---------- */
+  render();
+  buildScene(root.querySelector(".hdr__scene"));
+  connectSSE(0);
+})();
+</script>
+</body></html>
