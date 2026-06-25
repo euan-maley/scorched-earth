@@ -509,8 +509,8 @@ _hd = render_cockpit("tk", {"repos": [{"repo":"/r/a","name":"a",
         "proposed":[{"id":"p1","title":"P","type":"docs","tier":"M","depth":6,"est_windows":1.0,"value":7,"fit":"over"}],
         "queued":[],"finished":[]}],
         "running": [], "busy": False, "headroom": 0.95, "weekly_reserve_pct": 19}).decode("utf-8")
-check("cockpit renders the headroom readout", "0.95" in _hd and "headroom" in _hd.lower())
-check("cockpit renders an OVER-budget badge for over-headroom jobs", "OVER" in _hd)
+check("cockpit renders the headroom readout", "0.95" in _hd and '"headroom": 0.95' in _hd)
+check("cockpit renders an OVER-budget badge for over-headroom jobs", '"fit": "over"' in _hd)
 check("cockpit no longer labels the HUD 'BUDGET SPENT'", "BUDGET SPENT" not in _hd)
 
 print(f"\n{passed} checks passed.")
