@@ -18,8 +18,8 @@ def _job_obj(j) -> dict:
     return {
         "seq": j.seq, "id": j.id, "title": j.title, "type": (j.type or "").upper(),
         "tier": j.tier, "outcome": j.outcome, "branch": j.branch,
-        "estWindows": round(j.est_windows, 1), "diff": j.diff, "note": j.note,
-        "mergeCmd": j.merge_cmd, "discardCmd": j.discard_cmd,
+        "estWindows": round(j.est_windows, 1), "depth": j.depth, "diff": j.diff,
+        "note": j.note, "mergeCmd": j.merge_cmd, "discardCmd": j.discard_cmd,
     }
 
 

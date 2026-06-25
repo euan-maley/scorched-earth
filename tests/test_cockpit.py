@@ -363,6 +363,12 @@ _engp.run(_rp)                        # press Run
 check("paused cockpit: Run then drains the staged queue in order",
       _ran_p == ["s1", "s2"] and _io.read_queue(_rp) == [])
 
+# --- board_state job briefs carry depth ------------------------------------------
+_rb2 = tempfile.mkdtemp(); os.makedirs(os.path.join(_rb2, ".scorched"), exist_ok=True)
+with open(os.path.join(_rb2, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "g", "title": "G", "type": "test", "depth": 9, "value": 6}], _f)
+check("board_state brief carries depth", _io.board_state(_rb2)["proposed"][0]["depth"] == 9)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

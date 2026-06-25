@@ -63,6 +63,7 @@ class JobOutcome:
     tier: str
     outcome: str                      # running|pass|fail|blocked-roe|skipped-budget|pending
     est_windows: float
+    depth: int = 5                    # 1-10 agent-rated cost/depth (mirrors Job.depth)
     branch: Optional[str] = None
     diff: Optional[dict] = None       # {"files":int,"insertions":int,"deletions":int} or None
     note: str = ""
@@ -328,7 +329,8 @@ def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
     note = {"blocked-roe": f"type '{job.type}' not in unattended leash — not run.",
             "skipped-budget": "no budget left when reached."}[disposition]
     return JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
-                      outcome=disposition, est_windows=job.est_windows, note=note)
+                      outcome=disposition, est_windows=job.est_windows, depth=job.depth,
+                      note=note)
 
 
 def run_one(repo, job, roe, repo_disp, seq, *, execute, on_running=None):
@@ -337,7 +339,8 @@ def run_one(repo, job, roe, repo_disp, seq, *, execute, on_running=None):
     (any raise -> 'fail' so one job never aborts a run), then fills the result. No I/O of
     its own — the caller persists. Shared by the batch run_queue and the cockpit engine."""
     oc = JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
-                    outcome="running", est_windows=job.est_windows, branch=branch_name(job.id))
+                    outcome="running", est_windows=job.est_windows, depth=job.depth,
+                    branch=branch_name(job.id))
     if on_running:
         on_running(oc)
     try:

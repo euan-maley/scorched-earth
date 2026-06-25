@@ -170,6 +170,17 @@ check("parse_jobs: when both depth and est_windows given, depth wins",
 check("parse_jobs: a dict with neither depth nor est_windows is skipped",
       parse_jobs([{"id": "c", "value": 3}]) == [])
 
+# --- depth flows into the rendered job dicts -------------------------------------
+from scorched_earth.coa_report import _job_obj as _coa_job_obj  # noqa: E402
+from scorched_earth.review_report import _job_obj as _aar_job_obj  # noqa: E402
+_dj2 = parse_jobs([{"id": "z", "title": "Z", "type": "test", "depth": 8, "value": 7}])[0]
+check("coa_report _job_obj carries depth", _coa_job_obj(_dj2)["depth"] == 8)
+
+from scorched_earth.runner import JobOutcome  # noqa: E402
+check("aar _job_obj carries depth",
+      _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test", tier="M",
+                              outcome="pass", est_windows=1.0, depth=8))["depth"] == 8)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

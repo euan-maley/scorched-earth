@@ -173,7 +173,7 @@ def read_run_record(repo_path: str, date: Optional[str] = None):
 
 def _job_brief(j: Job) -> dict:
     return {"id": j.id, "title": j.title, "type": j.type, "tier": j.tier,
-            "est_windows": j.est_windows, "value": j.value}
+            "depth": j.depth, "est_windows": j.est_windows, "value": j.value}
 
 
 def board_state(repo_path: str) -> dict:

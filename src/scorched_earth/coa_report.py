@@ -54,6 +54,7 @@ def _job_obj(j) -> dict:
         "type": (j.type or "").upper(),
         "cost": f"{j.est_windows:.1f} win",
         "value": _value_label(j.value),
+        "depth": j.depth,
         "rationale": j.rationale,
         "command": j.launch,
     }
