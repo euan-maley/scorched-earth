@@ -336,7 +336,10 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
 
 
 def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
-    note = {"blocked-roe": f"type '{job.type}' not in unattended leash — not run."}[disposition]
+    if disposition == "blocked-roe":
+        note = f"type '{job.type}' not in unattended leash — not run."
+    else:
+        note = ""
     return JobOutcome(seq=seq, id=job.id, title=job.title, type=job.type, tier=job.tier,
                       outcome=disposition, est_windows=job.est_windows, depth=job.depth,
                       note=note)
