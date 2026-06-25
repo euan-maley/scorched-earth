@@ -69,6 +69,10 @@ _io.write_queue(_repo, [Job(id="a", repo=_repo, title="A", type="test", est_wind
 check("reorder applies the given order", [j.id for j in _io.reorder(_repo, ["c", "a", "b"])] == ["c", "a", "b"])
 check("reorder appends un-named queued jobs after",
       [j.id for j in _io.reorder(_repo, ["b"])] == ["b", "c", "a"])
+# depth must survive the queue.json round-trip (was lost: 9 -> re-derived 10)
+_io.write_queue(_repo, [Job(id="d9", repo=_repo, title="D9", type="test", est_windows=3.5, value=8, depth=9)])
+check("queue round-trip preserves depth (no re-derivation)",
+      _io.read_queue(_repo)[0].depth == 9)
 
 
 # --- Task 4: board_state assembler ------------------------------------------------

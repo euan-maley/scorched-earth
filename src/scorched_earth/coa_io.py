@@ -93,8 +93,9 @@ def _queue_path(repo_path: str) -> str:
 def _job_to_dict(j: Job) -> dict:
     return {
         "id": j.id, "repo": j.repo, "title": j.title, "type": j.type,
-        "est_windows": j.est_windows, "value": j.value, "rationale": j.rationale,
-        "launch": j.launch, "verify": j.verify, "status": j.status,
+        "est_windows": j.est_windows, "value": j.value, "depth": j.depth,
+        "rationale": j.rationale, "launch": j.launch, "verify": j.verify,
+        "status": j.status,
     }
 
 
