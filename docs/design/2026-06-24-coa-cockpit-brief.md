@@ -4,13 +4,13 @@
 
 **For:** Claude design (HTML mockup generation)
 **Date:** 2026-06-24
-**Context:** Scorched Earth, a Claude-usage tool. This brief is for the **COA Cockpit** — the live command surface you use to enqueue, reorder, and monitor jobs while the autonomous queue-runner drains them. It is the fourth sibling of the sitrep, COA report, and AAR, and must feel like the same product.
+**Context:** Scorched Earth, a Claude-usage tool. This brief is for the **COA Cockpit** - the live command surface you use to enqueue, reorder, and monitor jobs while the autonomous queue-runner drains them. It is the fourth sibling of the sitrep, COA report, and AAR, and must feel like the same product.
 
 ## What this is
 
 Scorched Earth signals when to burn down your weekly Claude budget. The COA advisor builds the work plan; the queue-runner drains it overnight. The **COA Cockpit** is the browser UI that bridges the two: a live, event-driven kanban board served on localhost that lets you drag proposed jobs into the queue, reorder the queue, stop or resume the runner, and watch jobs transition through states in real time.
 
-The cockpit is served by `scorch coa --serve`, which starts a `make_server`-based localhost server (see `src/scorched_earth/coa_serve.py`). `render_cockpit(token, state)` fills the template and returns UTF-8 bytes. The page then keeps itself live via a Server-Sent Events (SSE) stream — no full reloads.
+The cockpit is served by `scorch coa --serve`, which starts a `make_server`-based localhost server (see `src/scorched_earth/coa_serve.py`). `render_cockpit(token, state)` fills the template and returns UTF-8 bytes. The page then keeps itself live via a Server-Sent Events (SSE) stream - no full reloads.
 
 ## Visual language (match the sitrep, COA, and AAR)
 
@@ -18,7 +18,7 @@ Same 8-bit war / scorched-earth aesthetic. Reuse it exactly so all four surfaces
 
 - **Palette:** background `#0b0705`; fire accents `#ff3b1f`, `#ff6a1f`, `#ff8a1f`, `#ffd24a`, `#ffe7a0`; muted text `#f4e4c8` / `#e9c08a`; HUD teal `#86abab` / `#6f8a8a`; charred `#1a120b`; soil/brown `#6b4a2b`; secured/green for finished-pass jobs `#7bb04a` / `#9fd36a`.
 - **Type:** monospace, pixel feel (`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`), wide letter-spacing on headings.
-- **Frame:** corner HUD brackets, faint CRT scanline overlay, vignette — same as the sitrep/COA/AAR panel.
+- **Frame:** corner HUD brackets, faint CRT scanline overlay, vignette - same as the sitrep/COA/AAR panel.
 - **Headline treatment:** the title uses the animated fire-gradient sweep (the `.firetext` effect, as on "BURN IT ALL" and the AAR header).
 - **Register:** military. The cockpit is the **operations room**: the general watching the board, moving pieces, issuing orders. Voice is terse, command-oriented.
 - **Respect `prefers-reduced-motion`:** all fire/ember animations must freeze under it.
@@ -31,15 +31,15 @@ The cockpit is a **four-column kanban board** with a **per-repo tab toggle** whe
 
 1. **Header.** "COA COCKPIT", a sector/date stamp, corner-bracket frame, fire-gradient title. Show a `● LIVE` tag (pulsing) while the engine is busy; `● IDLE` when not.
 
-2. **Repo tabs.** When `STATE.repos` has more than one entry, render a tab strip — one tab per repo (labeled `repo.name`). Active tab shows that repo's kanban columns. Single-repo installs skip the tab strip.
+2. **Repo tabs.** When `STATE.repos` has more than one entry, render a tab strip - one tab per repo (labeled `repo.name`). Active tab shows that repo's kanban columns. Single-repo installs skip the tab strip.
 
 3. **Kanban columns (four, left to right):**
-   - **PROPOSED** — jobs available to queue (from `repo.proposed`). Draggable out into QUEUED.
-   - **QUEUED** — jobs waiting to run (from `repo.queued`). Draggable to reorder within the column.
-   - **RUNNING** — at most one card, the currently executing job (from `STATE.running` where `running.repo === repo.repo`). Not draggable.
-   - **DONE** — completed jobs (from `repo.finished`). Pass cards in secured/green, fail cards charred.
+   - **PROPOSED** - jobs available to queue (from `repo.proposed`). Draggable out into QUEUED.
+   - **QUEUED** - jobs waiting to run (from `repo.queued`). Draggable to reorder within the column.
+   - **RUNNING** - at most one card, the currently executing job (from `STATE.running` where `running.repo === repo.repo`). Not draggable.
+   - **DONE** - completed jobs (from `repo.finished`). Pass cards in secured/green, fail cards charred.
 
-4. **Job cards.** Each card shows: `id` (monospace, small), `title`, `type` tag, and — for DONE cards — the outcome badge (SECURED / CRATERED).
+4. **Job cards.** Each card shows: `id` (monospace, small), `title`, `type` tag, and - for DONE cards - the outcome badge (SECURED / CRATERED).
 
 5. **Status bar.** A one-line footer: jobs done / total, budget spent estimated, engine state (IDLE / WORKING / STOPPED).
 
@@ -49,15 +49,15 @@ The cockpit is a **four-column kanban board** with a **per-repo tab toggle** whe
 - **Drag to reorder within Queued:** fires `POST /reorder` with `{repo, ids}` (the new full ordered id list).
 - **Stop button (header):** fires `POST /stop`.
 - **Run button (header):** fires `POST /run` with `{repo}` for the active repo tab.
-- All POSTs carry the `X-Scorch-Token` header. The body contains **job ids only** — never commands, never shell strings.
+- All POSTs carry the `X-Scorch-Token` header. The body contains **job ids only** - never commands, never shell strings.
 
 ### Live updates (SSE)
 
-On connect the page opens `GET /events?t=TOKEN` (same-origin EventSource). The server emits `event: board` whenever board state changes (job enqueued, job started, job finished, stop/run). On each `board` event the page **patches the DOM in place** — no full reload, no flicker. The `render(state)` function is idempotent: call it with the new state and it rebuilds only what changed.
+On connect the page opens `GET /events?t=TOKEN` (same-origin EventSource). The server emits `event: board` whenever board state changes (job enqueued, job started, job finished, stop/run). On each `board` event the page **patches the DOM in place** - no full reload, no flicker. The `render(state)` function is idempotent: call it with the new state and it rebuilds only what changed.
 
 ## Security note
 
-Every POST sends the `X-Scorch-Token` header (value = `TOKEN`). The server validates it; absent or wrong token → 403. The body carries **job ids only**. The server never reads `cmd`, `launch`, or any shell-string field from the body — those fields are ignored even if sent. The cockpit HTML must never construct or send shell commands.
+Every POST sends the `X-Scorch-Token` header (value = `TOKEN`). The server validates it; absent or wrong token → 403. The body carries **job ids only**. The server never reads `cmd`, `launch`, or any shell-string field from the body - those fields are ignored even if sent. The cockpit HTML must never construct or send shell commands.
 
 ## Data contract
 
@@ -68,7 +68,7 @@ const TOKEN = __COCKPIT_TOKEN__;   // injected: JSON-encoded string, e.g. "abc-1
 const STATE = __COCKPIT_JSON__;    // injected: the board state object (see shape below)
 ```
 
-`render_cockpit` does a literal string replacement of the tokens `__COCKPIT_TOKEN__` and `__COCKPIT_JSON__` with `json.dumps(token)` and `json.dumps(state)` respectively. The template must contain each token exactly once (at the two `const` assignment sites above) and nowhere else — not in comments, not in strings.
+`render_cockpit` does a literal string replacement of the tokens `__COCKPIT_TOKEN__` and `__COCKPIT_JSON__` with `json.dumps(token)` and `json.dumps(state)` respectively. The template must contain each token exactly once (at the two `const` assignment sites above) and nowhere else - not in comments, not in strings.
 
 ### `state_json` shape
 

@@ -23,7 +23,7 @@ scorch --style off       # no statusline light (CLI / skill only)
 ```
 
 When a user first installs the plugin, it's fine to ask which style they'd like and set
-it for them — that's the natural place for the install-time choice.
+it for them - that's the natural place for the install-time choice.
 
 ## Other knobs
 
@@ -54,7 +54,7 @@ These are occasional, so handle them conversationally here rather than as separa
       setup"): read `setup.md` from this skill's own directory (the same directory
       this SKILL.md lives in); if you can't locate it there, try
       `~/scorched-earth/skills/scorched-earth/setup.md`. It ends with the normal
-      readout — stop following these steps, setup.md takes over from here.
+      readout - stop following these steps, setup.md takes over from here.
    2. **Otherwise**, check the sentinel:
 
       ```bash
@@ -89,8 +89,8 @@ These are occasional, so handle them conversationally here rather than as separa
 
 ## The sitrep (HTML report)
 
-If the user wants the full visual dashboard — the 8-bit war / scorched-earth crop-field
-HUD with the pixel farm and burn-mode fire — generate it with the `/sitrep` command, or
+If the user wants the full visual dashboard - the 8-bit war / scorched-earth crop-field
+HUD with the pixel farm and burn-mode fire - generate it with the `/sitrep` command, or
 directly:
 
 ```bash

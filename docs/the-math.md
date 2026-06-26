@@ -42,7 +42,7 @@ one full window  =  R  of the weekly budget   (e.g. R = 0.07 → a maxed window 
 
 R is a **constant for a plan** (the ratio of the 5h cap to the weekly cap; Claude
 exposes no per-model bucket, so both percentages share one underlying unit). We don't
-hardcode it — we **measure** it from the user's own data: across two snapshots where
+hardcode it - we **measure** it from the user's own data: across two snapshots where
 the 5h window didn't reset, `Δw / Δh` (with Δh in window-units) estimates R. A rolling
 median over clean samples is stable and self-correcting. See `calibrate.py`.
 
@@ -63,7 +63,7 @@ green light as advisory on multi-bucket plans rather than gospel.
 
 ## The recommendation
 
-**Per-window burn target** — to spend the remaining weekly budget evenly across the
+**Per-window burn target** - to spend the remaining weekly budget evenly across the
 remaining windows, each window should consume this fraction of one 5h window:
 
 ```
@@ -72,12 +72,12 @@ target_per_window = (weekly_left / windows_left) / (R × 100)     # as a fractio
 
 - `target_per_window ≥ 1.0` → **🟢 GREEN, scorched earth.** You cannot spend your
   remaining weekly budget even by maxing every remaining window. Pacing wastes
-  credits — burn 100% every window.
+  credits - burn 100% every window.
 - `0.70 ≤ target_per_window < 1.0` → **🟡 AMBER.** Burn hard; you're close to the line.
 - `target_per_window < 0.70` → **low (no rush) / off.**
-  - **`low`** — deep reserves and plenty of time; the statusline shows `⚪ no rush`. No
+  - **`low`** - deep reserves and plenty of time; the statusline shows `⚪ no rush`. No
     urgency; pace normally.
-  - **`off`** — budget-exhausted terminal state: weekly budget is spent, no credits left.
+  - **`off`** - budget-exhausted terminal state: weekly budget is spent, no credits left.
 
 The verdict `level` enum is therefore five states: `green | amber | low | off | unknown`.
 
@@ -104,13 +104,13 @@ Plan where a maxed window burns ~7% of the week (`R = 0.07`).
 
 ## The forecast layer (preemptive nudge)
 
-The 🟢 light above is *certain* but late — it only fires when maxing out is the
+The 🟢 light above is *certain* but late - it only fires when maxing out is the
 **only** way to spend the budget. In practice almost nobody uses 100% of every window,
 so a second, earlier signal asks: **at your habitual pace, are you trending to leave
 budget unused?** (See `habits.py`.)
 
 We keep a rolling, cross-week history of weekly-usage observations and learn a
-**day-of-week consumption profile** — how much of the weekly budget you typically burn
+**day-of-week consumption profile** - how much of the weekly budget you typically burn
 on a Monday, a Saturday, etc. Then we project the rest of this week:
 
 ```
@@ -129,5 +129,5 @@ resets counts only the fraction before the reset.
   the `scorch` readout always, and as a **once-per-week desktop notification** only once
   confidence is `medium`+ (so we don't nudge on a noisy week-1 guess).
 
-This is a forecast, not a guarantee — the 🟢 light remains the certain signal; the 🔥
+This is a forecast, not a guarantee - the 🟢 light remains the certain signal; the 🔥
 nudge is the "you'll probably waste credit if you keep coasting" heads-up.

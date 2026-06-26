@@ -4,10 +4,10 @@ How to rebuild this project from scratch.
 
 ## Tech Stack
 
-- **Python 3 (stdlib only)** for the core math, CLI, and state — Python is already
+- **Python 3 (stdlib only)** for the core math, CLI, and state - Python is already
   invoked inside the host statusline, and stdlib-only keeps the statusline hot path
   dependency-free and fast.
-- **Bash** for the thin statusline segment and the installer — that's the statusline
+- **Bash** for the thin statusline segment and the installer - that's the statusline
   contract Claude Code expects.
 
 ## Setup
@@ -22,13 +22,13 @@ No pip dependencies. Requires **`python3` ≥ 3.8** on PATH (ships with macOS; `
 python3` / `dnf install python3` on Linux). Cross-platform note: the core light and CLI work
 anywhere Python does; the once-per-week desktop **notification** and the `--sitrep` auto-open
 use macOS (`osascript`/`open`) with a Linux fallback (`notify-send`/`xdg-open`), and silently
-no-op elsewhere — the sitrep file is still written either way.
+no-op elsewhere - the sitrep file is still written either way.
 
 ## Architecture
 
 Claude Code pipes a JSON object to the statusline command on stdin. It contains
 `rate_limits.five_hour` and `rate_limits.seven_day`, each `{ used_percentage,
-resets_at }` (resets_at = unix seconds). That is the single source of truth — the
+resets_at }` (resets_at = unix seconds). That is the single source of truth - the
 same data `/usage` shows. No API calls, no log scraping.
 
 Flow:
@@ -45,12 +45,12 @@ Flow:
    outside the statusline (terminal, in-session).
 
 State lives under `~/.claude/scorched-earth/`:
-- `state.json` — latest snapshot + computed recommendation.
-- `calibration.json` — rolling samples and the current R estimate.
+- `state.json` - latest snapshot + computed recommendation.
+- `calibration.json` - rolling samples and the current R estimate.
 
 ## Integrations
 
-- **Claude Code statusline** — consumes `rate_limits` from stdin JSON
+- **Claude Code statusline** - consumes `rate_limits` from stdin JSON
   (https://code.claude.com/docs/en/statusline.md). `rate_limits` is present only for
   Pro/Max subscribers and only after the first API response of a session; each bucket
   may be independently absent. Always degrade gracefully.
@@ -68,14 +68,14 @@ plugin/skill; install flow asks the user how they want the light displayed.
 - R needs a few samples that straddle real usage before it's trustworthy. Until then,
   the readout marks the estimate as provisional and can prompt the user for a starting
   value (their plan / observed windows-per-week).
-- The 5h window resets independently of the weekly window — `windows_left` must count
+- The 5h window resets independently of the weekly window - `windows_left` must count
   the partial current window plus full windows up to the weekly reset.
 - **Straddle correction:** the current window's unused capacity is also capped by the time
   left before the *weekly* reset (`min(current_remaining, secs_to_weekly / WINDOW_SECONDS)`).
   Without this, a window straddling the weekly reset credits next week's capacity to this
   week and can flip the verdict (green→amber). Tested by "straddle: still green …".
 - **Cold-start forecast guard:** the linear fallback refuses to extrapolate when < 1 day of
-  the weekly cycle has elapsed (or the reset is > 7 days out, i.e. clock skew) — otherwise the
+  the weekly cycle has elapsed (or the reset is > 7 days out, i.e. clock skew) - otherwise the
   rate inflates several-fold (the old `max(0.25, elapsed)` floor) or goes negative. It returns
   a `low`/"too early in the cycle to forecast" result that assumes full spend (no false nudge).
 - **Windows are sleep-discounted.** Counting every rolling 5h window (including overnight)
@@ -83,7 +83,7 @@ plugin/skill; install flow asks the user how they want the light displayed.
   future tail by `active_hours/24`; `habits.active_hours` learns active hours from when the
   statusline fires (16h fallback). The current window isn't discounted (you're awake in it).
 - **R can't be read live**, only estimated from Δweekly%/Δ5h% over time. Guard it: discard
-  out-of-band per-pair estimates (`R_MIN..R_MAX`, ~1–20%) and hold the default until
+  out-of-band per-pair estimates (`R_MIN..R_MAX`, ~1-20%) and hold the default until
   `MIN_PAIRS` clean pairs. A single noisy pair (e.g. 0.25) will otherwise swing the verdict.
 - **Forecast is capped by capacity:** `habits.forecast(max_burnable=...)` caps
   `expected_remaining`, so projected leftover is never lower than the physical floor.
@@ -91,12 +91,12 @@ plugin/skill; install flow asks the user how they want the light displayed.
   from the snapshot (not the cached `state.json` fields) and re-estimates R from calibration,
   so verdict/voice/projections never go stale. Canonical `HEADLINE` lives in `core.py`.
 - **Fire animation:** the burn-mode fire is a continuously-animated canvas. Playwright
-  screenshots time out on it — verify the report by opening it (`scorch --report`), not by
+  screenshots time out on it - verify the report by opening it (`scorch --report`), not by
   screenshot. Consider pausing on `visibilitychange` later.
 - **Skill-file cross-references must not be CWD-relative.** When a skill's markdown tells
   Claude to read a sibling file (e.g. SKILL.md → `setup.md`), a bare relative path resolves
   against the user's working directory and breaks whenever the skill is invoked from any repo
-  other than the plugin root — the common case. Reference it via the skill's own directory
+  other than the plugin root - the common case. Reference it via the skill's own directory
   (the harness provides the skill base dir on invocation) with an absolute `~/scorched-earth/
   skills/...` fallback, mirroring the `scorch || ~/scorched-earth/bin/scorch` PATH pattern.
 
@@ -122,13 +122,13 @@ gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast 
 a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
 marketplace + installer. War-general voice throughout. The statusline now shows three tiers,
 not two: the lowest verdict surfaces a visible **`⚪ no rush`** (deep reserves) instead of
-going blank — `compute()`'s old overloaded `off` was split into `low` (no rush) and `off`
+going blank - `compute()`'s old overloaded `off` was split into `low` (no rush) and `off`
 (weekly budget exhausted), each with its own banner. The `/scorched-earth` skill opens with a
 **first-run setup** (sentinel-gated `~/.claude/scorched-earth/onboarded`): it primes Claude on
 the model, tours the user, sets the light style, and links repos, then falls through to the
 verdict; re-runnable, and never loaded once onboarded. Phase 2a (COA queue-runner) and Phase
 2b (live cockpit) are built and DEFCON-native: jobs are rated by criticality (DEFCON 1-5,
-1 = most critical) — budget estimation removed. ROE gates DEFCON 1-2 jobs behind
+1 = most critical) - budget estimation removed. ROE gates DEFCON 1-2 jobs behind
 `auto_run_min_defcon` approval; `max_jobs` caps the run. The runner drains in DEFCON order
 and halts on the real usage-limit (no predicted envelope). The scan role hunts overnight
 DEFCON-1 campaigns. The cockpit kanban pushes live SSE board state per repo. All reports

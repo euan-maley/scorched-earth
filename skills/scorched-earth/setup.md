@@ -1,12 +1,12 @@
-# Scorched Earth — First-Run Setup
+# Scorched Earth - First-Run Setup
 
 You are Claude, running the guided first-run setup for the Scorched Earth plugin.
-Work through the five steps below in order. Deliver the experience conversationally —
+Work through the five steps below in order. Deliver the experience conversationally -
 the user does not see this file directly.
 
 ---
 
-## STEP 1 — Familiarize yourself (silent — no user output yet)
+## STEP 1 - Familiarize yourself (silent - no user output yet)
 
 Read this primer so you can guide knowledgeably. **Caveat:** this primes the
 **current session only**. Claude is not persistently trained across sessions;
@@ -20,20 +20,20 @@ statusline's live rate-limit data and emits a **hard signal** when remaining
 budget can only be spent by maxing every remaining 5-hour window.
 
 The signal has four tiers:
-- **🟢 green** — you literally cannot spend the weekly budget unless you max
+- **🟢 green** - you literally cannot spend the weekly budget unless you max
   every remaining 5-hour window. Guaranteed green light: torch it all.
-- **🟡 amber** — close but not yet guaranteed. Sustain ~N% of each remaining
+- **🟡 amber** - close but not yet guaranteed. Sustain ~N% of each remaining
   window and all budget is spent by reset. Hold the line.
 - **⚪ low ("no rush")**: deep reserves. Even a light pace clears the budget by reset.
   No rationing needed; advance as hard as you like.
 - **off**: weekly budget fully spent. The light goes empty; nothing left to ration until reset.
-- **❔ unknown** — no live snapshot yet (statusline needs a reading from an
+- **❔ unknown** - no live snapshot yet (statusline needs a reading from an
   active Claude Code session) or R is not calibrated.
 
-### R — the self-measured conversion factor
+### R - the self-measured conversion factor
 
 **R** is the fraction of the weekly cap that one full 5-hour window burns.
-It is self-measured from the user's own statusline deltas — not hardcoded.
+It is self-measured from the user's own statusline deltas - not hardcoded.
 With R and the current budget readings, the math asks: does maxing every
 remaining window exactly exhaust the weekly cap? If yes → green.
 
@@ -44,7 +44,7 @@ manually (`scorch --set-r <value>`) or used for a single readout only
 ### The sitrep
 
 `/sitrep` (or `scorch --sitrep`) generates a self-contained HTML war/crop-field
-HUD — an 8-bit pixel farm with a Stardew-style field showing LAST WEEK / AVERAGE
+HUD - an 8-bit pixel farm with a Stardew-style field showing LAST WEEK / AVERAGE
 / THIS WEEK burn history, live countdowns, and the burn verdict. Same data source
 as the CLI readout; richer visual.
 
@@ -53,9 +53,9 @@ as the CLI readout; richer visual.
 The COA (Course of Action) advisor proposes a prioritized queue of jobs from
 linked repos and plans what to run during a burn window.
 
-**DEFCON 1–5 criticality:**
+**DEFCON 1-5 criticality:**
 - DEFCON 1 = biggest blast radius, highest risk, most disruptive. Needs the
-  most careful review before running. NOT "do first" — it means "highest
+  most careful review before running. NOT "do first" - it means "highest
   stakes." Think: production migrations, cross-repo refactors.
 - DEFCON 5 = low-stakes background task (docs, tests, lints). Safe to run
   unattended.
@@ -68,7 +68,7 @@ default of 3, DEFCON 3/4/5 jobs auto-run; DEFCON 1/2 need a thumbs-up first.
 Configurable per-repo via `/roe`.
 
 **Queue-runner:** Drains `.scorched/queue.json` in DEFCON order under the ROE
-leash. Halts on a real usage-limit hit — no budget envelope. Started with
+leash. Halts on a real usage-limit hit - no budget envelope. Started with
 `scorch coa run`.
 
 **Live war-room cockpit (`/war-room`):** Launches a 127.0.0.1 HTTP server
@@ -77,10 +77,10 @@ board state live to the browser. One-time access token for safety. Started
 with `scorch coa --serve`.
 
 **Entry points (slash commands):**
-- `/coa` — generate a Course of Action (what to run this burn window)
-- `/roe` — view and edit the Rules of Engagement (limits, approval gates,
+- `/coa` - generate a Course of Action (what to run this burn window)
+- `/roe` - view and edit the Rules of Engagement (limits, approval gates,
   allowed job types)
-- `/war-room` — open the live cockpit; `/war-room stop` kills it
+- `/war-room` - open the live cockpit; `/war-room stop` kills it
 
 Repos must be linked (`scorch link <path>`) before `/coa` or `/war-room` do
 anything useful. Jobs are defined in `.scorched/jobs.json` within each repo.
@@ -89,16 +89,16 @@ Once you have read this primer, proceed to STEP 2.
 
 ---
 
-## STEP 2 — Explain to the user
+## STEP 2 - Explain to the user
 
 Give a short, conversational tour (a few sentences, not a wall of text):
 
-1. **The statusline light** — the 🔥/🟢/🟡/⚪ signal in their Claude Code
+1. **The statusline light** - the 🔥/🟢/🟡/⚪ signal in their Claude Code
    statusline tells them at a glance whether to burn hard. Green means every
    remaining 5-hour window must be maxed or some weekly budget is forfeit.
-2. **`/sitrep`** — the full visual dashboard: pixel-farm HUD, burn history,
+2. **`/sitrep`** - the full visual dashboard: pixel-farm HUD, burn history,
    live countdown. Run it any time they want the whole picture.
-3. **The COA advisor + `/war-room`** — once repos are linked, `/coa` proposes
+3. **The COA advisor + `/war-room`** - once repos are linked, `/coa` proposes
    a DEFCON-rated job queue and `/war-room` opens a live kanban cockpit to
    drain it during a burn window.
 4. **This setup runs once.** They can redo it any time:
@@ -107,19 +107,19 @@ Give a short, conversational tour (a few sentences, not a wall of text):
 
 ---
 
-## STEP 3 — Pick the light style
+## STEP 3 - Pick the light style
 
 Ask the user which statusline style they'd like. Present the options:
 
 | Style     | Appearance                                          |
 |-----------|-----------------------------------------------------|
-| `fire`    | 🔥 BURN IT ALL (animated flames — the default)      |
+| `fire`    | 🔥 BURN IT ALL (animated flames - the default)      |
 | `emoji`   | 🟢 BURN IT ALL / 🟡 burn N%                        |
 | `text`    | BURN IT ALL / burn N% (colored words, no emoji)     |
 | `minimal` | ● green / ● amber dot                              |
 | `off`     | no statusline light (CLI / skill only)              |
 
-If they have no preference, keep `fire` — the install hook already seeded it.
+If they have no preference, keep `fire` - the install hook already seeded it.
 Once they choose, set it:
 
 ```bash
@@ -130,11 +130,11 @@ The command prints the style name and a preview. Confirm the choice aloud.
 
 ---
 
-## STEP 4 — Link repos (optional)
+## STEP 4 - Link repos (optional)
 
 Explain that the COA advisor watches linked repos for `.scorched/jobs.json`
 (job definitions). A user who only wants the green-light signal can **skip
-this step** — the COA features stay idle until they link something later.
+this step** - the COA features stay idle until they link something later.
 
 If they want to link repos:
 - Accept pasted absolute paths.
@@ -156,7 +156,7 @@ scorch link /absolute/path/to/repo 2>/dev/null || ~/scorched-earth/bin/scorch li
 
 The command prints "Linked /resolved/path" on success and adds `.scorched/`
 to the repo's `.gitignore` so linking never dirties the working tree. Surface
-that output — do not fabricate success if the command errors.
+that output - do not fabricate success if the command errors.
 
 After all repos are linked, confirm the full registry:
 
@@ -169,7 +169,7 @@ with `scorch link <path>` or by redoing this setup.
 
 ---
 
-## STEP 5 — Finish
+## STEP 5 - Finish
 
 1. Ensure the state directory exists and write the sentinel:
 
@@ -205,10 +205,10 @@ with `scorch link <path>` or by redoing this setup.
 
 To redo setup at any time:
 
-- **Ask in-session:** Say "redo scorched-earth setup" or "re-run setup" —
+- **Ask in-session:** Say "redo scorched-earth setup" or "re-run setup" -
   SKILL.md routes to this file even when the sentinel is present.
 - **Manual reset:** `rm ~/.claude/scorched-earth/onboarded`, then invoke
-  `/scorched-earth` — the gate detects the missing sentinel and runs setup
+  `/scorched-earth` - the gate detects the missing sentinel and runs setup
   again automatically.
 
 When re-running, read `setup.md` from this skill's own directory (the same
