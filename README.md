@@ -2,6 +2,8 @@ https://github.com/user-attachments/assets/52706f21-19d8-49f1-b5cc-1a5ec865a508
 
 # Scorched Earth
 
+*Claude Code plugin for weekly Claude usage and rate-limit tracking, with a DEFCON-ranked autonomous task runner (Course of Action) for your linked repos.*
+
 A green light for your Claude usage. It tells you when your remaining **weekly**
 budget can no longer be spent unless you max out **every remaining 5-hour
 window**, so you never leave credits on the table at the weekly reset.
