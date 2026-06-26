@@ -93,7 +93,7 @@ def _notify(title: str, subtitle: str, msg: str) -> bool:
         )
         return True
     if shutil.which("notify-send"):
-        subprocess.run(["notify-send", f"{title} — {subtitle}", msg],
+        subprocess.run(["notify-send", f"{title}: {subtitle}", msg],
                        check=False, capture_output=True)
         return True
     return False
@@ -115,7 +115,7 @@ def _maybe_notify_forecast(fc, weekly_reset) -> None:
             pass
         left = fc.projected_leftover or 0
         end = fc.projected_end_used or 0
-        msg = (f"Tracking to {end:.0f}% used — {left:.0f}% left to burn before reset. "
+        msg = (f"Tracking to {end:.0f}% used, {left:.0f}% left to burn before reset. "
                f"Deploy it.")
         if _notify("Scorched Earth", "Torch it all. Leave them nothing.", msg):
             with open(marker, "w") as f:

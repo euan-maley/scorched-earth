@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Scorched Earth — Course of Action</title>
+<title>Scorched Earth: Course of Action</title>
 <!--
   COURSE OF ACTION (COA) — DEFCON-ordered work plan. Sibling of the weekly SITREP;
   same scorched-earth war-HUD look. Single self-contained file, no external assets/CDNs,
@@ -275,7 +275,7 @@ var TOKEN = __COA_TOKEN__;
           ${job.approval_required ? approvalBadge() : ""}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
-        <div class="job__cmd" title="Run/execute command — copy this into a Claude session to launch the job"><span class="px">&#9656;</span><span class="job__cmdlbl">RUN CMD</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
+        <div class="job__cmd" title="Run/execute command. Copy this into a Claude session to launch the job"><span class="px">&#9656;</span><span class="job__cmdlbl">RUN CMD</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
       </div>
       <div class="job__meta">
         <div class="job__value" style="font-size:20px;">${esc(job.value)}</div>
@@ -287,7 +287,7 @@ var TOKEN = __COA_TOKEN__;
   function blockedCard(job){
     return `
     <div class="job job--dim" style="border-left:3px solid #3a2615;">
-      <div class="job__rank">&mdash;</div>
+      <div class="job__rank">-</div>
       <div class="job__body">
         <div class="job__head">
           ${defconBadge(job.defcon)}

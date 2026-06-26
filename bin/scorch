@@ -77,7 +77,7 @@ def parse_when(val):
 
 def fmt_dur(seconds):
     if seconds is None:
-        return "—"
+        return "-"
     seconds = max(0, int(seconds))
     d, rem = seconds // 86400, seconds % 86400
     h, m = rem // 3600, (rem % 3600) // 60
@@ -238,7 +238,7 @@ def _coa_cli(raw):
         coa = advisor.match(coa_io.load_jobs(repo), roe)
         print(f"\n=== {repo} ===")
         if not coa.queue and not coa.blocked:
-            print("No jobs found yet — run the scan first (/coa), then advise. (Skipping a blank report.)")
+            print("No jobs found yet. Run the scan first (/coa), then advise. (Skipping a blank report.)")
             continue
         print(coa.note)
         for j in coa.queue:
@@ -246,7 +246,7 @@ def _coa_cli(raw):
             print(f"  DEFCON {j.defcon}  {j.title or j.id}{mark}")
         repo_coas.append((repo, coa))
     if not repo_coas:
-        print("\nNothing to report — no jobs in any linked repo yet. Scan first with /coa.")
+        print("\nNothing to report: no jobs in any linked repo yet. Scan first with /coa.")
         return 0
     # One combined, tabbed HTML across every repo with jobs; keep the per-repo md as the record.
     html = coa_report.render_html(None, date, repos=repo_coas, verdict=level,
@@ -302,7 +302,7 @@ def _coa_run_cli(rest):
         # The runner halts on the real usage limit, not a budget gate; but we still need a live
         # snapshot to plan against, so refuse cleanly if there isn't one yet.
         if not _has_usable_snapshot(state):
-            print("No live budget reading yet — open a Claude Code session, then queue.")
+            print("No live budget reading yet. Open a Claude Code session, then queue.")
             return 0
         roe = coa_io.load_roe(repo)
         coa = advisor.match(coa_io.load_jobs(repo), roe)
@@ -323,7 +323,7 @@ def _coa_run_cli(rest):
         state = st.load_state()
         now = int(_time.time())
         if runner.is_stale(state, now):
-            print("No fresh budget snapshot — open a Claude Code session so the statusline "
+            print("No fresh budget snapshot. Open a Claude Code session so the statusline "
                   "captures a reading, then run again. (The runner can't read usage live.)")
             return 0
         for repo in repos:

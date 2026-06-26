@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Scorched Earth — After-Action Report</title>
+<title>Scorched Earth: After-Action Report</title>
 <!--
   AFTER-ACTION REPORT (AAR) — the runner review. Third sibling of the weekly SITREP
   and the COURSE OF ACTION; same scorched-earth war-HUD look. Single self-contained
@@ -265,7 +265,7 @@ const AAR = __REVIEW_JSON__;
     const fire = s.live ? " ember" : "";
     const inner = j.outcome==="fail"
       ? "background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.4) 0 2px,transparent 2px 5px);" : "";
-    return `<span class="cell${fire}" title="${esc(j.id)} — ${esc(s.label)}" style="background:${s.cell};${border}${inner}color:${s.cellTxt};">
+    return `<span class="cell${fire}" title="${esc(j.id)}: ${esc(s.label)}" style="background:${s.cell};${border}${inner}color:${s.cellTxt};">
       <small>${j.seq}</small>${esc(s.glyph)}</span>`;
   }
 

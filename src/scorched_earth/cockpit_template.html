@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Scorched Earth — War Room</title>
+<title>Scorched Earth: War Room</title>
 <!--
   COA COCKPIT — the live command surface. Fourth sibling of the weekly SITREP, the
   COURSE OF ACTION, and the AFTER-ACTION REPORT; same scorched-earth war-HUD look.
@@ -221,7 +221,7 @@
       <div class="col__body" data-body="queued"></div>
     </div>
     <div class="col" data-col="running" style="--c:var(--fire)">
-      <div class="col__hd" style="border-top-color:var(--fire)"><span class="l">RUNNING</span><span class="col__cnt" data-cnt="running">&mdash;</span></div>
+      <div class="col__hd" style="border-top-color:var(--fire)"><span class="l">RUNNING</span><span class="col__cnt" data-cnt="running">-</span></div>
       <div class="col__body" data-body="running"></div>
     </div>
     <div class="col" data-col="finished" style="--c:var(--secured)">
@@ -233,7 +233,7 @@
   <div class="statusbar">
     <div class="sb__group" id="sbStats"></div>
     <div class="sb__group">
-      <div class="sb__stat"><span>WEEKLY RESERVE</span><b id="sbReserve">&mdash;</b><span>%</span></div>
+      <div class="sb__stat"><span>WEEKLY RESERVE</span><b id="sbReserve">-</b><span>%</span></div>
       <div class="sb__sep"></div>
       <span class="sb__engine" id="sbEngine"></span>
     </div>
@@ -468,7 +468,7 @@ const STATE = __COCKPIT_JSON__;
     // weekly reserve context readout
     const resEl = document.getElementById("sbReserve");
     const wrp = state.weekly_reserve_pct;
-    resEl.textContent = wrp != null ? Math.round(wrp) : "—";
+    resEl.textContent = wrp != null ? Math.round(wrp) : "-";
 
     const eng = document.getElementById("sbEngine");
     if(state.busy){ eng.style.borderColor="#ff6a1f"; eng.style.color="#ff8a3f";
