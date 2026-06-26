@@ -9,13 +9,15 @@
 - [x] **Statusline double-burn fix**: the wrapper suppresses its own token when the inner statusline already emits the segment (detected from the inner *source*, since the fire gradient randomizes colors so output comparison can't spot the dup).
 - [x] **Demo-video DEFCON COA swap DONE** (the long-open pt.2/pt.4 item): rebuilt the CRT tour with the DEFCON COA page, boot/shutdown CRT screens, and a synthesized ambient bed; compressed under 10MB at `~/Downloads/scorched-earth-demo.mp4` (BIOS reads v2.6.9). Pipeline preserved at `~/Downloads/scorched-earth-captures/_pipeline/`.
 - [x] **SEO**: GitHub description rewritten + 15 topics added (was none), README keyword subtitle, marketplace keywords widened, v2.7.0 Release, fixed a broken README mp4 link.
-- [x] **Docs audit**: aligned the public md files to current behavior (low vs off tier labels in SKILL.md + setup.md, the war-room "shared budget" line, served-COA gaps in README/playbook, "superseded" banners on the 3 design briefs).
+- [x] **Docs audit**: aligned the public md files to current behavior (low vs off tier labels in SKILL.md + setup.md, the war-room "shared budget" line, served-COA gaps in README/playbook, "superseded" banners on the 3 design briefs). Ran a parallel 3-agent audit of every tracked .md against the code.
+- [x] **Em dashes scrubbed**: removed all em + en dashes from every tracked Markdown doc (201 em, 9 en), and from user-facing product strings (statusline notifications, scorch CLI output, COA/cockpit/AAR template titles/tooltips/`&mdash;` placeholders). Internal code comments/docstrings left as-is. NOT version-bumped; rides the next release. 256 checks green throughout; templates render with no console errors.
 
-**House rule:** never use em dashes in any output (saved to memory).
+**House rule:** never use em dashes in any output, chat or generated content (saved to memory + a note in CLAUDE.md). Use commas, colons, periods, or parentheses.
 
 **RESUME / open:**
-1. Social-preview image: upload `assets/social-card-1280x640.png` in repo Settings (manual; biggest remaining SEO lever).
-2. The COA demo server (real repo + 2 demo repos under `~/Downloads/scorched-coa-demo/`) may still be running in the background.
+1. Social-preview image: upload `assets/social-card-1280x640.png` in repo Settings (manual; biggest remaining SEO lever, can't be done via CLI).
+2. Next version bump bundles the pending unbumped runtime changes (SKILL.md tier-label fix + the user-facing em-dash scrub).
+3. Demo repos for the served-COA demo live under `~/Downloads/scorched-coa-demo/` (server already shut down); delete if not needed.
 
 ---
 

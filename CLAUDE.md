@@ -46,6 +46,7 @@ State files under `~/.claude/scorched-earth/`: `state.json` (latest snapshot + r
 - `core.py` stays pure and dependency-free (stdlib only) so it runs in the statusline hot path.
 - The statusline must keep working if scorched-earth fails - the segment degrades to empty, never errors out.
 - R is a plan constant (ratio of 5h cap to weekly cap), measured from the user's own deltas, not hardcoded.
+- No em dashes or en dashes in docs, UI strings, CLI output, or commit text. Use commas, colons, periods, or parentheses. The repo was scrubbed clean; keep it that way (regular hyphens in compound words are fine).
 
 ## Session Workflow
 
