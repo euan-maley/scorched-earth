@@ -52,24 +52,51 @@ def _job_obj(j) -> dict:
     }
 
 
-def render_html(coa: COA, generated_at: str, *, verdict: str = "unknown",
-                roe_lines=None, reset_in: str = "",
-                weekly_reserve_pct: float = 0.0) -> str:
-    """Fill the war-HUD COA template with this plan. `verdict` (green|amber|off|unknown) drives
-    the accent, `roe_lines` is the human-readable rules of engagement, `reset_in` is a display
-    string for time-to-reset. All optional so the renderer works standalone (e.g. in tests); the
-    CLI passes the live verdict, ROE, and reset from the snapshot."""
-    data = {
-        "sector": "SECTOR 07",
-        "date": generated_at,
-        "verdict": (verdict or "unknown").lower(),
+def _repo_name(repo_path: str) -> str:
+    return os.path.basename((repo_path or "").rstrip("/")) or repo_path or "repo"
+
+
+def _repo_obj(repo_path: str, coa: COA, roe_lines=None) -> dict:
+    return {
+        "repo": repo_path or "",
+        "name": _repo_name(repo_path),
         "note": coa.note,
-        "weeklyReservePct": round(weekly_reserve_pct or 0.0, 0),
-        "resetIn": reset_in,
         "roe": list(roe_lines or []),
         "queue": [_job_obj(j) for j in coa.queue],
         "blocked": [_job_obj(j) for j in coa.blocked],
     }
+
+
+def build_data(repo_coas, generated_at: str, *, verdict: str = "unknown", reset_in: str = "",
+               weekly_reserve_pct: float = 0.0, roe_by_repo=None) -> dict:
+    """The COA data blob the template renders: global accent/date/reserve + a `repos` list, each
+    repo carrying its own DEFCON-ranked queue + blocked + note (so the page can tab between them).
+    `repo_coas` is an iterable of (repo_path, COA)."""
+    roe_by_repo = roe_by_repo or {}
+    return {
+        "sector": "SECTOR 07",
+        "date": generated_at,
+        "verdict": (verdict or "unknown").lower(),
+        "weeklyReservePct": round(weekly_reserve_pct or 0.0, 0),
+        "resetIn": reset_in,
+        "repos": [_repo_obj(rp, c, roe_by_repo.get(rp)) for rp, c in repo_coas],
+    }
+
+
+def render_html(coa, generated_at: str, *, repos=None, verdict: str = "unknown",
+                roe_lines=None, reset_in: str = "", weekly_reserve_pct: float = 0.0,
+                token: str = "") -> str:
+    """Fill the war-HUD COA template. Pass either a single `coa` (one repo, no tabs) or `repos` as
+    a list of (repo_path, COA) for the multi-repo tabbed view. `token`, when set, arms the in-page
+    Refresh button (served mode); empty for the static record. `verdict` drives the accent."""
+    if repos is None:
+        repos = [("", coa)]
+        roe_by_repo = {"": roe_lines}
+    else:
+        roe_by_repo = {rp: roe_lines for rp, _ in repos} if roe_lines else None
+    data = build_data(repos, generated_at, verdict=verdict, reset_in=reset_in,
+                      weekly_reserve_pct=weekly_reserve_pct, roe_by_repo=roe_by_repo)
     with open(_TEMPLATE_PATH, encoding="utf-8") as f:
         template = f.read()
-    return template.replace("__COA_JSON__", json.dumps(data))
+    return (template.replace("__COA_JSON__", json.dumps(data))
+                    .replace("__COA_TOKEN__", json.dumps(token)))

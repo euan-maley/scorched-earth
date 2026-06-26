@@ -126,6 +126,18 @@
 
   /* ---- job cards ---- */
   .jobs{display:flex;flex-direction:column;gap:10px}
+  /* per-repo tabs (served multi-repo view) */
+  .tabs{display:flex;align-items:stretch;flex-wrap:wrap;gap:0;padding:0 18px;background:#0a1014;border-bottom:1px solid #1b2a30}
+  .tabs__label{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;letter-spacing:2px;color:var(--muted);padding:10px 14px 10px 0}
+  .tabs__chev{color:var(--ember2);font-size:14px}
+  .tab{font-family:var(--font);font-size:13px;font-weight:700;letter-spacing:1.2px;color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+  .tab:hover{color:var(--secondary)}
+  .tab.active{color:var(--strong);border-bottom-color:var(--ember)}
+  .tab .cnt{font-size:11px;letter-spacing:1px;color:var(--muted);border:1px solid var(--mod-bd);padding:1px 6px}
+  .tab.active .cnt{color:var(--ember2);border-color:#5a3014}
+  .refresh{font-family:var(--font);font-size:12px;font-weight:800;letter-spacing:1.5px;color:var(--ember2);background:none;border:1px solid #5a3014;padding:5px 12px;cursor:pointer;border-radius:2px;white-space:nowrap}
+  .refresh:hover{background:#1a0f08;color:#ff9a3d}
+  .refresh.spin{opacity:.55}
   .job{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:stretch;
        background:var(--mod);border:1px solid var(--mod-bd);padding:13px 16px 13px 13px;position:relative}
   .job__rank{align-self:center;font-size:30px;font-weight:800;color:#3f5358;line-height:1;
@@ -222,6 +234,7 @@
    DATA — sample data blob. Python overwrites this object; nothing else.
    ====================================================================== */
 var DATA = __COA_JSON__;
+var TOKEN = __COA_TOKEN__;
 
 /* ======================================================================
    Render — everything below is derived from DATA. No data lives here.
@@ -235,8 +248,6 @@ var DATA = __COA_JSON__;
   };
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-  const V = VERDICT[DATA.verdict] || VERDICT.unknown;
-  const weeklyReservePct = DATA.weeklyReservePct || 0;
   const fmt = n => (Math.round(n*10)/10).toString();
 
   const DEFCON_BORDER = ["","#c0392b","#e2541d","#e2a04d","#5e7a7a","#3a5a5a"];
@@ -292,9 +303,59 @@ var DATA = __COA_JSON__;
     </div>`;
   }
 
-  const blockedJobs = DATA.blocked || [];
+  const root = document.getElementById("coa");
+  const BR = '<span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br brr"></span>';
+  let active = 0;
 
-  const html = `
+  function tabsHTML(){
+    const R = DATA.repos || [];
+    if(R.length <= 1) return "";
+    return `<div class="tabs"><span class="tabs__label">REPOS <span class="tabs__chev">&#8250;</span></span>` +
+      R.map((rp,i)=>`<button class="tab${i===active?' active':''}" data-i="${i}"><span>${esc(rp.name||rp.repo)}</span><span class="cnt">${(rp.queue||[]).length+(rp.blocked||[]).length}</span></button>`).join("") +
+      `</div>`;
+  }
+
+  function deckHTML(V, r){
+    const blockedJobs = r.blocked || [];
+    const weeklyReservePct = DATA.weeklyReservePct || 0;
+    const roe = r.roe || [];
+    return `
+    <div class="deck">
+      <div class="ammo">
+        <div class="ammo__accent" style="background:${V.color};"></div>
+        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">WEEKLY RESERVE</span><span class="r">CONTEXT &middot; NOT A GATE</span></div>
+        <div class="ammo__row">
+          <div class="ammo__big"><b>${fmt(weeklyReservePct)}</b> <small>%</small><div class="ammo__lbl">WEEKLY BUDGET REMAINING</div></div>
+          <div class="ammo__side">RELOAD IN <b>${esc(DATA.resetIn)}</b></div>
+        </div>
+      </div>
+      ${roe.length ? `<div class="mod">
+        <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT <span style="opacity:.55;font-weight:400;">(as set by user)</span></span><span class="r">ROE // STANDING ORDERS</span></div>
+        <ul class="roe">${roe.map((line,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(line)}</span></li>`).join("")}</ul>
+      </div>` : ""}
+      <div class="sec"><h2>BATTLE PLAN</h2><span class="rule"></span><span class="rt">FIRING ORDER &middot; HIGH \u2192 LOW</span></div>
+      <div class="jobs">${(r.queue||[]).map((j,i)=>jobCard(j,i+1)).join("")}</div>
+      ${blockedJobs.length > 0 ? `
+      <div class="sec" style="margin-top:6px;"><h2 style="color:#8a6a52;">BLOCKED BY ROE</h2><span class="rule" style="background:linear-gradient(90deg,#3a2615,transparent);"></span><span class="rt" style="color:#7a5e44;">ROE-DISALLOWED &middot; STANDING ORDERS</span></div>
+      <div class="jobs">${blockedJobs.map(blockedCard).join("")}</div>` : ""}
+      <div class="verdict">
+        <div class="verdict__accent" style="background:${V.color};"></div>
+        <div class="verdict__hd"><span class="lab">COA //</span><span class="pill" style="border-color:${V.color};color:${V.color};"><span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>${esc(V.level)}</span></div>
+        <div class="verdict__note">${esc(r.note)}</div>
+      </div>
+      <div class="meta"><span>GENERATED ${esc(DATA.date)}</span><span>// FIELD INTEL &middot; COURSE OF ACTION</span></div>
+    </div>`;
+  }
+
+  function paint(){
+    const V = VERDICT[DATA.verdict] || VERDICT.unknown;
+    const R = DATA.repos || [];
+    if(active >= R.length) active = 0;
+    const r = R[active] || {queue:[],blocked:[],note:"",name:"",roe:[]};
+    const sub = `DEFCON BATTLE PLAN &middot; ${(r.queue||[]).length} JOBS COMMITTED &middot; ${(r.blocked||[]).length} BLOCKED`
+              + (r.name ? ` &middot; ${esc(r.name)}` : "");
+    const refreshBtn = TOKEN ? `<button class="refresh" id="refreshBtn" title="re-read the latest scanned jobs">&#8635; REFRESH</button>` : "";
+    root.innerHTML = BR + `
     <div class="hdr">
       <canvas class="hdr__scene" width="360" height="60"></canvas>
       <div class="hdr__top">
@@ -306,79 +367,20 @@ var DATA = __COA_JSON__;
           <span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>
           ${esc(V.level)} &nbsp;&rsaquo;&rsaquo; ${esc(V.op)}
         </span>
+        ${refreshBtn}
       </div>
       <h1 class="hdr__title">COURSE OF ACTION</h1>
-      <div class="hdr__sub">DEFCON BATTLE PLAN &middot; ${(DATA.queue||[]).length} JOBS COMMITTED &middot; ${blockedJobs.length} BLOCKED</div>
+      <div class="hdr__sub">${sub}</div>
     </div>
-
-    <div class="deck">
-
-      <!-- 2. WEEKLY RESERVE (context only, not a gate) -->
-      <div class="ammo">
-        <div class="ammo__accent" style="background:${V.color};"></div>
-        <div class="mod__hd" style="margin-bottom:14px;"><span class="l">WEEKLY RESERVE</span><span class="r">CONTEXT &middot; NOT A GATE</span></div>
-        <div class="ammo__row">
-          <div class="ammo__big">
-            <b>${fmt(weeklyReservePct)}</b> <small>%</small>
-            <div class="ammo__lbl">WEEKLY BUDGET REMAINING</div>
-          </div>
-          <div class="ammo__side">
-            RELOAD IN
-            <b>${esc(DATA.resetIn)}</b>
-          </div>
-        </div>
-      </div>
-
-      <!-- 3. ROE -->
-      <div class="mod">
-        <div class="mod__hd"><span class="l">RULES OF ENGAGEMENT <span style="opacity:.55;font-weight:400;">(as set by user)</span></span><span class="r">ROE // STANDING ORDERS</span></div>
-        <ul class="roe">
-          ${(DATA.roe||[]).map((r,i)=>`<li><span class="n">${String(i+1).padStart(2,"0")}</span><span>${esc(r)}</span></li>`).join("")}
-        </ul>
-      </div>
-
-      <!-- 4. BATTLE PLAN -->
-      <div class="sec"><h2>BATTLE PLAN</h2><span class="rule"></span><span class="rt">FIRING ORDER &middot; HIGH \u2192 LOW</span></div>
-      <div class="jobs">
-        ${(DATA.queue||[]).map((j,i)=>jobCard(j,i+1)).join("")}
-      </div>
-
-      <!-- 5. BLOCKED BY ROE -->
-      ${blockedJobs.length > 0 ? `
-      <div class="sec" style="margin-top:6px;"><h2 style="color:#8a6a52;">BLOCKED BY ROE</h2><span class="rule" style="background:linear-gradient(90deg,#3a2615,transparent);"></span><span class="rt" style="color:#7a5e44;">ROE-DISALLOWED &middot; STANDING ORDERS</span></div>
-      <div class="jobs">
-        ${blockedJobs.map(blockedCard).join("")}
-      </div>` : ""}
-
-      <!-- 6. VERDICT -->
-      <div class="verdict">
-        <div class="verdict__accent" style="background:${V.color};"></div>
-        <div class="verdict__hd">
-          <span class="lab">COA //</span>
-          <span class="pill" style="border-color:${V.color};color:${V.color};">
-            <span class="dot blink" style="background:${V.color};box-shadow:0 0 6px ${V.color};"></span>${esc(V.level)}
-          </span>
-        </div>
-        <div class="verdict__note">${esc(DATA.note)}</div>
-      </div>
-
-      <div class="meta">
-        <span>GENERATED ${esc(DATA.date)}</span>
-        <span>// FIELD INTEL &middot; COURSE OF ACTION</span>
-      </div>
-
-    </div>
-
+    ${tabsHTML()}
+    ${deckHTML(V, r)}
     <div class="scan"></div>
-    <div class="vig"></div>
-  `;
-
-  const root = document.getElementById("coa");
-  root.insertAdjacentHTML("beforeend", html);
+    <div class="vig"></div>`;
+    buildScene(root.querySelector(".hdr__scene"));
+  }
 
   // Copy-command buttons. A static page can't run the command itself (browser sandbox), so the
-  // button copies it to the clipboard to paste into a session. Falls back to execCommand when the
-  // async Clipboard API is unavailable (e.g. opened as a file://, a non-secure context).
+  // button copies it to the clipboard. Falls back to execCommand on a non-secure context (file://).
   function copyText(text, done){
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(done, () => execCopy(text, done));
@@ -391,14 +393,26 @@ var DATA = __COA_JSON__;
     try { document.execCommand("copy"); done(); } catch(_) {}
     document.body.removeChild(ta);
   }
+  // Refresh (served mode): re-read the latest scanned jobs and repaint. No repo re-scan.
+  function doRefresh(){
+    if(!TOKEN) return;
+    const btn = document.getElementById("refreshBtn"); if(btn) btn.classList.add("spin");
+    fetch("/coa.json?t=" + encodeURIComponent(TOKEN), {cache:"no-store"})
+      .then(res => res.json())
+      .then(fresh => { if(fresh && fresh.repos){ DATA = fresh; paint(); } })
+      .catch(()=>{})
+      .then(()=>{ const b = document.getElementById("refreshBtn"); if(b) b.classList.remove("spin"); });
+  }
+  // One delegated listener on root \u2014 survives every repaint (copy / tab switch / refresh).
   root.addEventListener("click", function(e){
-    const b = e.target.closest(".job__copy");
-    if(!b) return;
-    copyText(b.getAttribute("data-cmd") || "", function(){
-      const old = b.textContent;
-      b.classList.add("copied"); b.textContent = "COPIED";
-      setTimeout(function(){ b.classList.remove("copied"); b.textContent = old; }, 1200);
-    });
+    const cp = e.target.closest(".job__copy");
+    if(cp){ copyText(cp.getAttribute("data-cmd") || "", function(){
+      const old = cp.textContent; cp.classList.add("copied"); cp.textContent = "COPIED";
+      setTimeout(function(){ cp.classList.remove("copied"); cp.textContent = old; }, 1200);
+    }); return; }
+    const tab = e.target.closest(".tab");
+    if(tab){ active = parseInt(tab.getAttribute("data-i"),10) || 0; paint(); return; }
+    if(e.target.closest("#refreshBtn")){ doRefresh(); return; }
   });
 
   /* ---- procedural pixel-art DUSK landscape: charred field after the burn ---- */
@@ -528,9 +542,9 @@ var DATA = __COA_JSON__;
       if(!reduce) t++;
     }
     frame();
-    if(!reduce) setInterval(frame,90);
+    if(!reduce){ if(window.__coaSceneTimer) clearInterval(window.__coaSceneTimer); window.__coaSceneTimer = setInterval(frame,90); }
   }
-  buildScene(root.querySelector(".hdr__scene"));
+  paint();
 })();
 </script>
 </body></html>

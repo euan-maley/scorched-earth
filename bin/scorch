@@ -198,33 +198,66 @@ def _coa_cli(raw):
               "Open a Claude Code session to capture a snapshot, then try again.")
         return 0
     no_open = "--no-open" in rest
-    rest = [a for a in rest if a != "--no-open"]
+    serve = "--serve" in rest
+    rest = [a for a in rest if a not in ("--no-open", "--serve")]
     repos = [rest[0]] if rest else coa_io.list_repos()
     if not repos:
         print("No repos linked. Use: scorch link <path>")
         return 0
+
+    # --serve: host the live tabbed COA (per-repo tabs + Refresh) on 127.0.0.1, like the War Room.
+    # Refresh re-reads each repo's jobs.json (no repo re-scan). The token lives in the URL.
+    if serve:
+        import secrets, webbrowser
+        from scorched_earth import coa_view
+        token = secrets.token_urlsafe(32)
+        httpd, port = coa_view.make_server(repos, token)
+        url = f"http://127.0.0.1:{port}/?t={token}"
+        print(f"COA report on {url}\n(Ctrl-C to stop)", flush=True)
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nCOA report stopped.")
+        return 0
+
     date = time.strftime("%Y-%m-%d", time.localtime())
     wrp = advisor.weekly_reserve_pct(snap) or 0.0
     level = rec.get("level", "unknown")
     # Weekly reset countdown (display context for the HTML report).
     wr = snap.get("seven_day_reset")
     reset_in = fmt_dur(wr - snap.get("now", int(time.time()))) if wr else ""
-    written = []
+    # Collect only repos that actually have jobs — never write/open a blank report (the timing trap
+    # where advise runs before the scan has populated jobs.json).
+    repo_coas = []
     for repo in repos:
         roe = coa_io.load_roe(repo)
         coa = advisor.match(coa_io.load_jobs(repo), roe)
-        md = coa_report.render_md(coa, date)
-        html = coa_report.render_html(coa, date, verdict=level,
-                                      reset_in=reset_in, weekly_reserve_pct=wrp)
-        md_path, html_path = coa_io.write_coa(repo, md, html, date)
-        written.append(html_path)
         print(f"\n=== {repo} ===")
+        if not coa.queue and not coa.blocked:
+            print("No jobs found yet — run the scan first (/coa), then advise. (Skipping a blank report.)")
+            continue
         print(coa.note)
         for j in coa.queue:
             mark = " (approval required)" if advisor.approval_required(j, roe) else ""
             print(f"  DEFCON {j.defcon}  {j.title or j.id}{mark}")
+        repo_coas.append((repo, coa))
+    if not repo_coas:
+        print("\nNothing to report — no jobs in any linked repo yet. Scan first with /coa.")
+        return 0
+    # One combined, tabbed HTML across every repo with jobs; keep the per-repo md as the record.
+    html = coa_report.render_html(None, date, repos=repo_coas, verdict=level,
+                                  reset_in=reset_in, weekly_reserve_pct=wrp)
+    written = []
+    for repo, coa in repo_coas:
+        md = coa_report.render_md(coa, date)
+        _md_path, html_path = coa_io.write_coa(repo, md, html, date)
+        written.append(html_path)
         print(f"COA written: {html_path}")
-    if not no_open and len(written) == 1:
+    if not no_open and written:
         _open_file(written[0])
     return 0
 

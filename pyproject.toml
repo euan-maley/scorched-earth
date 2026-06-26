@@ -1,6 +1,6 @@
 [project]
 name = "scorched-earth"
-version = "2.6.9"
+version = "2.7.0"
 description = "A green light for Claude usage: signals when remaining weekly budget can only be spent by maxing out every remaining 5-hour window, plus a habit-based preemptive forecast."
 readme = "README.md"
 requires-python = ">=3.8"

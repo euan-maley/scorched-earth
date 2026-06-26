@@ -186,6 +186,48 @@ _mdp, _htmlp = _cio2.write_coa(_arepo, render_md(_coaA, "2026-06-25"),
                                render_html(_coaA, "2026-06-25", verdict="green"), "2026-06-25")
 check("advise path writes md + html records", _os2.path.exists(_mdp) and _os2.path.exists(_htmlp))
 
+# --- multi-repo tabbed render ----------------------------------------------------
+from scorched_earth.jobs import parse_jobs as _pj  # noqa: E402
+_coaB = match(_pj([{"id": "b1", "repo": "/x/beta", "title": "Beta audit", "type": "audit",
+                    "defcon": 2, "value": 8}]), _ROE())
+_multi = render_html(None, "2026-06-25", repos=[("/x/alpha", _coaA), ("/x/beta", _coaB)],
+                     verdict="green", token="TK9")
+check("render_html multi-repo carries every repo by name",
+      '"name": "alpha"' in _multi and '"name": "beta"' in _multi)
+check("render_html multi-repo arms the refresh token",
+      '"TK9"' in _multi and "__COA_TOKEN__" not in _multi)
+check("render_html single-repo still works (backward compat)", '"repos"' in render_html(_coaA, "2026-06-25"))
+
+# --- coa_view.py (served, read-only) ---------------------------------------------
+from scorched_earth import coa_view as _cv  # noqa: E402
+import threading as _thr, urllib.request as _url, urllib.error as _uerr  # noqa: E402
+_vrepo = _tf2.mkdtemp(); _os2.makedirs(_os2.path.join(_vrepo, ".scorched"), exist_ok=True)
+def _wj(jobs):
+    with open(_os2.path.join(_vrepo, ".scorched", "jobs.json"), "w") as _f:
+        json.dump(jobs, _f)
+_wj([{"id": "v1", "repo": _vrepo, "title": "first", "type": "audit", "defcon": 1, "value": 9}])
+check("coa_state re-reads jobs.json into a repos list",
+      _cv.coa_state([_vrepo])["repos"][0]["queue"][0]["title"] == "first")
+_tok = "TESTTOK"
+_httpd, _port = _cv.make_server([_vrepo], _tok)
+_thr.Thread(target=_httpd.serve_forever, daemon=True).start()
+def _req(p):
+    try:
+        _r = _url.urlopen(f"http://127.0.0.1:{_port}{p}", timeout=5); return _r.status, _r.read()
+    except _uerr.HTTPError as _e:
+        return _e.code, _e.read()
+check("served / returns the page (token ok)", _req(f"/?t={_tok}")[0] == 200)
+check("served /coa.json without token is 403", _req("/coa.json")[0] == 403)
+check("served /coa.json with bad token is 403", _req("/coa.json?t=nope")[0] == 403)
+check("served /coa.json returns the jobs",
+      json.loads(_req(f"/coa.json?t={_tok}")[1])["repos"][0]["queue"][0]["title"] == "first")
+_wj([{"id": "v1", "repo": _vrepo, "title": "first", "type": "audit", "defcon": 1, "value": 9},
+     {"id": "v2", "repo": _vrepo, "title": "second-new", "type": "test", "defcon": 2, "value": 8}])
+check("Refresh picks up new jobs from jobs.json (no repo re-scan)",
+      any(j["title"] == "second-new"
+          for j in json.loads(_req(f"/coa.json?t={_tok}")[1])["repos"][0]["queue"]))
+_httpd.shutdown()
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

@@ -77,18 +77,19 @@ IMPACT (DEFCON), never by effort or how long a job would take.
    Run:
 
    ```
-   scorch advise <repo>
+   scorch advise <repo> --no-open
    ```
 
-   (fallback: `~/scorched-earth/bin/scorch advise <repo>`)
+   (fallback: `~/scorched-earth/bin/scorch advise <repo> --no-open`)
 
    `scorch advise` sorts every eligible job into the battle plan — **DEFCON-ordered, most
    critical first** (ties broken by `value`) — and routes ROE-disallowed types to **blocked**.
    Jobs below the ROE's `auto_run_min_defcon` gate (default DEFCON 1–2) are marked
    **(approval required)**: they need explicit `--approve` to run unattended. Nothing is sized
-   or forfeited — the runner halts only on the real usage limit. The command also writes and
-   opens the HTML COA report (the Markdown file is kept as the record). If it reports no live
-   snapshot yet, relay that message as-is.
+   or forfeited — the runner halts only on the real usage limit. It writes the HTML + Markdown
+   record (`--no-open` skips popping the static file — the **live tabbed view** opens in step 4).
+   It never writes a blank report: if a repo has no jobs yet it says so and skips it. If it
+   reports no live snapshot yet, relay that message as-is.
 
    ### Step 3 — Return a briefing
 
@@ -101,12 +102,26 @@ IMPACT (DEFCON), never by effort or how long a job would take.
      3. <title> — DEFCON <N>, value <N> [approval required?]
 
    Blocked by ROE: <N> job(s).
-   Report: <path to HTML COA report>
+   Report: <path to HTML COA record>
    ```
    ---
 
 3. When the subagent returns, print **only** its briefing. Note that the user can expand the
    subagent view in the Claude Code UI to see the full scan and advise detail.
+
+4. **Launch the live COA report** (the served, tabbed view with a Refresh button). It runs
+   `scorch advise --serve` (per-repo tabs across all linked repos; Refresh re-reads each repo's
+   `jobs.json` — no repo re-scan). Like the War Room it **blocks**, so run it in the **background**:
+
+   ```bash
+   scorch advise --serve $ARGUMENTS 2>&1 || ~/scorched-earth/bin/scorch advise --serve $ARGUMENTS 2>&1
+   ```
+
+   Read the backgrounded output for the line `COA report on http://127.0.0.1:PORT/?t=TOKEN`
+   (flushed immediately; it also auto-opens the browser). Relay that **full URL** verbatim on its
+   own line, with the caveat: *the URL embeds a one-time access token — treat it as a credential;
+   don't paste it into shared chats, screenshots, or shared terminals.* It serves until stopped
+   (Ctrl-C, or kill the background process).
 
 ## Autonomous execution (Phase 2)
 
