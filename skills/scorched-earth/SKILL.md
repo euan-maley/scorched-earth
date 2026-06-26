@@ -75,7 +75,8 @@ These are occasional, so handle them conversationally here rather than as separa
 2. Summarize the verdict in one line:
    - **🟢 green** → "Torch it all, leave them nothing. What you don't fire before reset is forfeit, so empty the magazine."
    - **🟡 amber** → "Almost full throttle. Sustain ~N% of each remaining window and it's all spent by reset. Hold the line."
-   - **⚪ off** → "Reserves are deep. Even an easy pace clears it by reset, so advance as hard as you like, no need to ration."
+   - **⚪ low (no rush)** → "Reserves are deep. Even an easy pace clears it by reset, so advance as hard as you like, no need to ration."
+   - **off (budget spent)** → "Mission accomplished, burned to the last drop. Nothing left to ration until the weekly reset."
    - **❔ unknown** → not enough live data yet (open or continue a session so the
      statusline can capture a reading), or R isn't calibrated yet.
 

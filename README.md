@@ -82,7 +82,9 @@ regression and UI-capability test harness, a backend built out in one pass. The 
 measures stakes, not urgency, so a DEFCON 1 is the most consequential job, not the one you
 necessarily start with.
 
-`/coa` generates the ranked plan. From there you can queue jobs and let them run headless in
+`/coa` generates the ranked plan and opens it as a live report in your browser: one tab per
+linked repo, with a Refresh button that re-reads each repo's jobs without re-scanning. From
+there you can queue jobs and let them run headless in
 a sandboxed git worktree (`scorch coa run`), each one committed but never pushed and checked
 against a test command you set. The Rules of Engagement (`/roe`) decide what's allowed to run
 unattended: DEFCON 1 and 2 sit behind an approval gate by default, and `max_jobs` caps a run

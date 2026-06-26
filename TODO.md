@@ -1,6 +1,25 @@
 # TODO
 
-## Current Session (2026-06-25, pt.4) — DEFCON stack PUBLISHED (v1.6.9); public docs aligned + skriv
+## Current Session (2026-06-26): v2.7.0 public (served tabbed COA, bare commands, statusline dedup, SEO)
+
+**DONE this session:**
+- [x] **v2.7.0 published** (plugin.json + pyproject, tagged `v2.7.0` + GitHub Release). The version walked 1.6.9 to 1.6.10 to 2.6.9 to 2.7.0 across the session; only a changed version *string* reaches users (same string keeps the cached copy).
+- [x] **Served, tabbed COA report** (`coa_view.py`, `scorch advise --serve`): a 127.0.0.1 token-guarded page with per-repo TABS and a Refresh button that re-reads each repo's `jobs.json` with no re-scan. `/coa` background-launches it like `/war-room`. `render_html` now takes `repos=[(path,COA)…]` + a token; the template `paint()`s the active repo and shows tabs when >1 repo. Fixed the blank-report trap (advise skips repos with no jobs). +9 tests, 256 total.
+- [x] **Bare command aliases for all users** (`/coa` `/sitrep` `/roe` `/war-room` `/scorched-earth`): the SessionStart hook copies `commands/*.md` into the user's `~/.claude/commands/` (plugin commands are otherwise namespaced as `/scorched-earth:coa`). Collision-safe via a `managed-by` tag; never clobbers a user's own command.
+- [x] **Statusline double-burn fix**: the wrapper suppresses its own token when the inner statusline already emits the segment (detected from the inner *source*, since the fire gradient randomizes colors so output comparison can't spot the dup).
+- [x] **Demo-video DEFCON COA swap DONE** (the long-open pt.2/pt.4 item): rebuilt the CRT tour with the DEFCON COA page, boot/shutdown CRT screens, and a synthesized ambient bed; compressed under 10MB at `~/Downloads/scorched-earth-demo.mp4` (BIOS reads v2.6.9). Pipeline preserved at `~/Downloads/scorched-earth-captures/_pipeline/`.
+- [x] **SEO**: GitHub description rewritten + 15 topics added (was none), README keyword subtitle, marketplace keywords widened, v2.7.0 Release, fixed a broken README mp4 link.
+- [x] **Docs audit**: aligned the public md files to current behavior (low vs off tier labels in SKILL.md + setup.md, the war-room "shared budget" line, served-COA gaps in README/playbook, "superseded" banners on the 3 design briefs).
+
+**House rule:** never use em dashes in any output (saved to memory).
+
+**RESUME / open:**
+1. Social-preview image: upload `assets/social-card-1280x640.png` in repo Settings (manual; biggest remaining SEO lever).
+2. The COA demo server (real repo + 2 demo repos under `~/Downloads/scorched-coa-demo/`) may still be running in the background.
+
+---
+
+## Prior Session (2026-06-25, pt.4) — DEFCON stack PUBLISHED (v1.6.9); public docs aligned + skriv
 
 **DONE this session:**
 - [x] **v1.6.9 published to public `origin/main`** (`d719659`, the user's release commit, pushed externally between pt.3 and pt.4). DEFCON COA + `⚪ no rush` tier + first-run setup are now LIVE publicly. Release bumped plugin.json/pyproject 1.6.7→1.6.9 and stripped `docs/superpowers/` planning docs (incl. the pt.3 specs) from the public tree.

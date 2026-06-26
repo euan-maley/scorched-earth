@@ -1,5 +1,7 @@
 # Design Brief: COA Cockpit HTML
 
+> **PARTLY SUPERSEDED (2026-06).** The kanban columns, SSE board events, token security, and `render_cockpit` injection design here are current. The per-card `est_windows` / `value` / `tier` fields and the "budget spent" status-bar figure were replaced by **DEFCON (1-5)**: the cockpit drains by DEFCON and halts on the real usage limit, with no budget estimate.
+
 **For:** Claude design (HTML mockup generation)
 **Date:** 2026-06-24
 **Context:** Scorched Earth, a Claude-usage tool. This brief is for the **COA Cockpit** — the live command surface you use to enqueue, reorder, and monitor jobs while the autonomous queue-runner drains them. It is the fourth sibling of the sitrep, COA report, and AAR, and must feel like the same product.

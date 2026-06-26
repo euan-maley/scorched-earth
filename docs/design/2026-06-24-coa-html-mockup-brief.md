@@ -1,5 +1,7 @@
 # Design Brief: Course of Action (COA) HTML mockup
 
+> **SUPERSEDED (2026-06).** The budget / envelope / tier / `estWindows` model in this brief was replaced by the **DEFCON 1-5 criticality** model. The palette, frame, fire-text, and mission-card layout still ship; the budget gauge, S/M/L/XL tiers, `estWindows`/`value`, and "forfeit / over budget" spillover do not. Jobs now carry DEFCON badges and the runner halts on the real usage limit. Kept as a record of the visual language.
+
 **For:** Claude design (HTML mockup generation)
 **Date:** 2026-06-24
 **Context:** Scorched Earth, a Claude-usage tool. This brief is for the **COA report**, the visual presentation of a budget-matched work plan. It is the sibling of the existing **sitrep** and must feel like the same product.

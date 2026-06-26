@@ -24,8 +24,9 @@ The signal has four tiers:
   every remaining 5-hour window. Guaranteed green light: torch it all.
 - **🟡 amber** — close but not yet guaranteed. Sustain ~N% of each remaining
   window and all budget is spent by reset. Hold the line.
-- **⚪ off** — deep reserves. Even a light pace clears the budget by reset.
+- **⚪ low ("no rush")**: deep reserves. Even a light pace clears the budget by reset.
   No rationing needed; advance as hard as you like.
+- **off**: weekly budget fully spent. The light goes empty; nothing left to ration until reset.
 - **❔ unknown** — no live snapshot yet (statusline needs a reading from an
   active Claude Code session) or R is not calibrated.
 
@@ -191,8 +192,10 @@ with `scorch link <path>` or by redoing this setup.
      before reset is forfeit, so empty the magazine."
    - **🟡 amber** → "Almost full throttle. Sustain ~N% of each remaining
      window and it's all spent by reset. Hold the line."
-   - **⚪ off** → "Reserves are deep. Even an easy pace clears it by reset,
+   - **⚪ low (no rush)** → "Reserves are deep. Even an easy pace clears it by reset,
      so advance as hard as you like, no need to ration."
+   - **off (budget spent)** → "Mission accomplished, burned to the last drop. Nothing
+     left to ration until the weekly reset."
    - **❔ unknown** → not enough live data yet (open or continue a session so
      the statusline can capture a reading), or R isn't calibrated yet.
 

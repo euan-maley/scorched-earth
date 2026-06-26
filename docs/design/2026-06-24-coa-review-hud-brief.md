@@ -1,5 +1,7 @@
 # Design Brief: After-Action Report (COA runner review) HTML mockup
 
+> **SUPERSEDED (2026-06).** The budget envelope / ammo gauge, the S/M/L/XL tier + `estWindows` per job, and the `skipped-budget` ("out of ammo") outcome were replaced by the **DEFCON 1-5** model. The live auto-refresh, palette/frame, and per-job DEFCON badges still ship; there is no budget estimate, and jobs stop on the real usage limit. Kept as a record of the visual language.
+
 **For:** Claude design (HTML mockup generation)
 **Date:** 2026-06-24
 **Context:** Scorched Earth, a Claude-usage tool. This brief is for the **runner review** — the surface you watch *while* the autonomous queue-runner works and wake up to *after*. It is the third sibling of the existing **sitrep** and **COA** reports and must feel like the same product.

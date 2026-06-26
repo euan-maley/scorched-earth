@@ -6,8 +6,8 @@ allowed-tools: Bash(scorch:*), Bash(*/bin/scorch:*), Bash(pgrep:*), Bash(pkill:*
 
 Launch (or stop) the **War Room** — the live COA cockpit served at `127.0.0.1`: a kanban board
 (Proposed → Queued → Running → Secured/Cratered) with per-repo tabs, drag-to-queue/reorder,
-Run / Run-all, and Kill. Armed repos drain **concurrently** (one job per repo, repos at once)
-sharing one weekly budget. It's `scorch coa --serve` under the hood; this command just runs it
+Run / Run-all, and Kill. Armed repos drain **concurrently** (one job per repo, repos at once),
+halting on the real weekly usage limit. It's `scorch coa --serve` under the hood; this command just runs it
 in the background and hands you the URL.
 
 ## If `$ARGUMENTS` is `stop`
