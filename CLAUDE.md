@@ -1,13 +1,14 @@
 # Scorched Earth
 
-A green light for Claude usage: signals when remaining weekly budget can only be
-spent by maxing out every remaining 5-hour window.
+A fire-team readout for Claude usage: signals when remaining weekly budget can only be
+spent by maxing out every remaining 5-hour window (BURN IT ALL), and when you're burning
+so fast you'll run dry before the reset (hold your fire).
 
 ## Architecture (one line each)
 
-- `src/scorched_earth/core.py` - pure math: snapshot + R → hard recommendation. No I/O.
+- `src/scorched_earth/core.py` - pure math: snapshot + R (+ optional measured recent rate) → a six-state burn verdict (`max | push | steady | ease | done | unknown`). No I/O. The `ease` ("hold your fire") override replaces a `push`/`steady` call when a recent overpace would strand more than `EASE_IDLE_WINDOWS` usable windows before the reset; self-disengaging near the reset, mutually exclusive with `max`.
 - `src/scorched_earth/calibrate.py` - self-measures R (weekly% burned per full window) from snapshot deltas.
-- `src/scorched_earth/habits.py` - pure: cross-week history → day-of-week profile → end-of-week forecast + preemptive flag. Also the field-view helpers: `average_days`, `week_days`, `last_completed_reset`, `current_week_days` (actual-so-far + projected-ahead).
+- `src/scorched_earth/habits.py` - pure: cross-week history → day-of-week profile → end-of-week forecast + preemptive flag. Also `recent_per_window` (trailing ~2-day actual burn rate, % of weekly per window, that feeds core's `ease` check) and the field-view helpers: `average_days`, `week_days`, `last_completed_reset`, `current_week_days` (actual-so-far + projected-ahead).
 - `src/scorched_earth/report.py` - generates the self-contained HTML **sitrep**: 8-bit war / scorched-earth crop-field HUD. THE FIELD is a Stardew-style pixel farm (procedural SVG engine ported from the design handoff) with a LAST WEEK / AVERAGE / THIS WEEK toggle; Python computes the data + HUD stats, a sliver of JS renders the field and live countdowns. `scorch --report` / `--sitrep`.
 - `src/scorched_earth/state.py` - read/write snapshot, calibration, and habits files under `~/.claude/scorched-earth/`; the hot-path `update_from_statusline`.
 - `src/scorched_earth/statusline.py` - statusline entry: parse stdin JSON, emit the light token, fire the once-per-week forecast notification (macOS `osascript` / Linux `notify-send`).
@@ -46,6 +47,7 @@ State files under `~/.claude/scorched-earth/`: `state.json` (latest snapshot + r
 - `core.py` stays pure and dependency-free (stdlib only) so it runs in the statusline hot path.
 - The statusline must keep working if scorched-earth fails - the segment degrades to empty, never errors out.
 - R is a plan constant (ratio of 5h cap to weekly cap), measured from the user's own deltas, not hardcoded.
+- The burn deck is six states (`max | push | steady | ease | done | unknown`) with a fixed palette: red BURN IT ALL, green clear shot, white eyes on the target, yellow hold your fire, purple good job soldier (Purple Heart). The level *keys* are meaning-based, never color names. `ease` is computed in `core` but the caller passes the measured recent rate in, so `core` stays pure. Keep the COA/DEFCON color code separate; it does not use these keys.
 - No em dashes or en dashes in docs, UI strings, CLI output, or commit text. Use commas, colons, periods, or parentheses. The repo was scrubbed clean; keep it that way (regular hyphens in compound words are fine).
 
 ## Session Workflow

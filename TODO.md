@@ -1,6 +1,23 @@
 # TODO
 
-## Current Session (2026-06-26): v2.7.0 public (served tabbed COA, bare commands, statusline dedup, SEO)
+## Current Session (2026-06-29): hold your fire (over-burn warning) + deck rename/recolor
+
+Branch `feat/hold-your-fire-deck` (not yet merged or published).
+
+**DONE this session:**
+- [x] **New `ease` ("hold your fire") burn state** in `core.py`: fires when a measured recent overpace (`recent_per_window`, trailing ~2 days from `habits.py`) would strand more than `EASE_IDLE_WINDOWS` (default 3) usable windows before the reset. Self-disengaging near the reset, mutually exclusive with `max`, pure (the caller passes the rate in). New `habits.recent_per_window` helper, wired via `state.update_from_statusline`.
+- [x] **Deck rename + recolor** across every surface. Keys went meaning-based: `green→max, amber→push, low→steady, (new) ease, off→done`. Palette: red BURN IT ALL, green clear shot take it, white eyes on the target, yellow hold your fire, purple good job soldier (Purple Heart). `done` now PRINTS instead of blanking. Touched core, statusline, state, habits, report + sitrep accents, the COA `verdict` map, bin/scorch. COA/DEFCON color code left alone.
+- [x] **Rebrand** off the "green light" tagline (README + CLAUDE.md) to a "fire-team readout"; documented the deck + the `ease` math (the-math.md) + playbook Current Status / verdict names.
+- [x] **Tests:** renamed assertions + added `ease` coverage (fires on overpace; silent when sustainable / no rate / in max / near reset). 76 checks in test_scorched green (advisor/cockpit/runner unchanged: 43/70/78).
+- [x] Design spec committed at `docs/superpowers/specs/2026-06-29-hold-your-fire-and-deck-recolor-design.md`.
+
+**RESUME / open:**
+1. Not version-bumped or published; bundle into the next release. Refresh demo/screenshots for the new deck colors if desired.
+2. Possible follow-ups (out of scope this session): a real-time `ease` desktop nudge (rate-limited), and per-repo/ROE configurability of `EASE_IDLE_WINDOWS`.
+
+---
+
+## Prior Session (2026-06-26): v2.7.0 public (served tabbed COA, bare commands, statusline dedup, SEO)
 
 **DONE this session:**
 - [x] **v2.7.0 published** (plugin.json + pyproject, tagged `v2.7.0` + GitHub Release). The version walked 1.6.9 to 1.6.10 to 2.6.9 to 2.7.0 across the session; only a changed version *string* reaches users (same string keeps the cached copy).

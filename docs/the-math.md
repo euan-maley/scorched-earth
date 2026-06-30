@@ -59,7 +59,7 @@ Opus budgets), the statusline reports one binding percentage that can switch whi
 cap it tracks (e.g. when you change models). If the binding bucket changes mid-week, `Δw/Δh`
 mixes two caps and R degrades. The guardrails (in-band filter + `MIN_PAIRS`) blunt this, and a
 wrong R surfaces as a provisional/odd readout rather than silent confidence, but treat the
-green light as advisory on multi-bucket plans rather than gospel.
+burn verdict as advisory on multi-bucket plans rather than gospel.
 
 ## The recommendation
 
@@ -70,21 +70,22 @@ remaining windows, each window should consume this fraction of one 5h window:
 target_per_window = (weekly_left / windows_left) / (R × 100)     # as a fraction of a 5h window
 ```
 
-- `target_per_window ≥ 1.0` → **🟢 GREEN, scorched earth.** You cannot spend your
-  remaining weekly budget even by maxing every remaining window. Pacing wastes
-  credits - burn 100% every window.
-- `0.70 ≤ target_per_window < 1.0` → **🟡 AMBER.** Burn hard; you're close to the line.
-- `target_per_window < 0.70` → **low (no rush) / off.**
-  - **`low`** - deep reserves and plenty of time; the statusline shows `⚪ no rush`. No
-    urgency; pace normally.
-  - **`off`** - budget-exhausted terminal state: weekly budget is spent, no credits left.
+- `target_per_window ≥ 1.0` → **`max` (🔥 BURN IT ALL).** You cannot spend your remaining
+  weekly budget even by maxing every remaining window. Pacing wastes credits - burn 100%.
+- `0.70 ≤ target_per_window < 1.0` → **`push` (🟢 clear shot, take it).** Burn hard; close to the line.
+- `target_per_window < 0.70` → **`steady` (⚪ eyes on the target):** deep reserves and plenty
+  of time; dead on pace, hold steady. (Can be overridden by `ease`, below.)
+- weekly budget spent (`weekly_left ≤ 0.5`) → **`done` (🎖️ good job, soldier),** terminal state.
 
-The verdict `level` enum is therefore five states: `green | amber | low | off | unknown`.
+A sixth override, **`ease` (⚠️ hold your fire)**, replaces a `push`/`steady` call when a
+*measured recent* pace would burn the budget dry early (see "Hold your fire" below).
 
-Equivalent green condition without dividing by zero risk:
+The verdict `level` enum is therefore six states: `max | push | steady | ease | done | unknown`.
+
+Equivalent `max` condition without dividing by zero risk:
 
 ```
-green  ⇔  weekly_left ≥ windows_left × R × 100
+max  ⇔  weekly_left ≥ windows_left × R × 100
 ```
 
 i.e. remaining weekly budget exceeds the most you could possibly burn in the windows
@@ -99,12 +100,12 @@ Plan where a maxed window burns ~7% of the week (`R = 0.07`).
 - `windows_left = (100−80)/100 + (11h−1h)/5h = 0.20 + 2.0 = 2.2` windows
   (the tail counts time *after* the current window resets, so 10h not 11h).
 - max burnable = `2.2 × 0.07 × 100 = 15.4%` of the week, but you have `62%` left.
-- `62 ≥ 15.4` → **GREEN.** Even maxing every remaining window leaves ~47% of your
-  weekly budget unused, so there is zero reason to pace. Go scorched earth.
+- `62 ≥ 15.4` → **`max`, BURN IT ALL.** Even maxing every remaining window leaves ~47% of
+  your weekly budget unused, so there is zero reason to pace. Go scorched earth.
 
 ## The forecast layer (preemptive nudge)
 
-The 🟢 light above is *certain* but late - it only fires when maxing out is the
+The `max` verdict above is *certain* but late - it only fires when maxing out is the
 **only** way to spend the budget. In practice almost nobody uses 100% of every window,
 so a second, earlier signal asks: **at your habitual pace, are you trending to leave
 budget unused?** (See `habits.py`.)
@@ -129,5 +130,28 @@ resets counts only the fraction before the reset.
   the `scorch` readout always, and as a **once-per-week desktop notification** only once
   confidence is `medium`+ (so we don't nudge on a noisy week-1 guess).
 
-This is a forecast, not a guarantee - the 🟢 light remains the certain signal; the 🔥
+This is a forecast, not a guarantee - the `max` verdict remains the certain signal; the 🔥
 nudge is the "you'll probably waste credit if you keep coasting" heads-up.
+
+## Hold your fire (the over-burn warning)
+
+The signals so far only ever push you to burn *more*; none warn about the opposite failure,
+sprinting through the budget and sitting locked out before the reset. The `ease`
+(⚠️ hold your fire) verdict fills that pole.
+
+It compares your *measured recent* pace (`recent_per_window`, % of weekly per window, from
+`habits.py` over the trailing ~2 days) against how much time is actually left:
+
+```
+windows_to_dry = weekly_left / recent_per_window
+idle_windows   = windows_left − windows_to_dry
+ease  ⇔  idle_windows > EASE_IDLE_WINDOWS      # default 3, ~one active day of lockout
+```
+
+It overrides only a `push`/`steady` call (never `max`/`done`), and it is **self-disengaging**:
+as `windows_left → 0` near the reset, `idle_windows` can't exceed the threshold, so it falls
+silent on its own. It cannot fire in the final stretch and never interrupts BURN IT ALL.
+In `max` you couldn't spend the budget even maxed, so `windows_to_dry > windows_left` and
+`idle_windows < 0`, making the two mutually exclusive by construction. `EASE_IDLE_WINDOWS`
+is the single gentleness knob (lower = twitchier). The rate is passed into `core.compute`
+by the caller, so `core.py` stays pure.

@@ -4,9 +4,10 @@ https://github.com/user-attachments/assets/52706f21-19d8-49f1-b5cc-1a5ec865a508
 
 *Claude Code plugin for weekly Claude usage and rate-limit tracking, with a DEFCON-ranked autonomous task runner (Course of Action) for your linked repos.*
 
-A green light for your Claude usage. It tells you when your remaining **weekly**
-budget can no longer be spent unless you max out **every remaining 5-hour
-window**, so you never leave credits on the table at the weekly reset.
+A fire-team readout for your Claude usage. It tells you when your remaining **weekly**
+budget can no longer be spent unless you max out **every remaining 5-hour window**, and,
+now, when you're burning so fast you'll run dry before the reset, so you never leave
+credits on the table and never burn out early.
 
 Unused weekly usage doesn't roll over. When you have lots of weekly budget left
 but few windows before the reset, the rational move is to go scorched earth: burn
@@ -22,16 +23,22 @@ rolling window and a **7-day** (weekly) window. Scorched Earth compares:
 - how many 5-hour windows remain before the weekly reset.
 
 If you couldn't possibly spend your remaining weekly budget even by maxing every
-remaining window, the light goes green. Pacing yourself just wastes credits.
+remaining window, it calls **BURN IT ALL**. Pacing yourself just wastes credits.
 
-## Two signals
+## The deck
 
-The **🟢 hard light** is the certain one. It goes green only when you can't spend your
-remaining weekly budget even by maxing every 5-hour window left before the reset. It fires
-late, and it's never wrong. In the default fire style that green reads **🔥 BURN IT ALL**.
-One notch back is amber, **🟡 burn ~N%**: close to the line, not over it. When you have
-ample budget and time the bar shows **⚪ no rush**: deep reserves, pace normally. The bar
-is only empty when there's no live reading yet or the weekly budget is exhausted.
+The statusline shows one of a five-state firing deck, each with its own token and color:
+
+- **🔥 BURN IT ALL** (red) - you can't spend the rest of your weekly budget even by maxing
+  every window left. Torch it; pacing wastes credits. The certain, late, never-wrong signal.
+- **🟢 clear shot, take it** (green) - near full throttle, close to the line.
+- **⚪ eyes on the target** (white) - deep reserves, dead on pace; hold steady, no rush.
+- **⚠️ hold your fire** (yellow) - at your recent pace you'll run the budget dry before the
+  reset and sit locked out. Ease off so you keep some for tomorrow. It self-disengages near
+  the reset, so it never fights BURN IT ALL.
+- **🎖️ good job, soldier** (purple) - weekly budget spent; rest up for reinforcements.
+
+The bar is only empty when there's no live reading yet.
 
 The **🔥 forecast nudge** comes earlier, and for most people it's the more useful of the two.
 Scorched Earth learns your day-of-week pattern and projects where the week is heading. If
@@ -70,7 +77,7 @@ three views:
 
 ## Burn it on something
 
-The green light tells you to burn. It doesn't tell you what on. That's the Course of
+The deck tells you to burn (or ease off). It doesn't tell you what on. That's the Course of
 Action layer.
 
 Link a repo or a few with `scorch link <path>`, and a scan agent reads them the way you

@@ -39,8 +39,8 @@ Flow:
    - appends a `(now, five_hour%, seven_day%)` sample and updates the calibration of
      **R** (weekly% burned by one full 5h window),
    - writes the latest snapshot to `~/.claude/scorched-earth/state.json`,
-   - returns the verdict (green / amber / low=⚪ no rush / off=exhausted) + recommended
-     per-window burn %.
+   - returns the verdict (`max` BURN IT ALL / `push` clear shot / `steady` eyes on the
+     target / `ease` hold your fire / `done` good job soldier) + recommended per-window burn %.
 3. `scorch` CLI and the `/scorched-earth` skill read `state.json` so they work even
    outside the statusline (terminal, in-session).
 
@@ -73,7 +73,7 @@ plugin/skill; install flow asks the user how they want the light displayed.
 - **Straddle correction:** the current window's unused capacity is also capped by the time
   left before the *weekly* reset (`min(current_remaining, secs_to_weekly / WINDOW_SECONDS)`).
   Without this, a window straddling the weekly reset credits next week's capacity to this
-  week and can flip the verdict (green→amber). Tested by "straddle: still green …".
+  week and can flip the verdict (`max`→`push`). Tested by "straddle: still max …".
 - **Cold-start forecast guard:** the linear fallback refuses to extrapolate when < 1 day of
   the weekly cycle has elapsed (or the reset is > 7 days out, i.e. clock skew) - otherwise the
   rate inflates several-fold (the old `max(0.25, elapsed)` floor) or goes negative. It returns
@@ -120,10 +120,12 @@ ahead, with projected plots dimmed/"PLANNED" and today tagged "NOW").
 Working end-to-end. Core math + R self-calibration, `scorch` CLI, statusline light (fire
 gradient default, wired into Euan's `~/.claude/statusline.sh`), habits/forecast layer with
 a once-per-week preemptive notification, the HTML sitrep, skill + plugin manifest +
-marketplace + installer. War-general voice throughout. The statusline now shows three tiers,
-not two: the lowest verdict surfaces a visible **`⚪ no rush`** (deep reserves) instead of
-going blank - `compute()`'s old overloaded `off` was split into `low` (no rush) and `off`
-(weekly budget exhausted), each with its own banner. The `/scorched-earth` skill opens with a
+marketplace + installer. War-general voice throughout. The statusline shows a six-state
+firing deck, each with its own token + color: **🔥 BURN IT ALL** (`max`, red), **🟢 clear
+shot, take it** (`push`, green), **⚪ eyes on the target** (`steady`, white), **⚠️ hold your
+fire** (`ease`, yellow - the over-burn warning: at your recent pace you'll run dry before the
+reset; self-disengaging so it never fights BURN IT ALL), and **🎖️ good job, soldier** (`done`,
+purple Purple Heart, now prints instead of blanking). The `/scorched-earth` skill opens with a
 **first-run setup** (sentinel-gated `~/.claude/scorched-earth/onboarded`): it primes Claude on
 the model, tours the user, sets the light style, and links repos, then falls through to the
 verdict; re-runnable, and never loaded once onboarded. Phase 2a (COA queue-runner) and Phase
