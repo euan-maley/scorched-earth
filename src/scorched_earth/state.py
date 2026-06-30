@@ -159,7 +159,11 @@ def update_from_statusline(data: dict, at: Optional[int] = None) -> Result:
     r, provisional = record_and_calibrate(snap)
     hist = record_history(snap)
     af = habits.active_fraction(hist) if snap.has_weekly else 1.0
-    rec = compute(snap, r, r_provisional=provisional, active_fraction=af)
+    rpw = (habits.recent_per_window(hist, snap.now, snap.seven_day_pct,
+                                    snap.seven_day_reset, af * 24.0)
+           if snap.has_weekly else None)
+    rec = compute(snap, r, r_provisional=provisional, active_fraction=af,
+                  recent_per_window=rpw)
     fc = (
         habits.forecast(hist, snap.now, snap.seven_day_pct, snap.seven_day_reset,
                         max_burnable=rec.max_burnable_weekly)

@@ -16,7 +16,7 @@
     DATA = {
       sector:           string,                       // header tag, e.g. "SECTOR 07"
       date:             string,                       // pre-formatted timestamp string
-      verdict:          'green'|'amber'|'off'|'unknown',   // drives the accent across the report
+      verdict:          'max'|'push'|'steady'|'ease'|'done'|'unknown',   // burn level; drives the accent
       note:             string,                       // the COA verdict line (prose)
       weeklyReservePct: number,                       // weekly budget still available (%) — context only
       resetIn:          string,                       // countdown string to reset/reload
@@ -241,9 +241,11 @@ var TOKEN = __COA_TOKEN__;
    ====================================================================== */
 (function(){
   const VERDICT = {
-    green:  { color:"#7cb342", level:"GREEN",  op:"EXECUTE" },
-    amber:  { color:"#e2a04d", level:"AMBER",  op:"PROCEED W/ CAUTION" },
-    off:    { color:"#c0392b", level:"OFF",    op:"HOLD FIRE" },
+    max:    { color:"#ff5039", level:"MAX",    op:"EXECUTE" },
+    push:   { color:"#54c265", level:"PUSH",   op:"EXECUTE" },
+    steady: { color:"#dfe7ea", level:"STEADY", op:"PROCEED" },
+    ease:   { color:"#ffd21e", level:"EASE",   op:"HOLD FIRE" },
+    done:   { color:"#b884ff", level:"DONE",   op:"STAND DOWN" },
     unknown:{ color:"#6f8a8a", level:"UNKNOWN", op:"GATHER INTEL" }
   };
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));

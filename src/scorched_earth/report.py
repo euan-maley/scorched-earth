@@ -19,8 +19,10 @@ from dataclasses import asdict
 from . import habits
 from .core import HEADLINE, Snapshot, compute  # canonical voice + math, shared with the CLI
 
-# green = "burn it all", so its accent is fire, not green.
-STATUS_COLOR = {"green": "#ff6a1f", "amber": "#e2a04d", "low": "#8a9a3c", "off": "#6f8a8a", "unknown": "#6f8a8a"}
+# max = "burn it all"; its accent is fire-red. Deck palette: push=green, steady=white,
+# ease=yellow (caution), done=purple (Purple Heart).
+STATUS_COLOR = {"max": "#ff5039", "push": "#54c265", "steady": "#dfe7ea",
+                "ease": "#ffd21e", "done": "#b884ff", "unknown": "#6f8a8a"}
 
 
 def _num(x):
@@ -124,7 +126,7 @@ def render_html(state: dict | None, history: list, generated_at: int) -> str:
         "windowResetTs": st["windowResetTs"],
     }
     e = _html.escape
-    burn = st["statusLevel"] == "GREEN"
+    burn = st["statusLevel"] == "MAX"
     lvl_html = ('<span class="lvl firetext">BURN IT ALL</span>' if burn
                 else f'<span class="lvl">{e(st["statusLevel"])}</span>')
     conf = st["confidence"]

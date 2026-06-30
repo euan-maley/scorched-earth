@@ -250,6 +250,42 @@ def active_fraction(history: List[dict]) -> float:
     return active_hours(history)[0] / 24.0
 
 
+def recent_per_window(history: List[dict], now: int, current_used: Optional[float],
+                      weekly_reset: Optional[int], active_hours_per_day: float,
+                      lookback_days: float = 2.0) -> Optional[float]:
+    """Measured *recent* burn, in % of the weekly budget per 5h window. Feeds core's
+    "hold your fire" check. Returns None (so the warning can't fire) when history is too thin.
+
+    Primary: actual consumption over the trailing `lookback_days` within the current weekly
+    cycle. Fallback: today's burn so far, extrapolated across the elapsed part of the day,
+    when there's under ~half a day of trailing signal. Never reads I/O; pure over `history`."""
+    if (current_used is None or weekly_reset is None or now is None
+            or not active_hours_per_day or active_hours_per_day <= 0):
+        return None
+    windows_per_day = active_hours_per_day / 5.0
+    if windows_per_day <= 0:
+        return None
+    rate_per_day = None
+    cur = sorted((o for o in history
+                  if o.get("seven_day_reset") == weekly_reset and o.get("ts") is not None),
+                 key=lambda o: o["ts"])
+    if cur:
+        cutoff = now - lookback_days * DAY_SECONDS
+        trailing = [o for o in cur if o["ts"] >= cutoff] or cur
+        base = trailing[0]
+        elapsed = (now - base["ts"]) / DAY_SECONDS
+        if elapsed >= 0.5:
+            rate_per_day = max(0.0, current_used - base["used"]) / elapsed
+    if rate_per_day is None:
+        consumed_today = _consumed_today(history, now, current_used)
+        elapsed_today = 1.0 - _fraction_of_day_left(now)
+        if elapsed_today >= 0.25 and consumed_today > 0:
+            rate_per_day = consumed_today / elapsed_today
+    if not rate_per_day or rate_per_day <= 0:
+        return None
+    return rate_per_day / windows_per_day
+
+
 def average_days(history: List[dict]) -> List[dict]:
     """7 plots (Mon..Sun) of your all-time average burn per weekday."""
     avg = dow_profile(history).get("avg", {})

@@ -40,9 +40,9 @@ wl = windows_left(snap)
 # 0.20 (rest of current window) + tail (11h-1h)=10h / 5h = 2.0  -> 2.2
 check("windows_left = 2.2", abs(wl - 2.2) < 1e-9)
 
-# --- green: worked example (R=0.07) --------------------------------------------
+# --- max: worked example (R=0.07) ----------------------------------------------
 rec = compute(snap, r=0.07)
-check("green when weekly budget can't be burned in time", rec.level == "green")
+check("max when weekly budget can't be burned in time", rec.level == "max")
 check("burn_pct clamps to 100 on green", rec.burn_pct == 100.0)
 check("max_burnable ~15.4%", abs(rec.max_burnable_weekly - 15.4) < 0.1)
 check("weekly_left = 62", rec.weekly_left == 62)
@@ -50,8 +50,8 @@ check("weekly_left = 62", rec.weekly_left == 62)
 # --- amber: tune R so target lands in [0.70, 1.0) ------------------------------
 # target = (weekly_left/wl)/(r*100). weekly_left=62, wl=2.2 -> 28.18/(r*100).
 # want ~0.85 -> r*100 = 28.18/0.85 = 33.2 -> r = 0.332
-rec_amber = compute(snap, r=0.332)
-check("amber band", rec_amber.level == "amber")
+rec_push = compute(snap, r=0.332)
+check("push band", rec_push.level == "push")
 
 # --- off: lots of windows, little weekly left ----------------------------------
 slack = Snapshot(
@@ -59,9 +59,9 @@ slack = Snapshot(
     five_hour_pct=10, five_hour_reset=NOW + 4 * HOUR,
     seven_day_pct=20, seven_day_reset=NOW + 6 * 24 * HOUR,  # ~6 days left
 )
-rec_off = compute(slack, r=0.05)
-check("low when plenty of runway", rec_off.level == "low")
-check("low burn_pct < 70", rec_off.burn_pct < 70)
+rec_steady = compute(slack, r=0.05)
+check("steady when plenty of runway", rec_steady.level == "steady")
+check("steady burn_pct < 70", rec_steady.burn_pct < 70)
 
 # --- exhausted: weekly_left <= 0.5 -> "off" ------------------------------------
 empty = Snapshot(
@@ -70,13 +70,12 @@ empty = Snapshot(
     seven_day_pct=99.7, seven_day_reset=NOW + 3 * 24 * HOUR,
 )
 rec_empty = compute(empty, r=0.05)
-check("off when budget exhausted", rec_empty.level == "off")
+check("done when budget exhausted", rec_empty.level == "done")
 
 # --- banner correctness regression -------------------------------------------
 from scorched_earth.core import HEADLINE as _HEADLINE
-check("low and off have distinct banners", _HEADLINE["low"] != _HEADLINE["off"])
-check("exhausted banner doesn't say well stocked",
-      "well stocked" not in _HEADLINE["off"].lower())
+check("steady and done have distinct banners", _HEADLINE["steady"] != _HEADLINE["done"])
+check("exhausted banner praises the soldier", "good job" in _HEADLINE["done"].lower())
 
 # --- unknown: no weekly data ---------------------------------------------------
 noweek = Snapshot(now=NOW, five_hour_pct=50, five_hour_reset=NOW + HOUR)
@@ -89,7 +88,22 @@ imminent = Snapshot(
     five_hour_pct=100, five_hour_reset=NOW + 30,
     seven_day_pct=40, seven_day_reset=NOW + 30,
 )
-check("imminent reset with budget -> green", compute(imminent, r=0.05).level == "green")
+check("imminent reset with budget -> max", compute(imminent, r=0.05).level == "max")
+
+# --- ease ("hold your fire"): a measured recent overpace overrides steady/push ------
+# slack is steady (deep reserves). A fast recent pace that would strand >3 windows -> ease.
+rec_ease = compute(slack, r=0.05, recent_per_window=6.0)
+check("ease when recent pace runs dry early", rec_ease.level == "ease")
+check("ease reason says hold your fire", "hold your fire" in rec_ease.reason.lower())
+check("sustainable recent pace stays steady",
+      compute(slack, r=0.05, recent_per_window=2.0).level == "steady")
+check("no ease without a measured recent rate", compute(slack, r=0.05).level == "steady")
+check("ease never overrides max", compute(snap, r=0.07, recent_per_window=50.0).level == "max")
+# self-disengage near the reset: few windows left -> lockout below threshold -> silent.
+near = Snapshot(now=NOW, five_hour_pct=50, five_hour_reset=NOW + 2 * HOUR,
+                seven_day_pct=95, seven_day_reset=NOW + 8 * HOUR)
+check("ease self-disengages near the reset",
+      compute(near, r=0.1, recent_per_window=10.0).level == "steady")
 
 # --- calibration: recover R from synthetic burn --------------------------------
 # Same window & week; weekly rises 0.7pp per 10pp of window -> R should be ~0.07.
@@ -137,42 +151,31 @@ for i in range(6):  # weekly jumps 5pp per 10pp window -> R=0.5, out of band, al
 r_spk, prov_spk = calibrate.estimate_r(spike)
 check("implausible R spikes are discarded -> default", r_spk == calibrate.DEFAULT_R and prov_spk is True)
 
-# --- statusline token for "low" level -----------------------------------------
+# --- statusline tokens: the renamed/recolored deck ----------------------------
 from scorched_earth.statusline import token as _sl_token
 from scorched_earth.core import Recommendation as _Rec
 
-_low_rec = _Rec(
-    level="low",
-    weekly_left=80.0,
-    windows_left=20.0,
-    target_per_window=0.1,
-    burn_pct=10.0,
-    max_burnable_weekly=50.0,
-    hours_to_weekly_reset=120.0,
-    hours_to_window_reset=2.0,
-    r=0.05,
-    r_provisional=False,
-    reason="Reserves are deep.",
-)
-_off_rec = _Rec(
-    level="off",
-    weekly_left=0.0,
-    windows_left=10.0,
-    target_per_window=0.0,
-    burn_pct=0.0,
-    max_burnable_weekly=None,
-    hours_to_weekly_reset=72.0,
-    hours_to_window_reset=1.0,
-    r=0.05,
-    r_provisional=False,
-    reason="Mission accomplished.",
-)
+def _rec(level, **kw):
+    base = dict(level=level, weekly_left=80.0, windows_left=20.0, target_per_window=0.1,
+                burn_pct=10.0, max_burnable_weekly=50.0, hours_to_weekly_reset=120.0,
+                hours_to_window_reset=2.0, r=0.05, r_provisional=False, reason="x")
+    base.update(kw)
+    return _Rec(**base)
+
+_steady_rec = _rec("steady")
+_ease_rec = _rec("ease")
+_done_rec = _rec("done", weekly_left=0.0)
 for _style in ("fire", "emoji", "text"):
-    _tok = _sl_token(_low_rec, _style)
-    check(f"low token ({_style}) contains 'no rush'", "no rush" in _tok and len(_tok) > 0)
-_tok_min = _sl_token(_low_rec, "minimal")
-check("low token (minimal) is a dim dot", _tok_min == "\033[2m●\033[0m")
-check("off token (emoji) returns empty string", _sl_token(_off_rec, "emoji") == "")
+    check(f"steady token ({_style}) says eyes on the target",
+          "eyes on the target" in _sl_token(_steady_rec, _style))
+    check(f"ease token ({_style}) says hold your fire",
+          "hold your fire" in _sl_token(_ease_rec, _style))
+check("steady token (minimal) is a white dot",
+      _sl_token(_steady_rec, "minimal") == "\033[1;37m●\033[0m")
+check("ease token (minimal) is a yellow dot",
+      _sl_token(_ease_rec, "minimal") == "\033[1;33m●\033[0m")
+check("done token (emoji) now prints", "good job, soldier" in _sl_token(_done_rec, "emoji"))
+check("unknown token stays blank", _sl_token(_rec("unknown"), "emoji") == "")
 
 # --- habits / forecast ---------------------------------------------------------
 from scorched_earth import habits  # noqa: E402
@@ -242,8 +245,8 @@ straddle = Snapshot(
 )
 wl_str = windows_left(straddle)
 check("straddle: current window credited by time-to-reset, not in full", wl_str < 0.2)
-check("straddle: still green (can't spend 15% in ~0.1 window)",
-      compute(straddle, r=0.20).level == "green")
+check("straddle: still max (can't spend 15% in ~0.1 window)",
+      compute(straddle, r=0.20).level == "max")
 # Sanity: far-off weekly reset leaves the current-window credit untouched.
 check("no straddle when weekly reset is far off",
       abs(windows_left(snap) - 2.2) < 1e-9)

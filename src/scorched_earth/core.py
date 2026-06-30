@@ -14,18 +14,25 @@ from typing import Optional
 WINDOW_SECONDS = 5 * 60 * 60  # 18000; the 5-hour rolling window
 
 # target_per_window is "fraction of one full 5h window each remaining window should
-# burn to spend the weekly budget evenly." >= GREEN means you can't spend it all even
-# maxed out -> scorched earth. AMBER means burn hard, you're near the line.
-GREEN_THRESHOLD = 1.0
-AMBER_THRESHOLD = 0.70
+# burn to spend the weekly budget evenly." >= MAX means you can't spend it all even
+# maxed out -> scorched earth. PUSH means burn hard, you're near the line.
+MAX_THRESHOLD = 1.0
+PUSH_THRESHOLD = 0.70
+
+# "hold your fire" (ease) gentleness knob: warn only when, at the recent actual pace, you'd
+# run the weekly budget dry leaving more than this many usable windows stranded before the
+# reset. ~one active day of lockout. Twitchy ~1, Relaxed ~5; default Balanced = 3.
+EASE_IDLE_WINDOWS = 3.0
 
 # Canonical war-general verdict per status. The CLI headline and the HTML sitrep banner both
 # read this, so the voice can't drift between surfaces. The reason sentences live in compute().
+# Keys are the firing ladder: max -> push -> steady, ease (off the trigger), done (after-action).
 HEADLINE = {
-    "green": "Torch it all. Leave them nothing.",
-    "amber": "Almost full throttle. Not quite scorched earth yet.",
-    "low": "Well stocked. Burn at whatever pace suits you.",
-    "off": "Mission accomplished. Burned to the last drop.",
+    "max": "Torch it all. Leave them nothing.",
+    "push": "Clear shot, take it. Hold the line near full throttle.",
+    "steady": "Eyes on the target. Dead on pace, hold steady.",
+    "ease": "Hold your fire. Save rounds for tomorrow or you'll run dry before reinforcements.",
+    "done": "Good job, soldier. Burned to the last drop, rest up for reinforcements.",
     "unknown": "No read yet. Hold your horses.",
 }
 
@@ -62,7 +69,7 @@ class Snapshot:
 
 @dataclass
 class Recommendation:
-    level: str                       # "green" | "amber" | "low" | "off" | "unknown"
+    level: str                       # "max" | "push" | "steady" | "ease" | "done" | "unknown"
     weekly_left: Optional[float]     # % of weekly budget remaining
     windows_left: Optional[float]    # fractional 5h-window capacity left before weekly reset
     target_per_window: Optional[float]  # fraction of a full window to burn each window (None if no R)
@@ -105,11 +112,16 @@ def windows_left(snap: Snapshot, active_fraction: float = 1.0) -> Optional[float
 
 
 def compute(snap: Snapshot, r: Optional[float], r_provisional: bool = False,
-            active_fraction: float = 1.0) -> Recommendation:
+            active_fraction: float = 1.0,
+            recent_per_window: Optional[float] = None) -> Recommendation:
     """Turn a snapshot + calibration R into a recommendation.
 
     `r` is the fraction of the *weekly* cap that one full 5h window burns (e.g. 0.07).
     `active_fraction` discounts future windows for sleep/inactivity (1.0 = count them all).
+    `recent_per_window` is your *measured recent* burn (% of weekly per window). When given,
+    a `push`/`steady` call can be overridden to `ease` ("hold your fire") if that pace would
+    run the weekly budget dry leaving > EASE_IDLE_WINDOWS usable windows stranded before the
+    reset. Kept pure: the caller (statusline) measures the rate from habits and passes it in.
     Pass None for r when no estimate exists yet -> level "unknown".
     """
     weekly_left = None if snap.seven_day_pct is None else max(0.0, 100.0 - snap.seven_day_pct)
@@ -145,12 +157,12 @@ def compute(snap: Snapshot, r: Optional[float], r_provisional: bool = False,
         return base("unknown", None, None, None, "No weekly usage data yet.")
 
     if weekly_left <= 0.5:
-        return base("off", 0.0, 0.0, None,
-                    "Mission accomplished, soldier. Burned to the last drop, and you cut it close. Rest up for reinforcements.")
+        return base("done", 0.0, 0.0, None,
+                    "Good job, soldier. Burned to the last drop, and you cut it close. Rest up for reinforcements.")
 
     # Weekly reset is essentially here but budget remains -> burn it now.
     if wl <= 0.0:
-        return base("green", float("inf"), 100.0, 0.0,
+        return base("max", float("inf"), 100.0, 0.0,
                     "Reinforcements are almost here. Give them everything you've got, don't hold back. Last man standing.")
 
     if r is None or r <= 0:
@@ -161,15 +173,31 @@ def compute(snap: Snapshot, r: Optional[float], r_provisional: bool = False,
     target = (weekly_left / wl) / (r * 100.0)           # fraction of one window per window
     burn = min(100.0, target * 100.0)
 
-    if target >= GREEN_THRESHOLD:
+    if target >= MAX_THRESHOLD:
         reason = (
             f"Full assault clears just ~{max_burnable:.0f}% before reset; {weekly_left:.0f}% sits "
             f"in reserve, forfeit when the clock runs out. Empty the magazine. That's an order."
         )
-        return base("green", target, burn, max_burnable, reason)
-    if target >= AMBER_THRESHOLD:
-        return base("amber", target, burn, max_burnable,
-                    f"Sustain ~{burn:.0f}% each window and it's all spent by reset. Hold the line.")
-    return base("low", target, burn, max_burnable,
-                f"Reserves are deep. Even a relaxed ~{burn:.0f}% per window spends it all by reset. "
-                f"That's the easy pace, not a cap. Push harder anytime.")
+        return base("max", target, burn, max_burnable, reason)
+
+    # push / steady territory. A measured recent overpace can override to "hold your fire":
+    # at that rate you'd run the budget dry leaving usable windows stranded before reset.
+    # Self-disengaging: as wl -> 0 near the reset, idle_windows can't exceed the threshold, so
+    # it never interrupts burn-it-all. Mutually exclusive with `max` (can't run dry if maxed).
+    if recent_per_window is not None and recent_per_window > 0:
+        windows_to_dry = weekly_left / recent_per_window
+        idle_windows = wl - windows_to_dry
+        if idle_windows > EASE_IDLE_WINDOWS:
+            sustainable = weekly_left / wl  # % of weekly per window to spend evenly
+            return base("ease", target, burn, max_burnable,
+                        f"Hold your fire. At this pace you'll run dry ~{idle_windows:.0f} windows "
+                        f"before reinforcements. Ease to ~{sustainable:.0f}% a window to hold the "
+                        f"line to reset.")
+
+    if target >= PUSH_THRESHOLD:
+        return base("push", target, burn, max_burnable,
+                    f"Clear shot, take it. Sustain ~{burn:.0f}% each window and it's all spent by "
+                    f"reset. Hold the line.")
+    return base("steady", target, burn, max_burnable,
+                f"Eyes on the target. Even a relaxed ~{burn:.0f}% per window spends it all by reset. "
+                f"Dead on pace, hold steady. Push harder anytime.")

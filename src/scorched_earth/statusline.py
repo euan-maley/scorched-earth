@@ -17,49 +17,59 @@ import subprocess
 import sys
 import time
 
-# Real ANSI escapes (the host captures these verbatim and re-emits them).
-GREEN = "\033[1;32m"   # bold green
-AMBER = "\033[33m"
-DIM = "\033[2m"
+# Real ANSI escapes (the host captures these verbatim and re-emits them). The deck palette:
+# max=red, push=green, steady=white, ease=yellow(caution), done=purple(Purple Heart).
+RED = "\033[1;31m"
+GREEN = "\033[1;32m"
+WHITE = "\033[1;37m"
+CAUTION = "\033[1;33m"   # yellow
+PURPLE = "\033[1;35m"
 RESET = "\033[0m"
 
 # Styles: fire (animated flames, the installed default seeded by the hook/installer), emoji,
 # text (colored words, no emoji), minimal (just a dot). `_resolve_style` falls back to emoji
-# only if the style file is unset/missing.
+# only if the style file is unset/missing. The firing ladder: max -> push -> steady, with
+# ease (off the trigger) and done (after-action). `unknown` prints nothing.
 STYLES = {
-    "emoji": {"green": f"🟢 {GREEN}BURN IT ALL{RESET}", "amber": "🟡 {amber}",
-              "low": f"⚪ {DIM}no rush{RESET}"},
-    "text": {"green": f"{GREEN}BURN IT ALL{RESET}", "amber": "{amber}",
-             "low": f"{DIM}no rush{RESET}"},
-    "minimal": {"green": f"{GREEN}●{RESET}", "amber": f"{AMBER}●{RESET}",
-                "low": f"{DIM}●{RESET}"},
+    "emoji": {
+        "max":    f"🔥 {RED}BURN IT ALL{RESET}",
+        "push":   f"🟢 {GREEN}clear shot, take it{RESET}",
+        "steady": f"⚪ {WHITE}eyes on the target{RESET}",
+        "ease":   f"⚠️ {CAUTION}hold your fire{RESET}",
+        "done":   f"🎖️ {PURPLE}good job, soldier{RESET}",
+    },
+    "text": {
+        "max":    f"{RED}BURN IT ALL{RESET}",
+        "push":   f"{GREEN}clear shot, take it{RESET}",
+        "steady": f"{WHITE}eyes on the target{RESET}",
+        "ease":   f"{CAUTION}hold your fire{RESET}",
+        "done":   f"{PURPLE}good job, soldier{RESET}",
+    },
+    "minimal": {
+        "max":    f"{RED}●{RESET}",
+        "push":   f"{GREEN}●{RESET}",
+        "steady": f"{WHITE}●{RESET}",
+        "ease":   f"{CAUTION}●{RESET}",
+        "done":   f"{PURPLE}●{RESET}",
+    },
 }
 
 
 def token(rec, style: str) -> str:
-    # Fire: the green light stays (identity) but "BURN IT ALL" burns. The phase comes from
-    # wall-clock, so the flame flows each time the statusline refreshes (cadence is set by
-    # Claude Code, so it shimmers rather than animating smoothly).
+    lvl = rec.level
+    if lvl in (None, "unknown"):
+        return ""  # no actionable signal -> keep the bar clean
+    # Fire is the maximalist style: BURN IT ALL ignites (the phase comes from wall-clock, so the
+    # flame flows each refresh) and eyes on the target gets the darts glyph. The rest mirror emoji.
     if style == "fire":
-        if rec.level == "green":
+        if lvl == "max":
             from . import gradient
             phase = (time.time() * 2.4) % (2 * math.pi)
             return "🔥 " + gradient.fire("BURN IT ALL", phase=phase)
-        if rec.level == "amber" and rec.burn_pct is not None:
-            return f"🟡 {AMBER}burn {rec.burn_pct:.0f}%{RESET}"
-        if rec.level == "low":
-            return f"⚪ {DIM}no rush{RESET}"
-        return ""
-
-    s = STYLES.get(style, STYLES["emoji"])
-    if rec.level == "green":
-        return s["green"]
-    if rec.level == "amber" and rec.burn_pct is not None:
-        amber_txt = f"{AMBER}burn {rec.burn_pct:.0f}%{RESET}"
-        return s["amber"].format(amber=amber_txt)
-    if rec.level == "low":
-        return s["low"]
-    return ""  # off / unknown -> nothing
+        if lvl == "steady":
+            return f"🎯 {WHITE}eyes on the target{RESET}"
+        return STYLES["emoji"].get(lvl, "")
+    return STYLES.get(style, STYLES["emoji"]).get(lvl, "")
 
 
 def _resolve_style() -> str:
