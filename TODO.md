@@ -12,7 +12,7 @@ Branch `feat/hold-your-fire-deck` (not yet merged or published).
 - [x] Design spec committed at `docs/superpowers/specs/2026-06-29-hold-your-fire-and-deck-recolor-design.md`.
 
 **RESUME / open:**
-1. Not version-bumped or published; bundle into the next release. Refresh demo/screenshots for the new deck colors if desired.
+1. Bumped to **v2.7.1** (plugin.json + pyproject); not yet published. Publish flow: merge the branch to `main`, push, tag `v2.7.1`, GitHub Release, then `claude plugin marketplace update` + `claude plugin update` to pull it. Refresh demo/screenshots for the new deck colors if desired.
 2. Possible follow-ups (out of scope this session): a real-time `ease` desktop nudge (rate-limited), and per-repo/ROE configurability of `EASE_IDLE_WINDOWS`.
 
 ---
