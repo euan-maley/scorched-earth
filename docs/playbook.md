@@ -137,8 +137,14 @@ DEFCON-1 campaigns. The cockpit kanban pushes live SSE board state per repo. All
 (COA, After-Action) carry DEFCON badges; no budget columns. The COA report is also served
 live with `scorch advise --serve` (`coa_view.py`): a 127.0.0.1 token-guarded page with per-repo
 tabs and a Refresh button that re-reads each repo's `jobs.json` (no re-scan); `/coa`
-background-launches it. 65 unit checks
-(`python3 tests/test_scorched.py`) + 43 advisor checks (`python3 tests/test_advisor.py`) +
-78 runner checks (`python3 tests/test_runner.py`) + 70 cockpit checks
-(`python3 tests/test_cockpit.py`) = 256 total; all gated in CI via
+background-launches it. The served page now stamps each repo with `scannedAt` (the `jobs.json`
+mtime) so staleness is knowable, and `/coa` is **stale-aware**: it re-scans when the repo has
+moved on since the last scan (a newer HEAD commit or a dirty tree), not just when `jobs.json`
+is missing, so re-running actually refreshes. The cockpit `state_json` exposes `stopped` +
+`stop_reason` (`operator` on Stop, `limit` on the usage-ceiling halt) so a halt is
+distinguishable from a clean finish (the HALTED banner + staleness label render in the
+upcoming merged-shell UI). 76 unit checks
+(`python3 tests/test_scorched.py`) + 45 advisor checks (`python3 tests/test_advisor.py`) +
+78 runner checks (`python3 tests/test_runner.py`) + 73 cockpit checks
+(`python3 tests/test_cockpit.py`) = 272 total; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.

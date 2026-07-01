@@ -1,6 +1,47 @@
 # TODO
 
-## Current Session (2026-06-29): hold your fire (over-burn warning) + deck rename/recolor
+## Current Session (2026-07-01): backlog triage + Phase 1 backend bug fixes
+
+Kicked off a big multi-session effort from a user bug/idea list (13 items). Triaged, diagnosed the 4 bugs (systematic-debugging), locked a phased roadmap (below). User committed to fixing/building ALL items across sessions and chose "merge shell first, UI once."
+
+**This session (Phase 1 - backend bug fixes, no UI dependency): DONE.** Branch `feat/coa-observability-freshness` (2 commits, LOCAL/unpushed - close-out only, not merged).
+- [x] **A. Observability backend (#2/#8):** `Engine._stop_reason` ("operator" on `stop()`, "limit" on the usage-limit halt in `_drain_repo`, cleared in `run()`); `state_json()` emits `stopped` + `stop_reason`. +3 cockpit checks (70 -> 73). HALTED-state render + resume hint is Phase 2 (merged shell).
+- [x] **B. Freshness (#5/#6):**
+  - [x] `coa_io.jobs_scanned_at` (jobs.json mtime); `coa_report._repo_obj` stamps each repo with `scannedAt`, surfaced via `coa_state`. +2 advisor checks (43 -> 45). The staleness *display* is Phase 2.
+  - [x] `commands/coa.md` now stale-aware: re-scans when the repo moved on since the last scan (newer HEAD commit or dirty tree), not just when `jobs.json` is missing; reuse only when nothing changed, and the briefing reports scan freshness. VISIBLE fix for #5.
+- [x] Docs travel with code: CLAUDE.md (coa_serve `stop_reason` + coa_view `scannedAt` lines), this TODO, playbook Current Status.
+- [x] Suites green: 45 / 76 / 73 / 78.
+
+**Foundation note (holds into Phase 2):** the cockpit still renders IDLE (not HALTED) on a usage-limit halt until the Phase 2 shell reads `stop_reason`; the `scannedAt` label likewise lands in Phase 2. The one user-visible Phase 1 win is the `/coa` stale-aware re-scan.
+
+**Next session = Phase 2:** brainstorm + build the merged HTML shell, then the UI items inside it (see ROADMAP).
+
+---
+
+## ROADMAP: bug/idea backlog (user list, 2026-07-01) - fix + build ALL, phased
+
+Ordering locked with the user: backend before UI, merged shell (#13) before the UI work, executor settled before the live-progress view. User chose "merge shell first, UI once."
+
+**Phase 1 - Backend bug fixes (no UI dep):** DONE (branch `feat/coa-observability-freshness`, 2 commits)
+- [x] Observability: `stop_reason` / `stopped` in `state_json` (#2/#8 backend). +3 cockpit checks.
+- [x] Freshness: `scannedAt` (mtime) in `coa_state` + `/coa` stale-aware re-scan (#5/#6 backend + #5 scan-skip). +2 advisor checks.
+
+**Phase 2 - Merged shell (#13) THEN all UI once:**
+- [ ] Brainstorm + build the unified HTML: COA + War Room + Sitrep, big tabs
+- [ ] UI in the shell: HALTED state + resume hint (#2/#8), freshness UI + honest Refresh (#5/#6), war-room refresh (#6), ROE toggle true/false/cycle in terminal + html (#10), sitrep refresh (#12), "cratered" legend (#9), approval legibility how/why (#1)
+
+**Phase 3 - Execution engine (increasing coupling):**
+- [ ] Model selection per task, Claude picks fable/sonnet/opus/haiku (#4)
+- [ ] In-repo / non-headless run + deliverable + session context, usable in the active iTerm2 window (#3)
+- [ ] Secure start-to-end permissions/goal + manager roadblock safety net + notify user on roadblock (#11)
+
+**Phase 4 - Live progress view (#7):** per-task last-command / live War Room view (CRT progress screen). Built last (needs the merged shell + the new executor).
+
+Answered inline (not tasks, feed #9/#1 UI legibility in Phase 2): "cratered" = the fail state (job or its gate failed, work discarded); approval is needed when `defcon < auto_run_min_defcon` (default 3), granted via `scorch coa run --approve` or the cockpit Run button (operator-present).
+
+---
+
+## Prior Session (2026-06-29): hold your fire (over-burn warning) + deck rename/recolor
 
 Branch `feat/hold-your-fire-deck` (not yet merged or published).
 
