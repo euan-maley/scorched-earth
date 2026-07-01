@@ -167,6 +167,8 @@ _r3 = _mk_repo([Job(id="s1", repo=".", title="S1", type="test", value=5),
 _eng3 = Engine([_r3], execute=_exec_stop, load_state=lambda: _STATE, now=lambda: 1)
 _eng3.run(_r3); _wait_idle(_eng3)
 check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
+check("engine: operator stop is reflected in state_json (stopped + reason)",
+      _eng3.state_json()["stopped"] is True and _eng3.state_json()["stop_reason"] == "operator")
 
 # Run clears a prior Stop (Stop is a pause, not a permanent kill)
 _ran_sr = []
@@ -180,6 +182,8 @@ _engsr.run(_rs); _wait_idle(_engsr)   # Run must clear the stop flag and drain
 check("engine: Run resumes after a prior Stop (clears the stop flag)",
       sorted(_ran_sr) == ["p1", "p2"] and _io.read_queue(_rs) == []
       and _engsr.state_json()["busy"] is False)
+check("engine: Run clears the halt reason (stop is a pause, not a permanent halt)",
+      _engsr.state_json()["stopped"] is False and _engsr.state_json()["stop_reason"] is None)
 
 # --- Task 6: HTTP server (token, routing, SSE) ------------------------------------
 import http.client  # noqa: E402
@@ -414,6 +418,8 @@ check("a usage-limit halts the engine; the limit job is re-queued (resumable)",
 _sj = _hl.state_json()
 check("state_json drops headroom/fit", "headroom" not in _sj)
 check("state_json exposes weekly reserve context", "weekly_reserve_pct" in _sj)
+check("state_json reports the halt reason on a usage-limit (stopped + reason=limit)",
+      _sj["stopped"] is True and _sj["stop_reason"] == "limit")
 check("board briefs carry defcon + approval_required",
       all("defcon" in jb and "approval_required" in jb
           for r in _sj["repos"] for jb in r["proposed"] + r["queued"]))

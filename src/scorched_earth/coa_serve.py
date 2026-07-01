@@ -34,6 +34,7 @@ class Engine:
         self._now = now or (lambda: int(time.time()))
         self._lock = threading.Lock()
         self._stop = False
+        self._stop_reason = None                   # None | "operator" | "limit": why the drain halted
         self._running = {}                         # repo -> {"repo","id"} (one in-flight job per repo)
         self._kill_events = {}                     # repo -> threading.Event
         self._workers = set()                      # repos with a live drain worker
@@ -55,6 +56,7 @@ class Engine:
         repos = [os.path.realpath(os.path.expanduser(r)) for r in repos]
         with self._lock:
             self._stop = False
+            self._stop_reason = None                # Run resumes: clear the prior halt reason
         for rp in repos:
             if self._ensure_worker(rp):
                 threading.Thread(target=self._drain_repo, args=(rp,), daemon=True).start()
@@ -82,6 +84,7 @@ class Engine:
     def stop(self):
         with self._lock:
             self._stop = True                      # halts every worker after its current job
+            self._stop_reason = "operator"
 
     def kill(self, repo, job_id):
         target = os.path.realpath(os.path.expanduser(repo))
@@ -100,11 +103,13 @@ class Engine:
         with self._lock:
             running = [dict(v) for v in self._running.values()]
             busy = bool(running) or bool(self._workers)
+            stopped, stop_reason = self._stop, self._stop_reason
             running_by_repo = {}
             for v in self._running.values():
                 running_by_repo.setdefault(v["repo"], []).append(v["id"])
         repos = [coa_io.board_state(r, running_by_repo.get(r, ())) for r in self.repos]
         return {"repos": repos, "running": running, "busy": busy,
+                "stopped": stopped, "stop_reason": stop_reason,
                 "weekly_reserve_pct": round(wrp, 0) if wrp is not None else None}
 
     # ---- per-repo drain worker ----
@@ -150,6 +155,7 @@ class Engine:
                 if oc.outcome == "limit":
                     coa_io.enqueue(repo, [job])          # didn't run — put it back, resumable
                     self._stop = True                    # halt every worker
+                    self._stop_reason = "limit"          # hit the real weekly ceiling
                 elif oc.outcome in ("pass", "fail"):
                     rr.jobs.append(oc)
                     self._persist(repo, rr)          # killed: not appended (board -> proposed)
