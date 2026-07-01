@@ -24,12 +24,30 @@ IMPACT (DEFCON), never by effort or how long a job would take.
    **Target repos:** `<repo path(s)>`
    **Refresh flag:** `<yes/no>`
 
-   ### Step 1 - Ensure a job list
+   ### Step 1 - Ensure a fresh job list
 
-   For each target repo, check whether `<repo>/.scorched/jobs.json` exists.
+   A scan writes `<repo>/.scorched/jobs.json`; that file's mtime is the last scan time. For each
+   target repo, decide whether to (re)scan. Do **not** blindly reuse an old `jobs.json`: if the
+   repo has moved on since it was written, its jobs are stale and a re-run must refresh them.
 
-   - If it exists and refresh is **no**, use it as-is.
-   - If it is missing, or refresh is **yes**, run the scan:
+   **Re-scan** the repo if ANY of these hold:
+   - `<repo>/.scorched/jobs.json` is missing, or
+   - the refresh flag is **yes**, or
+   - the repo changed since the last scan. Compute (epoch seconds; the dual `stat` covers macOS + Linux):
+     ```bash
+     f="<repo>/.scorched/jobs.json"
+     scanned=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
+     last_commit=$(git -C "<repo>" log -1 --format=%ct 2>/dev/null || echo 0)
+     dirty=$(git -C "<repo>" status --porcelain 2>/dev/null)
+     ```
+     Re-scan if `last_commit` is greater than `scanned`, or `dirty` is non-empty. (If the repo
+     is not a git repo, `last_commit` stays 0: reuse an existing `jobs.json` unless refresh is yes.)
+
+   Otherwise the existing `jobs.json` is still current (nothing changed since the scan): **reuse it
+   as-is**, and say so in the briefing (a cached scan from <relative age> ago, repo unchanged;
+   `--refresh` forces a fresh one).
+
+   To run the scan:
      1. Load the repo's effective rules with `scorch roe <repo>` (fallback
         `~/scorched-earth/bin/scorch roe <repo>`). Honour `exclude_paths`, `allowed_types`,
         and `goals` throughout.
@@ -102,6 +120,7 @@ IMPACT (DEFCON), never by effort or how long a job would take.
      3. <title> - DEFCON <N>, value <N> [approval required?]
 
    Blocked by ROE: <N> job(s).
+   Scan: <fresh, just now | cached from <relative age> ago, repo unchanged>
    Report: <path to HTML COA record>
    ```
    ---

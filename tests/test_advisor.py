@@ -208,6 +208,12 @@ def _wj(jobs):
 _wj([{"id": "v1", "repo": _vrepo, "title": "first", "type": "audit", "defcon": 1, "value": 9}])
 check("coa_state re-reads jobs.json into a repos list",
       _cv.coa_state([_vrepo])["repos"][0]["queue"][0]["title"] == "first")
+_expected_mtime = _os2.path.getmtime(_os2.path.join(_vrepo, ".scorched", "jobs.json"))
+check("coa_state stamps each repo with jobs.json scannedAt (mtime, for staleness)",
+      abs(_cv.coa_state([_vrepo])["repos"][0]["scannedAt"] - _expected_mtime) < 2)
+_norepo = _tf2.mkdtemp()  # never scanned: no .scorched/jobs.json
+check("coa_state scannedAt is None when a repo was never scanned",
+      _cv.coa_state([_norepo])["repos"][0]["scannedAt"] is None)
 _tok = "TESTTOK"
 _httpd, _port = _cv.make_server([_vrepo], _tok)
 _thr.Thread(target=_httpd.serve_forever, daemon=True).start()

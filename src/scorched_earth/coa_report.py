@@ -57,11 +57,13 @@ def _repo_name(repo_path: str) -> str:
 
 
 def _repo_obj(repo_path: str, coa: COA, roe_lines=None) -> dict:
+    from . import coa_io
     return {
         "repo": repo_path or "",
         "name": _repo_name(repo_path),
         "note": coa.note,
         "roe": list(roe_lines or []),
+        "scannedAt": coa_io.jobs_scanned_at(repo_path) if repo_path else None,
         "queue": [_job_obj(j) for j in coa.queue],
         "blocked": [_job_obj(j) for j in coa.blocked],
     }

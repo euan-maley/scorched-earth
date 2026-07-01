@@ -74,6 +74,15 @@ def load_jobs(repo_path: str) -> List[Job]:
     return parse_jobs(data, repo=os.path.realpath(os.path.expanduser(repo_path)))
 
 
+def jobs_scanned_at(repo_path: str):
+    """Epoch seconds of the repo's jobs.json (its last scan), or None if never scanned.
+    The scan writes jobs.json, so the file mtime IS the scan time, no schema change needed."""
+    try:
+        return os.path.getmtime(os.path.join(_repo_dir(repo_path), "jobs.json"))
+    except OSError:
+        return None
+
+
 def write_coa(repo_path: str, md: str, html: str, date: str) -> Tuple[str, str]:
     out = os.path.join(_repo_dir(repo_path), "coa")
     os.makedirs(out, exist_ok=True)
