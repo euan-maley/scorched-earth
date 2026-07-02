@@ -207,6 +207,25 @@ def build_claude_cmd(job: "Job", worktree: str) -> List[str]:
     ] + model_arg(job)
 
 
+_ADVISOR_PRELUDE = (
+    "You are a RECOVERY agent. A prior unattended run in THIS worktree hit a roadblock and could "
+    "not finish. Diagnose the problem below, apply a focused, additive fix so the original task "
+    "can complete, and make the verification gate pass. Work ONLY in this worktree; commit when "
+    "done; DO NOT push. The roadblock:\n\n"
+)
+
+
+def build_advisor_cmd(job: "Job", roe: "ROE", problem: str) -> List[str]:
+    """Headless, sandboxed claude invocation for one bounded recovery attempt on a roadblocked
+    job. Same containment as build_claude_cmd; the prompt is the roadblock + the original task."""
+    prompt = _ADVISOR_PRELUDE + problem + "\n\nOriginal task:\n" + (job.launch or job.title)
+    return [
+        "claude", "-p", prompt,
+        "--output-format", "stream-json", "--verbose",
+        "--dangerously-skip-permissions",
+    ] + model_arg(job)
+
+
 def build_gate_cmd(job: "Job", roe: "ROE") -> Optional[str]:
     return job.verify or roe.test_cmd or None
 
@@ -302,6 +321,43 @@ def _discard_worktree(root, job_id):
 
 
 # ---------------------------------------------------------------------------
+# Roadblock recovery: one bounded advising-agent attempt, then re-gate
+# ---------------------------------------------------------------------------
+
+def _try_advise(wt, job, roe, base_sha, problem):
+    """One bounded recovery attempt: run an advising agent in the worktree, then re-gate.
+    Returns (solved, diff, note). Solved only when a gate exists and passes after the fix."""
+    status, out, rc = _run_killable(build_advisor_cmd(job, roe, problem), wt,
+                                    getattr(_kill_ctx, "event", None),
+                                    idle_secs=(roe.roadblock_idle_secs or None))
+    diff = _diffstat(wt, base_sha)
+    if status in ("killed", "idle") or detect_rate_limit(out):
+        return False, diff, "advising agent could not recover ({}).".format(status)
+    gate = build_gate_cmd(job, roe)
+    if gate is None:
+        return False, diff, "advising agent ran but there is no gate to confirm recovery."
+    g = subprocess.run(gate, cwd=wt, shell=True, capture_output=True, text=True)
+    if g.returncode == 0:
+        return True, diff, "gate passed after recovery."
+    return False, diff, "advising agent's fix still fails the gate."
+
+
+def _roadblock_or_advise(wt, job, roe, base_sha, reason):
+    """Turn a detected roadblock into an outcome: if advise_on_roadblock, try one recovery
+    attempt (a pass on success), else record 'roadblocked' with a resume hint."""
+    advised = ""
+    if roe.advise_on_roadblock:
+        solved, diff, note = _try_advise(wt, job, roe, base_sha, reason)
+        if solved:
+            return "pass", diff, "roadblock auto-solved by advising agent ({}). {}".format(reason, note)
+        advised = " (advising agent could not recover)"
+    else:
+        diff = _diffstat(wt, base_sha)
+    return ("roadblocked", diff,
+            "roadblock: {}.{} Branch kept; `scorch coa resume {}`.".format(reason, advised, job.id))
+
+
+# ---------------------------------------------------------------------------
 # execute_job — real per-job work
 # ---------------------------------------------------------------------------
 
@@ -353,11 +409,10 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
         if status == "killed":
             _discard_worktree(root, job.id)
             return "killed", None, "killed by operator, work discarded."
-        if status == "idle":                            # stuck: keep the branch for resume
+        if status == "idle":                            # stuck: try recovery, else keep for resume
             mins = int((roe.roadblock_idle_secs or 0) / 60)
-            return ("roadblocked", _diffstat(wt, base_sha),
-                    "roadblock: no output for {}m (stuck). Branch kept; auto-advise or "
-                    "`scorch coa resume {}`.".format(mins, job.id))
+            return _roadblock_or_advise(wt, job, roe, base_sha,
+                                        "no output for {}m (stuck)".format(mins))
         if detect_rate_limit(out):
             _discard_worktree(root, job.id)             # nothing landed; job returns to the queue
             return "limit", None, "stopped: usage limit reached, re-queued, resume after reset."
@@ -374,9 +429,8 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
         g = subprocess.run(gate, cwd=wt, shell=True, capture_output=True, text=True)
         if g.returncode == 0:
             return "pass", diff, "gate passed."
-        return ("roadblocked", diff,                    # failed gate: a roadblock, branch kept
-                "roadblock: gate FAILED ({}). Branch kept; auto-advise or "
-                "`scorch coa resume {}`.".format(gate, job.id))
+        return _roadblock_or_advise(wt, job, roe, base_sha,   # failed gate: try recovery, else roadblock
+                                    "gate FAILED ({})".format(gate))
     except Exception as e:          # noqa: BLE001 — never let one job abort the run
         return "fail", None, "runner error: {}".format(e)
 

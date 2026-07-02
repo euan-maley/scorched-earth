@@ -520,6 +520,34 @@ check("run_queue writes the roadblock report + counts it in the summary",
 check("board_state files a roadblocked job under finished, not proposed",
       any(j.get("outcome") == "roadblocked" for j in _io.board_state(_rbq_repo)["finished"]))
 
+# --- Stage 7: advising-agent auto-solver ------------------------------------------
+from scorched_earth.runner import build_advisor_cmd  # noqa: E402
+import scorched_earth.runner as _rnmod  # noqa: E402
+_adv = build_advisor_cmd(Job(id="a", repo="r", title="A", type="test", launch="raise coverage",
+                             model="sonnet"), ROE(), "gate FAILED (pytest)")
+check("build_advisor_cmd is a headless recovery invocation with problem + task + model",
+      _adv[0] == "claude" and "-p" in _adv and any("RECOVERY" in a for a in _adv)
+      and any("gate FAILED (pytest)" in a for a in _adv) and any("raise coverage" in a for a in _adv)
+      and _adv[_adv.index("--model") + 1] == "sonnet")
+
+_savedadv = _rnmod._try_advise
+_rnmod._try_advise = lambda wt, job, roe, base, reason: (True, {"files": 1, "insertions": 3,
+                                                               "deletions": 0}, "fixed")
+_ao = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                  ROE(advise_on_roadblock=True), "sha", "gate FAILED (pytest)")
+check("advise auto-solve turns a roadblock into a pass", _ao[0] == "pass" and "auto-solved" in _ao[2])
+_rnmod._try_advise = lambda *a: (False, None, "nope")
+_au = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                  ROE(advise_on_roadblock=True), "sha", "stuck")
+check("advise failure leaves the job roadblocked", _au[0] == "roadblocked" and "could not recover" in _au[2])
+_seen = []
+_rnmod._try_advise = lambda *a: (_seen.append(1), (True, None, "x"))[1]
+_aoff = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                    ROE(advise_on_roadblock=False), "sha", "stuck")
+check("advise_on_roadblock=False skips the advising agent entirely",
+      _aoff[0] == "roadblocked" and not _seen)
+_rnmod._try_advise = _savedadv
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
