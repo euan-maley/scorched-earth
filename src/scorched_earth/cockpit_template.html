@@ -268,6 +268,7 @@ const STATE = __COCKPIT_JSON__;
   function normalize(s){
     s = s || {};
     return { repos: Array.isArray(s.repos)?s.repos:[], running: Array.isArray(s.running)?s.running:[], busy: !!s.busy,
+             stopped: !!s.stopped, stop_reason: s.stop_reason||null,
              weekly_reserve_pct: s.weekly_reserve_pct!=null?s.weekly_reserve_pct:null };
   }
   const repoOf = key => state.repos.find(r=>r.repo===key) || null;
@@ -393,17 +394,24 @@ const STATE = __COCKPIT_JSON__;
   /* ---------- header / status / tabs ---------- */
   function renderHeader(){
     const busy = state.busy;
+    // HALTED: the drain hit the real weekly usage ceiling (stop_reason "limit"), distinct from a
+    // clean finish or an operator pause (both read IDLE). The un-run job was re-queued: Run resumes.
+    const halted = !busy && state.stopped && state.stop_reason === "limit";
     document.getElementById("hdrStamp").textContent =
       "// WAR ROOM \u00b7 SECTOR 07 \u00b7 " + state.repos.length + (state.repos.length===1?" SECTOR":" SECTORS");
     const dot = document.getElementById("hdrDot");
-    dot.style.background = busy?"#ff6a1f":"#6f8a8a";
-    dot.style.boxShadow = "0 0 8px "+(busy?"#ff6a1f":"#6f8a8a");
-    dot.className = "dot"+(busy?" blink":"");
+    const dotCol = busy?"#ff6a1f":(halted?"#c0392b":"#6f8a8a");
+    dot.style.background = dotCol;
+    dot.style.boxShadow = "0 0 8px "+dotCol;
+    dot.className = "dot"+(busy||halted?" blink":"");
 
     const flag = document.getElementById("liveFlag");
     if(busy){
       flag.style.borderColor="#ff6a1f"; flag.style.color="#ff8a3f";
       flag.innerHTML='<span class="dot blink" style="background:#ff6a1f;box-shadow:0 0 8px #ff6a1f"></span>LIVE';
+    } else if(halted){
+      flag.style.borderColor="#c0392b"; flag.style.color="#e2705a";
+      flag.innerHTML='<span class="dot blink" style="background:#c0392b;box-shadow:0 0 8px #c0392b"></span>HALTED';
     } else {
       flag.style.borderColor="#6f8a8a"; flag.style.color="#9ec1c1";
       flag.innerHTML='<span class="dot" style="background:#6f8a8a;box-shadow:0 0 6px #6f8a8a"></span>IDLE';
@@ -416,6 +424,9 @@ const STATE = __COCKPIT_JSON__;
     } else if(R.length > 1){
       const names = R.map(x=>(state.repos.find(r=>r.repo===x.repo)||{}).name||"?").join(", ");
       sub.innerHTML = '<span style="color:#ff8a3f">'+R.length+' RUNNING IN PARALLEL</span> &middot; '+esc(names);
+    } else if(halted){
+      sub.innerHTML = '<span style="color:#e2705a">HALTED &middot; hit the weekly usage ceiling. '
+        + 'The un-run job is back in the queue; press RUN to resume after the reset.</span>';
     } else {
       sub.textContent = "SCORCHED EARTH · LIVE QUEUE CONTROL";
     }

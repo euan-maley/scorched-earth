@@ -540,6 +540,18 @@ check("cockpit no longer labels the HUD 'BUDGET SPENT'", "BUDGET SPENT" not in _
 check("__COCKPIT_TOKEN__ and __COCKPIT_JSON__ are fully substituted",
       "__COCKPIT_TOKEN__" not in _hd and "__COCKPIT_JSON__" not in _hd)
 
+# --- Phase 2: HALTED banner keyed on stop_reason == "limit" (#2/#8) ----------------
+# The cockpit paints the flag client-side from state_json; these confirm the template wires
+# the HALTED branch (distinct from IDLE) off the limit reason and carries the resume hint.
+_hh = render_cockpit("tk", {"repos": [], "running": [], "busy": False,
+                            "stopped": True, "stop_reason": "limit"}).decode("utf-8")
+check("cockpit wires a HALTED flag off stop_reason == 'limit'",
+      'stop_reason === "limit"' in _hh and "HALTED" in _hh)
+check("cockpit HALTED state carries a resume hint (re-queued; press RUN)",
+      "resume" in _hh.lower() and "RUN" in _hh)
+check("cockpit HALTED is distinct from an operator pause (operator does not force HALTED)",
+      'state.stop_reason === "limit"' in _hh)  # operator/None fall through to IDLE
+
 # --- Phase 2: the unified shell (one server, big-tab frame over all three surfaces) ---
 from scorched_earth import shell as _shell  # noqa: E402
 # In shell mode make_server serves the frame at / and folds in the two read-only tabs
