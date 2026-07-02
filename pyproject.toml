@@ -1,6 +1,6 @@
 [project]
 name = "scorched-earth"
-version = "2.7.2"
+version = "2.7.3"
 description = "A fire-team readout for Claude usage: signals when remaining weekly budget can only be spent by maxing out every remaining 5-hour window, and when you're burning so fast you'll run dry before the reset, plus a habit-based preemptive forecast."
 readme = "README.md"
 requires-python = ">=3.8"

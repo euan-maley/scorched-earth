@@ -1,7 +1,7 @@
 {
   "name": "scorched-earth",
   "description": "A fire-team readout for Claude usage: signals when remaining weekly budget can only be spent by maxing out every remaining 5-hour window (and when you're burning so fast you'll run dry before the reset), plus a habit-based forecast that nudges you preemptively before you leave credit unused. A Course of Action layer then turns that signal into work, scanning your linked repos for high-impact jobs, ranking them by DEFCON, and running them under a leash.",
-  "version": "2.7.2",
+  "version": "2.7.3",
   "author": {
     "name": "Euan Maley"
   },
