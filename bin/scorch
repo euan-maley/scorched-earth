@@ -337,14 +337,16 @@ def _coa_cli(raw):
 
 
 def _coa_attended(args):
-    """`scorch coa run --here <job-id> [repo]` — take over THIS window for one job (Phase 3).
-    Resolves the repo + job, then execs an interactive claude in the real repo (takeover). The
-    exec replaces this process, so on success nothing after it runs."""
+    """`scorch coa run <--here|--session> <job-id> [repo]` — run ONE job attended (Phase 3/4).
+    --here takes over THIS window (execvp; does not return); --session spawns a new window.
+    Resolves the repo + job, then dispatches to the exec_modes launcher."""
     from scorched_earth import coa_io, exec_modes
-    i = args.index("--here")
+    flag = "--here" if "--here" in args else "--session"
+    override = "takeover" if flag == "--here" else "session"
+    i = args.index(flag)
     job_id = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else None
     if not job_id:
-        print("Usage: scorch coa run --here <job-id> [repo]")
+        print(f"Usage: scorch coa run {flag} <job-id> [repo]")
         return 0
     positional = [a for a in args if not a.startswith("-")]
     repo = next((a for a in positional if os.path.isdir(os.path.expanduser(a))), None) \
@@ -354,9 +356,12 @@ def _coa_attended(args):
     if job is None:
         print(f"No job '{job_id}' in {repo}. Scan first with /coa.")
         return 0
-    print(f"Taking over this window for job '{job_id}' in {repo} (Ctrl-C to abort)...")
-    exec_modes.run_takeover(repo, job, roe)     # execvp: does not return on success
-    return 0
+    if override == "takeover":
+        print(f"Taking over this window for job '{job_id}' in {repo} (Ctrl-C to abort)...")
+        exec_modes.run_takeover(repo, job, roe)     # execvp: does not return on success
+        return 0
+    print(f"Opening a new session for job '{job_id}' in {repo}...")
+    return exec_modes.run_session(repo, job, roe)
 
 
 def _coa_run_cli(rest):
@@ -399,9 +404,9 @@ def _coa_run_cli(rest):
         return 0
 
     if sub == "run":
-        # --here <job-id>: take over THIS window for one job (attended, sandboxed). --session
-        # <job-id> (Stage 4) spawns a new one. Both are single-job; plain `run` drains headless.
-        if "--here" in args:
+        # --here <job-id> takes over THIS window (attended, sandboxed); --session <job-id> spawns
+        # a new window (attended, free). Both are single-job; plain `run` drains headless.
+        if "--here" in args or "--session" in args:
             return _coa_attended(args)
         approve = "--approve" in args
         repos = [a for a in args if not a.startswith("-")] or coa_io.list_repos() or ["."]

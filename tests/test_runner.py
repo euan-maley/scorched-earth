@@ -228,6 +228,19 @@ check("build_takeover_cmd is interactive claude with the prompt, --settings, and
       and _tk[_tk.index("--model") + 1] == "opus")
 check("build_takeover_cmd does not skip permissions (operator present)",
       "--dangerously-skip-permissions" not in _tk)
+
+# --- Stage 4: session mode (new-window spawn) -------------------------------------
+_ss = _em.build_session_cmd(_jb3, _roe_att)
+check("build_session_cmd is interactive claude, no --settings (session is fully free), with model",
+      _ss[0] == "claude" and "-p" not in _ss and "--settings" not in _ss
+      and "--dangerously-skip-permissions" not in _ss and _ss[_ss.index("--model") + 1] == "opus")
+check("build_session_cmd still carries the composed prompt (context_cmd + task)",
+      any("/kerd:switch in" in a for a in _ss) and any("Do the audit" in a for a in _ss))
+_scr = _em._session_script("/tmp/myrepo", _ss)
+_body = open(_scr).read()
+check("_session_script cd's to the repo and execs the session command",
+      _body.startswith("#!/bin/bash") and "cd /tmp/myrepo" in _body and "exec claude" in _body)
+os.remove(_scr)
 check("merge_cmd / discard_cmd reference the branch",
       "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
 

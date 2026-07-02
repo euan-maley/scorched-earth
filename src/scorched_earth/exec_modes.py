@@ -17,7 +17,10 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import shutil
 import subprocess
+import sys
 import tempfile
 from typing import List, Optional
 
@@ -90,6 +93,13 @@ def build_takeover_cmd(job: Job, roe: ROE, settings_path: str) -> List[str]:
             "--settings", settings_path] + model_arg(job)
 
 
+def build_session_cmd(job: Job, roe: ROE) -> List[str]:
+    """Interactive claude for a fresh, fully-free session (no OS sandbox, no skip-permissions):
+    the composed opening prompt as the positional arg, plus the per-task model. The 'run it in
+    front of me with full context' mode; the operator and the injected orders are the only leash."""
+    return ["claude", compose_attended_prompt(job, roe)] + model_arg(job)
+
+
 # ---------------------------------------------------------------------------
 # Launchers (thin I/O; verified by hand, not unit-tested)
 # ---------------------------------------------------------------------------
@@ -119,3 +129,63 @@ def run_takeover(repo: str, job: Job, roe: ROE) -> None:
     os.chdir(root)
     cmd = build_takeover_cmd(job, roe, write_temp_sandbox_settings())
     os.execvp(cmd[0], cmd)
+
+
+def _session_script(repo_root: str, cmd: List[str]) -> str:
+    """Write a temp shell script that cd's to the repo then execs the session command; return its
+    path. Sidesteps nested AppleScript / terminal quoting: the terminal just runs one file path."""
+    body = "#!/bin/bash\ncd {}\nexec {}\n".format(
+        shlex.quote(repo_root), " ".join(shlex.quote(a) for a in cmd))
+    fd, path = tempfile.mkstemp(prefix="scorch-session-", suffix=".sh")
+    with os.fdopen(fd, "w") as fh:
+        fh.write(body)
+    os.chmod(path, 0o755)
+    return path
+
+
+def _osascript(src: str) -> bool:
+    try:
+        return subprocess.run(["osascript", "-e", src],
+                              capture_output=True, text=True).returncode == 0
+    except Exception:  # noqa: BLE001 — osascript absent / AppleScript error -> caller falls back
+        return False
+
+
+def _spawn_terminal(script_path: str) -> bool:
+    """Open a new terminal window/tab running script_path. macOS: iTerm first, then Terminal.app.
+    Linux: best-effort common emulators. Returns True if one launched, else False (caller prints
+    the manual command)."""
+    if sys.platform == "darwin":
+        iterm = ('tell application "iTerm"\n'
+                 '  if (count of windows) = 0 then\n'
+                 '    create window with default profile\n'
+                 '  else\n'
+                 '    tell current window to create tab with default profile\n'
+                 '  end if\n'
+                 '  tell current session of current window to write text "bash {}"\n'
+                 'end tell').format(script_path)
+        if _osascript(iterm):
+            return True
+        return _osascript('tell application "Terminal" to do script "bash {}"'.format(script_path))
+    for term in (["x-terminal-emulator", "-e"], ["gnome-terminal", "--"],
+                 ["konsole", "-e"], ["xterm", "-e"]):
+        if shutil.which(term[0]):
+            try:
+                subprocess.Popen([term[0]] + term[1:] + ["bash", script_path])
+                return True
+            except Exception:  # noqa: BLE001
+                continue
+    return False
+
+
+def run_session(repo: str, job: Job, roe: ROE) -> int:
+    """Spawn a NEW terminal session in the real repo running the job (fully free). Your current
+    window stays put. Falls back to printing the exact command if no terminal can be opened.
+    Verified by hand (spawns a window)."""
+    root = os.path.realpath(os.path.expanduser(repo))
+    _maybe_branch(root, job, roe)
+    cmd = build_session_cmd(job, roe)
+    if not _spawn_terminal(_session_script(root, cmd)):
+        print("Could not open a new terminal. Run this job yourself:")
+        print("  cd {} && {}".format(shlex.quote(root), " ".join(shlex.quote(a) for a in cmd)))
+    return 0
