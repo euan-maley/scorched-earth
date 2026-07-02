@@ -241,6 +241,28 @@ _body = open(_scr).read()
 check("_session_script cd's to the repo and execs the session command",
       _body.startswith("#!/bin/bash") and "cd /tmp/myrepo" in _body and "exec claude" in _body)
 os.remove(_scr)
+
+# --- Stage 5: deliverables --------------------------------------------------------
+from scorched_earth.runner import render_deliverable_md, write_job_deliverable  # noqa: E402
+_oc_pass = JobOutcome(seq=1, id="dlv", title="Cover", type="test", defcon=3, outcome="pass",
+                      branch="scorched/dlv", diff={"files": 2, "insertions": 10, "deletions": 1},
+                      note="gate passed.", merge_cmd="git merge scorched/dlv",
+                      discard_cmd="git branch -D scorched/dlv")
+_dmd = render_deliverable_md(_oc_pass, "/tmp/r")
+check("render_deliverable_md carries title, diff, outcome, and take/drop cmds",
+      "Cover (dlv)" in _dmd and "2 files, +10/-1" in _dmd and "outcome: pass" in _dmd
+      and "git merge scorched/dlv" in _dmd)
+_drepo = tempfile.mkdtemp()
+write_job_deliverable(_drepo, _oc_pass)
+check("write_job_deliverable writes the file and stamps a repo-relative path",
+      _oc_pass.deliverable == ".scorched/deliverables/dlv.md"
+      and os.path.exists(_io.deliverable_path(_drepo, "dlv")))
+_oc_block = JobOutcome(seq=2, id="bk", title="B", type="refactor", defcon=2, outcome="blocked-roe")
+write_job_deliverable(_drepo, _oc_block)
+check("write_job_deliverable skips non-run outcomes (no deliverable for blocked)",
+      _oc_block.deliverable is None and not os.path.exists(_io.deliverable_path(_drepo, "bk")))
+check("compose_attended_prompt instructs writing the deliverable file",
+      ".scorched/deliverables/j3.md" in _em.compose_attended_prompt(_jb3, _roe_att))
 check("merge_cmd / discard_cmd reference the branch",
       "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
 

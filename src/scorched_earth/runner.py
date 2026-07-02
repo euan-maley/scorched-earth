@@ -57,6 +57,7 @@ class JobOutcome:
     note: str = ""
     merge_cmd: Optional[str] = None
     discard_cmd: Optional[str] = None
+    deliverable: Optional[str] = None  # repo-relative path to the per-job deliverable record
 
 
 @dataclass
@@ -347,6 +348,36 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
         return "fail", None, "runner error: {}".format(e)
 
 
+def render_deliverable_md(oc: "JobOutcome", repo: str) -> str:
+    """The per-job deliverable record: what the job produced, its branch/diff, and how to take or
+    drop it. Pure. For headless jobs the runner writes this; attended jobs write their own."""
+    diff = ("{} files, +{}/-{}".format(oc.diff["files"], oc.diff["insertions"], oc.diff["deletions"])
+            if oc.diff else "no changes recorded")
+    lines = [
+        "# Deliverable: {} ({})".format(oc.title, oc.id), "",
+        "Repo: {}".format(repo),
+        "Type: {} . DEFCON {} . outcome: {}".format(oc.type, oc.defcon, oc.outcome),
+        "Branch: {}".format(oc.branch or "(none)"),
+        "Diff: {}".format(diff), "",
+        "## Summary", "", oc.note or "(no note)", "",
+        "## Take it / drop it", "",
+    ]
+    if oc.merge_cmd:
+        lines.append("Merge:   " + oc.merge_cmd)
+    if oc.discard_cmd:
+        lines.append("Discard: " + oc.discard_cmd)
+    return "\n".join(lines) + "\n"
+
+
+def write_job_deliverable(repo: str, oc: "JobOutcome") -> None:
+    """Write the per-job deliverable record and stamp oc.deliverable with its repo-relative path.
+    Only for jobs that actually ran (pass/fail); blocked/killed/limit produce no deliverable."""
+    if oc.outcome not in ("pass", "fail"):
+        return
+    coa_io.write_deliverable(repo, oc.id, render_deliverable_md(oc, repo))
+    oc.deliverable = coa_io.deliverable_rel(oc.id)
+
+
 def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
     if disposition == "blocked-roe":
         note = f"type '{job.type}' not in unattended leash — not run."
@@ -410,6 +441,7 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None, approved=Fa
             continue
         oc = run_one(repo, job, roe, repo_disp, i, execute=execute,
                      on_running=lambda r: (rr.jobs.append(r), _persist()))
+        write_job_deliverable(repo, oc)       # per-job deliverable record (pass/fail only)
         rr.jobs[-1] = oc                      # replace the 'running' outcome with the finished one
         if oc.outcome == "limit":
             rr.state = "halted"

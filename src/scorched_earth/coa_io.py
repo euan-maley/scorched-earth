@@ -179,6 +179,28 @@ def runs_dir(repo_path: str) -> str:
     return os.path.join(_repo_dir(repo_path), "runs")
 
 
+def deliverables_dir(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "deliverables")
+
+
+def deliverable_path(repo_path: str, job_id: str) -> str:
+    return os.path.join(deliverables_dir(repo_path), f"{job_id}.md")
+
+
+def deliverable_rel(job_id: str) -> str:
+    """The repo-relative deliverable path, for display / attended prompts."""
+    return os.path.join(".scorched", "deliverables", f"{job_id}.md")
+
+
+def write_deliverable(repo_path: str, job_id: str, text: str) -> str:
+    out = deliverables_dir(repo_path)
+    os.makedirs(out, exist_ok=True)
+    path = deliverable_path(repo_path, job_id)
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
 def write_run_record(repo_path: str, record: dict, date: str) -> str:
     out = runs_dir(repo_path)
     os.makedirs(out, exist_ok=True)

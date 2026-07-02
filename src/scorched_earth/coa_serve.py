@@ -157,6 +157,7 @@ class Engine:
                     self._stop = True                    # halt every worker
                     self._stop_reason = "limit"          # hit the real weekly ceiling
                 elif oc.outcome in ("pass", "fail"):
+                    runner.write_job_deliverable(repo, oc)   # per-job deliverable record
                     rr.jobs.append(oc)
                     self._persist(repo, rr)          # killed: not appended (board -> proposed)
                 self._running.pop(repo, None)

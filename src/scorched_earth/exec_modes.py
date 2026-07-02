@@ -24,6 +24,7 @@ import sys
 import tempfile
 from typing import List, Optional
 
+from . import coa_io
 from .jobs import Job
 from .roe import ROE
 from .runner import branch_name, model_arg, sandbox_settings_dict
@@ -77,6 +78,8 @@ def compose_attended_prompt(job: Job, roe: ROE) -> str:
     parts.append(_ATTENDED_HEADER + "\n" + operating_orders(roe))
     if getattr(job, "model", ""):
         parts.append("(Recommended model for this task: {}.)".format(job.model))
+    parts.append("When done, write a short deliverable (what changed, files touched, "
+                 "follow-ups) to `{}`.".format(coa_io.deliverable_rel(job.id)))
     parts.append("Task:\n" + (job.launch or job.title))
     return "\n\n".join(parts)
 

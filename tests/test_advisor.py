@@ -183,9 +183,12 @@ for _c in ("coa", "roe"):
 # --- AAR _job_obj carries defcon (Task 8) ----------------------------------------
 from scorched_earth.runner import JobOutcome  # noqa: E402
 from scorched_earth.review_report import _job_obj as _aar_job_obj  # noqa: E402
-check("aar _job_obj carries defcon",
-      _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test",
-                              defcon=8, outcome="pass"))["defcon"] == 8)
+check("aar _job_obj carries defcon + deliverable",
+      _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test", defcon=8, outcome="pass",
+                              deliverable=".scorched/deliverables/x.md"))["defcon"] == 8
+      and _aar_job_obj(JobOutcome(seq=1, id="x", title="x", type="test", defcon=8, outcome="pass",
+                                  deliverable=".scorched/deliverables/x.md"))["deliverable"]
+      == ".scorched/deliverables/x.md")
 
 # advise writes BOTH md + html (no-budget API)
 import tempfile as _tf2, os as _os2  # noqa: E402

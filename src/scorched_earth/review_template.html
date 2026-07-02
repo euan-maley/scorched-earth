@@ -301,6 +301,7 @@ const AAR = __REVIEW_JSON__;
         <div class="job__head">${defconBadge(j.defcon)}${pill}<span class="job__title">${esc(j.title)}</span><span class="type">${esc(j.type)}</span>${stamp}${j.outcome==="blocked-approval"?approvalBadge():""}</div>
         ${dataRow(j)}
         <div class="job__note" style="${j.outcome==="fail"?"color:#e0a090;":""}">${esc(j.note)}</div>
+        ${j.deliverable?`<div class="cmd"><span class="cmd__k" title="The per-job deliverable record: what the job produced, its diff, and how to take or drop it.">DELIVERABLE</span><code>${esc(j.deliverable)}</code><button class="copy" data-copy="${esc(j.deliverable)}">COPY</button></div>`:""}
         ${cmds(j)}
       </div>
       <div class="gate">
