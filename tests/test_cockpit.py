@@ -185,6 +185,23 @@ check("engine: Run resumes after a prior Stop (clears the stop flag)",
 check("engine: Run clears the halt reason (stop is a pause, not a permanent halt)",
       _engsr.state_json()["stopped"] is False and _engsr.state_json()["stop_reason"] is None)
 
+# --- Stage 8: live per-task progress in state_json --------------------------------
+_rp = _mk_repo([Job(id="w1", repo=".", title="W1", type="test", value=5)])
+_engp = Engine([_rp], execute=_exec, load_state=lambda: _STATE, now=lambda: 100)
+_rp_real = os.path.realpath(_rp)
+with _engp._lock:                       # simulate a job mid-flight with some progress
+    _engp._running[_rp_real] = {"repo": _rp_real, "id": "w1"}
+    _engp._progress[_rp_real] = {"line": "starting", "started": 90, "ts": 90}
+_engp._on_progress(_rp_real, '{"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pytest -q"}}]}}')
+_run0 = _engp.state_json()["running"][0]
+check("state_json attaches the live progress line to a running job",
+      _run0["progress"]["line"] == "tool: Bash pytest -q")
+check("state_json reports elapsed seconds for a running job (now - started)",
+      _run0["progress"]["elapsed"] == 10)
+_engp._on_progress(_rp_real, "   ")     # blank line must not clobber the last real activity
+check("progress sink ignores a blank line (keeps the last activity)",
+      _engp.state_json()["running"][0]["progress"]["line"] == "tool: Bash pytest -q")
+
 # --- Task 6: HTTP server (token, routing, SSE) ------------------------------------
 import http.client  # noqa: E402
 import threading as _threading  # noqa: E402

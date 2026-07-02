@@ -548,6 +548,17 @@ check("advise_on_roadblock=False skips the advising agent entirely",
       _aoff[0] == "roadblocked" and not _seen)
 _rnmod._try_advise = _savedadv
 
+# --- Stage 8: live progress summary line ------------------------------------------
+from scorched_earth.runner import summarize_stream_line as _sum  # noqa: E402
+check("summarize_stream_line extracts a tool_use call",
+      _sum('{"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pytest -q"}}]}}')
+      == "tool: Bash pytest -q")
+check("summarize_stream_line extracts assistant text",
+      _sum('{"message":{"content":[{"type":"text","text":"Working on coverage"}]}}')
+      == "Working on coverage")
+check("summarize_stream_line trims a non-JSON line", _sum("hello there")[:5] == "hello")
+check("summarize_stream_line returns empty for blank input", _sum("   ") == "")
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

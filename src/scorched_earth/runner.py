@@ -85,6 +85,36 @@ def is_stale(state: Optional[dict], now: int) -> bool:
     return reset < now
 
 
+def summarize_stream_line(line):
+    """Best-effort one-line human summary of a `claude --output-format stream-json` line, for the
+    live progress view: the latest tool call or assistant text. Falls back to a trimmed raw line.
+    Pure, tolerant of anything non-JSON."""
+    s = (line or "").strip()
+    if not s:
+        return ""
+    try:
+        obj = json.loads(s)
+    except Exception:  # noqa: BLE001 — non-JSON chatter: show a trimmed raw line
+        return s[:200]
+    msg = obj.get("message") if isinstance(obj, dict) else None
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                inp = block.get("input") or {}
+                hint = (inp.get("command") or inp.get("file_path") or inp.get("path")
+                        or inp.get("pattern") or "")
+                return "tool: {} {}".format(block.get("name", "tool"), hint).strip()[:200]
+            if block.get("type") == "text":
+                txt = (block.get("text") or "").strip().replace("\n", " ")
+                if txt:
+                    return txt[:200]
+    t = obj.get("type") if isinstance(obj, dict) else None
+    return ("[" + str(t) + "]")[:200] if t else s[:200]
+
+
 def detect_rate_limit(output):
     """True when headless `claude -p --output-format stream-json` output carries the rate-limit
     signal (429 api_retry). Substring match on the stable error value; exit code alone can't tell
@@ -272,10 +302,11 @@ def _terminate(p, grace):
         p.kill(); p.wait()
 
 
-def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None):
+def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None, on_line=None):
     """Run cmd capturing stdout (for rate-limit detection). Returns (status, output, returncode)
     where status is 'killed', 'idle' (no output for idle_secs = stuck = a roadblock), or 'done'.
-    Honors kill_event (SIGTERM then SIGKILL after grace).
+    Honors kill_event (SIGTERM then SIGKILL after grace). on_line, if given, is called with each
+    output line (for the live progress view).
 
     The command streams continuous JSON (`claude -p --output-format stream-json --verbose`). A
     DAEMON READER THREAD drains p.stdout to EOF concurrently so the child never blocks on a full
@@ -283,8 +314,8 @@ def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None):
     long run deadlocks: the child blocks on write(), poll() stays None forever, the worker hangs.
     The reader also stamps the last-output time so the idle watchdog can spot a stuck job."""
     p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    if kill_event is None and idle_secs is None:
-        out, _ = p.communicate()        # fast path: no kill/idle watch -> communicate() drains
+    if kill_event is None and idle_secs is None and on_line is None:
+        out, _ = p.communicate()        # fast path: no kill/idle/progress watch -> communicate()
         return "done", out or "", p.returncode
     chunks = []
     last = [time.time()]                 # time of the most recent output line (idle watchdog)
@@ -294,6 +325,11 @@ def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None):
             for line in p.stdout:       # reads to EOF; keeps the pipe empty so the child never blocks
                 chunks.append(line)
                 last[0] = time.time()
+                if on_line:
+                    try:
+                        on_line(line)
+                    except Exception:  # noqa: BLE001 — progress sink is best-effort
+                        pass
         except Exception:  # noqa: BLE001 — reader is best-effort; status/returncode still authoritative
             pass
 
@@ -329,7 +365,8 @@ def _try_advise(wt, job, roe, base_sha, problem):
     Returns (solved, diff, note). Solved only when a gate exists and passes after the fix."""
     status, out, rc = _run_killable(build_advisor_cmd(job, roe, problem), wt,
                                     getattr(_kill_ctx, "event", None),
-                                    idle_secs=(roe.roadblock_idle_secs or None))
+                                    idle_secs=(roe.roadblock_idle_secs or None),
+                                    on_line=getattr(_kill_ctx, "progress", None))
     diff = _diffstat(wt, base_sha)
     if status in ("killed", "idle") or detect_rate_limit(out):
         return False, diff, "advising agent could not recover ({}).".format(status)
@@ -405,7 +442,8 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
         # watchdog flags a job that has gone silent past the ROE timeout as a roadblock.
         status, out, rc = _run_killable(build_claude_cmd(job, wt), wt,
                                         getattr(_kill_ctx, "event", None),
-                                        idle_secs=(roe.roadblock_idle_secs or None))
+                                        idle_secs=(roe.roadblock_idle_secs or None),
+                                        on_line=getattr(_kill_ctx, "progress", None))
         if status == "killed":
             _discard_worktree(root, job.id)
             return "killed", None, "killed by operator, work discarded."

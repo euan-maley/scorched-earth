@@ -152,6 +152,10 @@
   /* running */
   .card--running{border-left-color:var(--fire);background:linear-gradient(#16110c,#100b08);
         box-shadow:0 0 0 1px rgba(255,106,31,.22),0 0 26px rgba(255,90,20,.16)}
+  .cprog{flex-basis:100%;margin-top:5px;font-family:ui-monospace,Menlo,monospace;font-size:11px;
+        color:#ffb079;background:rgba(0,0,0,.34);border:1px solid rgba(255,106,31,.22);
+        border-radius:3px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        text-shadow:0 0 6px rgba(255,120,40,.5)}
   /* done */
   .card--pass{border-left-color:var(--secured);background:linear-gradient(#0f140d,#0c0f0a)}
   .card--fail{border-left-color:var(--fail);background:linear-gradient(#160c0a,#100806);opacity:.92}
@@ -342,6 +346,10 @@ const STATE = __COCKPIT_JSON__;
       foot.appendChild(html('<span class="defcon defcon-'+d+'" style="margin-left:auto">DEFCON '+d+'</span>'));
       const kb = html('<button class="btn btn--stop" data-kill="'+esc(job.id)+'" style="margin-left:auto;padding:4px 11px 3px;font-size:11px">\u2715 KILL</button>');
       foot.appendChild(kb);
+      if(job.progress && job.progress.line){
+        const el = job.progress.elapsed!=null ? ' \u00b7 '+job.progress.elapsed+'s' : '';
+        foot.appendChild(html('<span class="cprog" title="What the job is doing right now (its latest tool call or output).">\u25b8 '+esc(job.progress.line)+el+'</span>'));
+      }
     } else { // finished
       const badge = job.outcome==="roadblocked"
         ? '<span class="cbadge" title="Stuck or gate failed; paused and the branch was kept. Read .scorched/roadblocks/'+esc(job.id)+'.md, fix, then: scorch coa resume '+esc(job.id)+'" style="color:#f0c070;border-color:#e2a04d;background:rgba(226,160,77,.16)">&#9888; ROADBLOCKED</span>'
@@ -391,7 +399,7 @@ const STATE = __COCKPIT_JSON__;
     const jobs = [];
     if(here){
       const base = lookupJob(repo, here.id) || { id: here.id };
-      jobs.push(Object.assign({}, base, { id: here.id }));
+      jobs.push(Object.assign({}, base, { id: here.id, progress: here.progress }));
     }
     reconcile("running", jobs, "running");
     root.querySelector('[data-cnt="running"]').textContent = here ? "1 ACTIVE" : "\u2014";

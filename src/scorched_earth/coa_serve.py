@@ -39,6 +39,8 @@ class Engine:
         self._kill_events = {}                     # repo -> threading.Event
         self._workers = set()                      # repos with a live drain worker
         self._results = {}                         # repo -> RunResult
+        self._progress = {}                        # repo -> {"line","started","ts"} (live per-job)
+        self._last_prog_bcast = 0.0                # throttle the progress SSE push
 
     # ---- public mutations (called by HTTP handlers) ----
     def _ensure_worker(self, repo):
@@ -100,8 +102,14 @@ class Engine:
         state = self._load_state()
         snap = (state or {}).get("snapshot") or {}
         wrp = advisor.weekly_reserve_pct(snap)
+        now = self._now()
         with self._lock:
             running = [dict(v) for v in self._running.values()]
+            for r in running:                      # attach the live progress line + elapsed
+                p = self._progress.get(r["repo"])
+                if p:
+                    r["progress"] = {"line": p["line"],
+                                     "elapsed": max(0, now - p["started"])}
             busy = bool(running) or bool(self._workers)
             stopped, stop_reason = self._stop, self._stop_reason
             running_by_repo = {}
@@ -132,6 +140,8 @@ class Engine:
                     else:
                         done = False
                         self._running[repo] = {"repo": repo, "id": job.id}
+                        self._progress[repo] = {"line": "starting", "started": self._now(),
+                                                "ts": self._now()}
                         ke = threading.Event()
                         self._kill_events[repo] = ke
                         coa_io.unqueue(repo, job.id)
@@ -146,12 +156,15 @@ class Engine:
                 return
 
             runner._kill_ctx.event = ke              # per-worker-thread kill handle (thread-local)
+            runner._kill_ctx.progress = lambda line, _r=repo: self._on_progress(_r, line)
             try:
                 oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
             finally:
                 runner._kill_ctx.event = None
+                runner._kill_ctx.progress = None
 
             with self._lock:
+                self._progress.pop(repo, None)       # job finished: clear its live progress
                 if oc.outcome == "limit":
                     coa_io.enqueue(repo, [job])          # didn't run — put it back, resumable
                     self._stop = True                    # halt every worker
@@ -172,6 +185,25 @@ class Engine:
             if done:
                 return
             # loop: drain the next job in THIS repo
+
+    def _on_progress(self, repo, line):
+        """Per-output-line progress sink (called on the worker thread by the runner). Stores the
+        latest activity for the live view and pushes it over SSE, throttled to at most ~1/2s so a
+        chatty stream never floods the clients."""
+        summary = runner.summarize_stream_line(line)
+        if not summary:
+            return
+        now = self._now()
+        with self._lock:
+            p = self._progress.get(repo)
+            if p is None:
+                return
+            p["line"] = summary
+            p["ts"] = now
+            if now - self._last_prog_bcast < 2:
+                return
+            self._last_prog_bcast = now
+        self._broadcast()
 
     def _persist(self, repo, rr):
         from . import review_report
