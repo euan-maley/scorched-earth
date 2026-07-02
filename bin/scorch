@@ -59,6 +59,64 @@ def _open_file(path) -> None:
         subprocess.run([opener, path], check=False)
 
 
+def _roe_editor(repo) -> int:
+    """Interactive ROE editor: an arrow-key list, like Claude's permissions UI. up/down move,
+    left/right change a cycle, space/enter flips a toggle, s saves, q quits. Curses is just the
+    view; all edit logic lives in the pure roe_edit model."""
+    import curses
+    from scorched_earth import coa_io, roe_edit
+
+    def run(scr):
+        curses.curs_set(0)
+        scr.keypad(True)                 # decode arrow keys to curses.KEY_* (not raw ESC sequences)
+        try:
+            curses.use_default_colors()
+        except Exception:
+            pass
+        roe = coa_io.load_roe(repo)
+        sel, dirty, msg = 0, False, ""
+        name = os.path.basename(os.path.realpath(os.path.expanduser(repo)))
+        while True:
+            ctrls = roe_edit.controls(roe)
+            scr.erase()
+            h, w = scr.getmaxyx()
+            scr.addnstr(0, 0, (f" RULES OF ENGAGEMENT  {name} ").ljust(w - 1), w - 1, curses.A_REVERSE)
+            scr.addnstr(1, 0, " up/down move   left/right change   space toggle   s save   q quit", w - 1)
+            row = 3
+            for i, c in enumerate(ctrls):
+                mark = ("[x]" if c.on else "[ ]") if c.kind == "toggle" else f"< {c.value} >"
+                line = ("  " + mark.ljust(10) + "  " + c.label).ljust(w - 1)
+                scr.addnstr(row, 0, line, w - 1, curses.A_REVERSE if i == sel else curses.A_NORMAL)
+                row += 1
+            if 0 <= sel < len(ctrls):
+                scr.addnstr(row + 1, 0, "  " + ctrls[sel].help, w - 1, curses.A_DIM)
+            foot = msg or ("UNSAVED CHANGES (press s to save)" if dirty else "")
+            if foot:
+                scr.addnstr(h - 1, 0, ("  " + foot).ljust(w - 1), w - 1, curses.A_BOLD)
+            scr.refresh()
+
+            k = scr.getch()
+            msg = ""
+            if k in (curses.KEY_UP, ord("k")):
+                sel = (sel - 1) % len(ctrls)
+            elif k in (curses.KEY_DOWN, ord("j")):
+                sel = (sel + 1) % len(ctrls)
+            elif k in (curses.KEY_LEFT, ord("h")):
+                roe = roe_edit.apply(roe, sel, -1); dirty = True
+            elif k in (curses.KEY_RIGHT, ord("l")):
+                roe = roe_edit.apply(roe, sel, +1); dirty = True
+            elif k in (ord(" "), 10, 13, curses.KEY_ENTER):
+                roe = roe_edit.apply(roe, sel, 0); dirty = True
+            elif k in (ord("s"), ord("S")):
+                roe_edit.save(repo, roe); dirty = False; msg = "saved to .scorched/roe.json"
+            elif k in (ord("q"), ord("Q")):   # not ESC: arrow keys begin with ESC and would quit
+                return
+
+    curses.wrapper(run)
+    print(f"ROE editor closed for {os.path.realpath(os.path.expanduser(repo))}")
+    return 0
+
+
 def _serve_shell(repos, tab="sitrep") -> int:
     """Launch the unified War Room shell: one 127.0.0.1 token-guarded server hosting the big-tab
     frame (SITREP / COURSE OF ACTION / WAR ROOM). `tab` sets the tab the browser opens on. The
@@ -211,10 +269,13 @@ def _coa_cli(raw):
 
     if verb == "roe":
         import dataclasses as _dc
-        repo = rest[0] if rest else "."
-        roe = coa_io.load_roe(repo)
-        print(_json.dumps(_dc.asdict(roe), indent=2))
-        return 0
+        named = [a for a in rest if not a.startswith("-")]
+        repo = named[0] if named else "."
+        # Interactive editor when we own a real terminal; JSON fallback for pipes/scripts/--json.
+        if "--json" in rest or not sys.stdout.isatty():
+            print(_json.dumps(_dc.asdict(coa_io.load_roe(repo)), indent=2))
+            return 0
+        return _roe_editor(repo)
 
     # advise
     state = st.load_state()

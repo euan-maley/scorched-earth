@@ -17,7 +17,7 @@ Built: `shell.py` + `shell_template.html`; `coa_serve.make_server(shell_repos=)`
 ### Stages 1-6 - UI items inside the shell (each: build -> verify -> commit; docs travel with code)
 1. **HALTED state + resume hint (#2/#8):** cockpit reads `stop_reason` (already emitted) -> HALTED banner distinct from IDLE + resume hint on `limit`. +cockpit checks.
 2. **Freshness UI + honest Refresh (#5/#6):** COA tab shows "scanned Nh ago" from `scannedAt`; Refresh honest about re-read vs re-scan. War Room refresh (#6).
-3. **ROE toggle true/false/cycle (#10):** in `/roe` terminal + the html. +advisor checks.
+3. **ROE interactive editor (#10):** TERMINAL DONE - `roe_edit.py` pure model (controls + apply reducer + save) + a curses arrow-key list in `scorch roe` (hjkl too; `--json`/non-tty falls back to JSON). Wired rules only (auto-run DEFCON, run cap, allowed/unattended types). Found+fixed an ESC-as-quit bug (arrows start with ESC). +16 advisor checks. HTML frontend = deferred follow-up (user chose terminal-first): an ROE panel in the shell over the same model, backed by a guarded POST /roe.
 4. **Sitrep refresh (#12):** refresh button on the served sitrep tab.
 5. **Cratered legend (#9):** "cratered" = the fail state, added to COA/AAR legend.
 6. **Approval legibility how/why (#1):** surface why (defcon < auto_run_min_defcon) + how (`scorch coa run --approve` / cockpit Run button).

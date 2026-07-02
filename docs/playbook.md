@@ -149,8 +149,13 @@ mode) hosts a big-tab frame over all three surfaces (SITREP / COURSE OF ACTION /
 each an iframe backed by its existing renderer, unchanged. Tabs are hash-routed and lazy (the
 cockpit SSE opens only when you enter the War Room). `scorch coa --serve` and
 `scorch advise --serve` both launch it (on the cockpit and COA tabs respectively); the offline
-`scorch --sitrep` file still writes standalone. 76 unit checks
-(`python3 tests/test_scorched.py`) + 45 advisor checks (`python3 tests/test_advisor.py`) +
-78 runner checks (`python3 tests/test_runner.py`) + 83 cockpit checks
-(`python3 tests/test_cockpit.py`) = 282 total; all gated in CI via
+`scorch --sitrep` file still writes standalone. Inside the shell so far: the cockpit shows a
+**HALTED** banner + resume hint on a usage-limit halt (vs a clean IDLE), the COA tab shows a
+**SCANNED Nh ago** freshness label with an honest Refresh (re-reads jobs.json, never re-scans),
+and the War Room has a manual **REFRESH** that pulls an external scan. `/roe` now opens an
+**interactive ROE editor** (`roe_edit.py` model + a curses arrow-key list, `hjkl` too;
+`--json`/non-tty prints JSON) covering the wired rules. 76 unit checks
+(`python3 tests/test_scorched.py`) + 63 advisor checks (`python3 tests/test_advisor.py`) +
+78 runner checks (`python3 tests/test_runner.py`) + 87 cockpit checks
+(`python3 tests/test_cockpit.py`) = 304 total; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.

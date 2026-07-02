@@ -7,9 +7,14 @@ allowed-tools: Bash(scorch:*), Bash(*/bin/scorch:*), Read, Edit, Write
 View or edit the **Rules of Engagement (ROE)**: the confines that bound what the advisor and
 (later) the executor may do.
 
-- To **view** the effective rules: run `scorch roe <repo>` (it prints the merged JSON of the
-  global default plus `<repo>/.scorched/roe.json`).
-- To **edit**: the rules are three families, written to `<repo>/.scorched/roe.json`:
+- To **edit interactively** (the fast path): run `scorch roe <repo>` in a real terminal. It opens
+  an arrow-key editor (like Claude's permissions UI): up/down move, left/right change a cycle,
+  space/enter flips a toggle, `s` saves, `q` quits. `h`/`j`/`k`/`l` also work as left/down/up/right.
+  It edits the wired rules (auto-run DEFCON threshold, run cap, allowed types, unattended types)
+  and preserves any freeform keys untouched.
+- To **view** the effective rules as JSON: `scorch roe --json <repo>` (or pipe it; it also prints
+  JSON when stdout is not a terminal). Shows the merged global default plus `<repo>/.scorched/roe.json`.
+- To **edit by hand** (freeform fields): the rules are three families in `<repo>/.scorched/roe.json`:
   - **cost / run-length** - `min_weekly_left` (don't propose unless weekly-left is above this),
     `max_jobs` (the run-length leash: stop after N jobs; off by default).
   - **task** - `allowed_types` (e.g. `["test","docs","refactor","perf","audit"]`),

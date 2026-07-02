@@ -65,8 +65,29 @@ def unlink_repo(repo_path: str) -> bool:
 
 def load_roe(repo_path: str) -> ROE:
     base = roe_from_dict(st._read_json(ROE_DEFAULT_PATH, {}), DEFAULT_ROE)
-    override = roe_from_dict(st._read_json(os.path.join(_repo_dir(repo_path), "roe.json"), {}))
+    override = roe_from_dict(st._read_json(roe_path(repo_path), {}))
     return merge_roe(base, override)
+
+
+def roe_path(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "roe.json")
+
+
+def read_roe_raw(repo_path: str) -> dict:
+    """The repo's OWN roe.json as a dict (not merged with the global default). {} if none.
+    The interactive editor reads this so it can preserve freeform keys it does not manage."""
+    return st._read_json(roe_path(repo_path), {})
+
+
+def write_roe_raw(repo_path: str, d: dict) -> str:
+    """Atomically write the repo's roe.json. Creates .scorched/ if absent."""
+    os.makedirs(_repo_dir(repo_path), exist_ok=True)
+    p = roe_path(repo_path)
+    tmp = f"{p}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, p)
+    return p
 
 
 def load_jobs(repo_path: str) -> List[Job]:
