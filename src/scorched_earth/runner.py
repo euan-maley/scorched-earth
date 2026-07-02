@@ -166,6 +166,20 @@ _PRELUDE = (
 )
 
 
+# Model aliases the CLI accepts directly (verified against `claude --help`); a full "claude-*"
+# id is also accepted verbatim. Anything else is ignored (inherit the session default) rather
+# than passed through, so a bad scan value can never wedge the invocation.
+MODEL_ALIASES = ("fable", "sonnet", "opus", "haiku")
+
+
+def model_arg(job: "Job") -> List[str]:
+    """['--model', <value>] when the job names a model the CLI accepts, else [] (inherit)."""
+    m = (getattr(job, "model", "") or "").strip()
+    if m in MODEL_ALIASES or m.startswith("claude-"):
+        return ["--model", m]
+    return []
+
+
 def build_claude_cmd(job: "Job", worktree: str) -> List[str]:
     """Headless, sandboxed claude invocation.
 
@@ -177,12 +191,13 @@ def build_claude_cmd(job: "Job", worktree: str) -> List[str]:
 
     --dangerously-skip-permissions suppresses interactive prompts. Does NOT work as root.
     --add-dir is intentionally omitted: sandbox settings + cwd handle containment.
+    --model is appended only when the job names one (per-task model selection).
     """
     return [
         "claude", "-p", _PRELUDE + (job.launch or job.title),
         "--output-format", "stream-json", "--verbose",
         "--dangerously-skip-permissions",
-    ]
+    ] + model_arg(job)
 
 
 def build_gate_cmd(job: "Job", roe: "ROE") -> Optional[str]:

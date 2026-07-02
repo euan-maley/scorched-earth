@@ -161,7 +161,7 @@ check("AAR legend explains CRATERED = the fail state (work discarded)",
 # --- Task 6: command builders + sandbox settings ----------------------------------
 from scorched_earth.runner import (worktree_path, branch_name, build_claude_cmd,  # noqa: E402
                                     build_gate_cmd, merge_cmd, discard_cmd,
-                                    write_sandbox_settings)
+                                    write_sandbox_settings, model_arg)
 
 _jb = Job(id="cov", repo=_repo, title="Coverage", type="test", defcon=3, value=5,
           launch="Raise coverage to 90%, TDD.")
@@ -173,6 +173,19 @@ check("build_claude_cmd is a headless claude invocation carrying the launch",
 check("build_claude_cmd prelude forbids push", any("do not push" in a.lower() for a in _cmd))
 check("build_claude_cmd includes --dangerously-skip-permissions",
       "--dangerously-skip-permissions" in _cmd)
+check("build_claude_cmd omits --model when the job names none", "--model" not in _cmd)
+_cmd_m = build_claude_cmd(Job(id="m", repo=_repo, title="M", type="test", defcon=1,
+                              value=9, launch="deep audit", model="opus"),
+                          worktree_path(_repo, "m"))
+check("build_claude_cmd passes --model opus for a modelled job",
+      _cmd_m[_cmd_m.index("--model") + 1] == "opus")
+check("model_arg accepts aliases and claude-* ids",
+      model_arg(Job(id="a", repo="r", title="", type="test", model="haiku")) == ["--model", "haiku"]
+      and model_arg(Job(id="b", repo="r", title="", type="test", model="claude-opus-4-8"))
+      == ["--model", "claude-opus-4-8"])
+check("model_arg ignores an unknown/empty model (inherit default)",
+      model_arg(Job(id="c", repo="r", title="", type="test", model="gpt-9")) == []
+      and model_arg(Job(id="d", repo="r", title="", type="test")) == [])
 check("build_gate_cmd prefers per-job verify",
       build_gate_cmd(Job(id="x", repo="r", title="x", type="test", defcon=3, value=1,
                          verify="make test"), _rfd({"test_cmd": "pytest"})) == "make test")

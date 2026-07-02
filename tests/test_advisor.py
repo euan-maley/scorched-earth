@@ -40,6 +40,9 @@ check("parse_jobs fills repo + defcon", _parsed[0].repo == "/tmp/r" and _parsed[
 check("parse_jobs defaults missing defcon to 3", _parsed[2].defcon == 3)
 check("parse_jobs clamps out-of-range defcon",
       parse_jobs([{"id": "z", "defcon": 99}])[0].defcon == 5)
+check("parse_jobs reads per-task model, defaults empty",
+      parse_jobs([{"id": "m", "model": "opus"}])[0].model == "opus"
+      and parse_jobs([{"id": "n"}])[0].model == "")
 
 # --- roe.py ----------------------------------------------------------------------
 from scorched_earth.roe import ROE, DEFAULT_ROE, roe_from_dict, merge_roe  # noqa: E402

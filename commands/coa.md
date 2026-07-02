@@ -82,13 +82,19 @@ IMPACT (DEFCON), never by effort or how long a job would take.
      - DEFCON 5: cosmetic/trivial (typos, comments, formatting).
    Do NOT estimate effort, duration, or window cost. Surface BOTH extreme DEFCON-1 campaigns
    AND ordinary knockouts in the same scan. Emit each job as:
-     {"id","repo","title","type","defcon",1-5,"value",0-10 tie-break,"rationale","launch"}
+     {"id","repo","title","type","defcon",1-5,"value",0-10 tie-break,"rationale","launch","model"}
    ```
 
    `defcon` is impact (1 = most critical, 5 = trivial). `value` is a 0-10 within-DEFCON
    tie-breaker. `launch` is the Claude Code command/prompt to kick the job off. `repo` is the
    absolute repo path; `type` is one of
    `test_coverage|docs|audit|refactor|dep_upgrade|migration|perf|bug_burndown|…`.
+
+   `model` picks the model the job should run on, matched to its weight (omit or leave empty to
+   inherit the session default). Guidance: trivial knockouts (DEFCON 4-5, typos, comments,
+   formatting) -> `haiku` or `fable`; ordinary features and fixes (DEFCON 3) -> `sonnet`;
+   project-defining DEFCON-1 campaigns and deep line-by-line audits -> `opus`. Emit the short
+   alias (`fable|sonnet|opus|haiku`); the runner passes it to `claude --model`.
 
    ### Step 2 - Run `scorch advise`
 
