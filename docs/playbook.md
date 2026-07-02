@@ -143,8 +143,14 @@ moved on since the last scan (a newer HEAD commit or a dirty tree), not just whe
 is missing, so re-running actually refreshes. The cockpit `state_json` exposes `stopped` +
 `stop_reason` (`operator` on Stop, `limit` on the usage-ceiling halt) so a halt is
 distinguishable from a clean finish (the HALTED banner + staleness label render in the
-upcoming merged-shell UI). 76 unit checks
+merged-shell UI). Phase 2 opens with the **unified War Room shell** (`shell.py` +
+`shell_template.html`): one 127.0.0.1 token-guarded server (the `coa_serve` server in shell
+mode) hosts a big-tab frame over all three surfaces (SITREP / COURSE OF ACTION / WAR ROOM),
+each an iframe backed by its existing renderer, unchanged. Tabs are hash-routed and lazy (the
+cockpit SSE opens only when you enter the War Room). `scorch coa --serve` and
+`scorch advise --serve` both launch it (on the cockpit and COA tabs respectively); the offline
+`scorch --sitrep` file still writes standalone. 76 unit checks
 (`python3 tests/test_scorched.py`) + 45 advisor checks (`python3 tests/test_advisor.py`) +
-78 runner checks (`python3 tests/test_runner.py`) + 73 cockpit checks
-(`python3 tests/test_cockpit.py`) = 272 total; all gated in CI via
+78 runner checks (`python3 tests/test_runner.py`) + 83 cockpit checks
+(`python3 tests/test_cockpit.py`) = 282 total; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.

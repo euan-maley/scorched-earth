@@ -540,6 +540,60 @@ check("cockpit no longer labels the HUD 'BUDGET SPENT'", "BUDGET SPENT" not in _
 check("__COCKPIT_TOKEN__ and __COCKPIT_JSON__ are fully substituted",
       "__COCKPIT_TOKEN__" not in _hd and "__COCKPIT_JSON__" not in _hd)
 
+# --- Phase 2: the unified shell (one server, big-tab frame over all three surfaces) ---
+from scorched_earth import shell as _shell  # noqa: E402
+# In shell mode make_server serves the frame at / and folds in the two read-only tabs
+# (/sitrep, /coa, /coa.json) alongside the live /war-room + /state + /events + POSTs, all
+# under the one token. The read-only tabs never touch the engine.
+_sh_repo = tempfile.mkdtemp(); os.makedirs(os.path.join(_sh_repo, ".scorched"), exist_ok=True)
+with open(os.path.join(_sh_repo, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "sh1", "title": "ShellJob", "type": "test", "defcon": 3, "value": 5}], _f)
+_sh_eng = Engine([_sh_repo], execute=lambda *a: ("pass", None, "ok"),
+                 load_state=lambda: _STATE, now=lambda: 1)
+_sh_eng.stop()
+_sh_httpd, _sh_port = make_server(_sh_eng, "sh-tok", shell_repos=[_sh_repo])
+import threading as _shth  # noqa: E402
+_shth.Thread(target=_sh_httpd.serve_forever, daemon=True).start()
+def _shget(path, tok="sh-tok"):
+    c = http.client.HTTPConnection("127.0.0.1", _sh_port, timeout=3)
+    q = (f"?t={tok}" if tok is not None else "")
+    c.request("GET", path + q); r = c.getresponse(); b = r.read(); c.close(); return r.status, b
+
+_s, _b = _shget("/")
+check("shell mode: GET / serves the big-tab frame with all three tabs",
+      _s == 200 and b'data-tab="sitrep"' in _b and b'data-tab="coa"' in _b
+      and b'data-tab="war-room"' in _b and b'id="panes"' in _b)
+check("shell frame injects the token (no __SHELL_TOKEN__ placeholder leak)",
+      b"__SHELL_TOKEN__" not in _b)
+check("shell mode: GET /war-room serves the live cockpit", _shget("/war-room")[0] == 200)
+_s, _b = _shget("/coa")
+check("shell mode: GET /coa serves the read-only COA page", _s == 200 and len(_b) > 200)
+_s, _b = _shget("/coa.json")
+check("shell mode: GET /coa.json returns fresh COA json (the tab's Refresh fetch)",
+      _s == 200 and isinstance(json.loads(_b), dict))
+check("shell mode: GET /sitrep serves the sitrep tab", _shget("/sitrep")[0] == 200)
+check("shell mode: every route is token-guarded (no token -> 403)", _shget("/", tok=None)[0] == 403)
+check("shell mode: the engine routes (/state) are still served alongside the tabs",
+      _shget("/state")[0] == 200)
+_sh_httpd.shutdown()
+
+# standalone cockpit mode is unchanged: no shell_repos -> GET / is still the cockpit itself
+_st_eng = Engine([_sh_repo], execute=lambda *a: ("pass", None, "ok"),
+                 load_state=lambda: _STATE, now=lambda: 1)
+_st_httpd, _st_port = make_server(_st_eng, "st-tok")   # no shell_repos -> legacy cockpit at /
+_shth.Thread(target=_st_httpd.serve_forever, daemon=True).start()
+_c = http.client.HTTPConnection("127.0.0.1", _st_port, timeout=3)
+_c.request("GET", "/?t=st-tok"); _r = _c.getresponse(); _sb = _r.read(); _c.close()
+check("standalone (no shell_repos): GET / is still the cockpit, not the shell frame",
+      _r.status == 200 and b'data-tab="war-room"' not in _sb)
+_st_httpd.shutdown()
+
+# render_shell fills the frame and never leaks the placeholder
+_frame = _shell.render_shell("frame-tok").decode("utf-8")
+check("render_shell substitutes the token and embeds it",
+      "__SHELL_TOKEN__" not in _frame and "frame-tok" in _frame
+      and _frame.lstrip().lower().startswith("<!doctype html"))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

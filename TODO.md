@@ -1,20 +1,35 @@
 # TODO
 
-## Current Session (2026-07-01): backlog triage + Phase 1 backend bug fixes
+## Current Session (2026-07-01): Phase 2 - merged shell (#13) + the deferred UI items
 
-Kicked off a big multi-session effort from a user bug/idea list (13 items). Triaged, diagnosed the 4 bugs (systematic-debugging), locked a phased roadmap (below). User committed to fixing/building ALL items across sessions and chose "merge shell first, UI once."
+Decision locked: **Option A** - one unified 127.0.0.1 server, three big tabs (SITREP / COURSE OF ACTION / WAR ROOM), one token. Static `scorch --sitrep` stays as the offline artifact (additive, not replaced). Mechanism: **iframes** - the shell is a tab frame that embeds each existing renderer unchanged in its own iframe (no CSS/JS collision, preserves failure isolation, chrome-first). Sequenced shell-first: land + verify the structural merge before any UI rides on it.
 
-**This session (Phase 1 - backend bug fixes, no UI dependency): DONE.** Branch `feat/coa-observability-freshness` (2 commits, LOCAL/unpushed - close-out only, not merged).
-- [x] **A. Observability backend (#2/#8):** `Engine._stop_reason` ("operator" on `stop()`, "limit" on the usage-limit halt in `_drain_repo`, cleared in `run()`); `state_json()` emits `stopped` + `stop_reason`. +3 cockpit checks (70 -> 73). HALTED-state render + resume hint is Phase 2 (merged shell).
-- [x] **B. Freshness (#5/#6):**
-  - [x] `coa_io.jobs_scanned_at` (jobs.json mtime); `coa_report._repo_obj` stamps each repo with `scannedAt`, surfaced via `coa_state`. +2 advisor checks (43 -> 45). The staleness *display* is Phase 2.
-  - [x] `commands/coa.md` now stale-aware: re-scans when the repo moved on since the last scan (newer HEAD commit or dirty tree), not just when `jobs.json` is missing; reuse only when nothing changed, and the briefing reports scan freshness. VISIBLE fix for #5.
-- [x] Docs travel with code: CLAUDE.md (coa_serve `stop_reason` + coa_view `scannedAt` lines), this TODO, playbook Current Status.
-- [x] Suites green: 45 / 76 / 73 / 78.
+### Stage 0 - the shell (chrome first, no feature work) - DONE
+Built: `shell.py` + `shell_template.html`; `coa_serve.make_server(shell_repos=)` shell mode (frame at `/`, cockpit at `/war-room`, folds in `/sitrep` `/coa` `/coa.json`); `bin/scorch` `_serve_shell` (both `coa --serve` and `advise --serve` route through it). Iframes chosen (kept - no CSS/JS collision). Bonus: `/favicon.ico` -> 204 before the token gate (killed the 403 console noise the iframes multiplied). Verified: in-process route drive + a real Playwright drive (all 3 tabs render, hash deep-links, lazy-load, cockpit SSE paints the live board, 0 console errors). +10 cockpit checks (73 -> 83). Suites 45/76/83/78.
+- New `shell.py` (or fold into `coa_serve.py`): one `ThreadingHTTPServer`, one token, routes:
+  - `GET /` -> `shell_template.html` (big tab bar + 3 iframes; deep-link `#sitrep|#coa|#war-room`)
+  - `GET /sitrep` -> served sitrep (`report.render_html`), `GET /coa` -> served COA, `GET /war-room` -> cockpit
+  - existing data/SSE/action routes fold in under the one server + token: `/coa.json`, `/events` (SSE), POST run/stop
+- New `shell_template.html`: tab bar + iframes + active-tab state (hash-routed).
+- Command wiring (sub-decision, settle here): `/war-room` launches the unified shell; `/coa` + `/sitrep` open it on their tab. Standalone `scorch --sitrep` file output kept for offline sharing.
+- **Verify:** one launch; all three tabs render + function - COA Refresh re-reads, War Room SSE + a real run drains/halts, sitrep field renders + countdowns tick. Four suites green.
 
-**Foundation note (holds into Phase 2):** the cockpit still renders IDLE (not HALTED) on a usage-limit halt until the Phase 2 shell reads `stop_reason`; the `scannedAt` label likewise lands in Phase 2. The one user-visible Phase 1 win is the `/coa` stale-aware re-scan.
+### Stages 1-6 - UI items inside the shell (each: build -> verify -> commit; docs travel with code)
+1. **HALTED state + resume hint (#2/#8):** cockpit reads `stop_reason` (already emitted) -> HALTED banner distinct from IDLE + resume hint on `limit`. +cockpit checks.
+2. **Freshness UI + honest Refresh (#5/#6):** COA tab shows "scanned Nh ago" from `scannedAt`; Refresh honest about re-read vs re-scan. War Room refresh (#6).
+3. **ROE toggle true/false/cycle (#10):** in `/roe` terminal + the html. +advisor checks.
+4. **Sitrep refresh (#12):** refresh button on the served sitrep tab.
+5. **Cratered legend (#9):** "cratered" = the fail state, added to COA/AAR legend.
+6. **Approval legibility how/why (#1):** surface why (defcon < auto_run_min_defcon) + how (`scorch coa run --approve` / cockpit Run button).
 
-**Next session = Phase 2:** brainstorm + build the merged HTML shell, then the UI items inside it (see ROADMAP).
+### Files
+new `shell.py` + `shell_template.html`; edits to `coa_serve.py`, `coa_view.py`, `report.py`, `coa_template.html`, `cockpit_template.html`, `review_template.html`, `roe.py`/`jobs.py`, `commands/*.md`. Docs (CLAUDE.md architecture lines + playbook Current Status) travel with each change.
+
+### Verification
+Four suites (`test_advisor` / `test_scorched` / `test_cockpit` / `test_runner`) green after each stage + a manual browser drive of the shell. Commit incrementally, roughly one stage per commit, on branch `feat/coa-observability-freshness` (Phase 1 rides in the same branch, still unpushed).
+
+### The one reversible call flagged
+iframes vs inlining all three into one document. iframes chosen for isolation (dissolves the CSS-seam risk). If iframe token/SSE plumbing turns ugly in Stage 0, fall back to inline with namespaced CSS - decide inside Stage 0, not now.
 
 ---
 

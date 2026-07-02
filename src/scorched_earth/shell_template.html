@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scorched Earth: War Room</title>
+<!--
+  THE SHELL - one big-tab frame over the three war-HUD surfaces. Each tab is an iframe
+  backed by an existing renderer, unchanged: /sitrep (the weekly SITREP), /coa (the read-only
+  COURSE OF ACTION), /war-room (the live cockpit). One 127.0.0.1 server, one token.
+
+  HOW IT FILLS
+  ------------
+  shell.render_shell(token) does a literal string replacement of __SHELL_TOKEN__ at the const
+  site below, then returns UTF-8 bytes. Every iframe src carries the token as ?t=. Tabs are
+  hash-routed (#sitrep|#coa|#war-room) and lazy: an iframe loads only when its tab is first
+  shown, so the cockpit's SSE stream does not open until you actually visit the War Room.
+-->
+<style>
+  :root{
+    color-scheme:dark;
+    --font:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --ground:#0b0705; --bar-bd:#243a44; --muted:#86abab; --secondary:#9ec1c1;
+    --strong:#eef3f3; --active:#e2a04d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--ground);font-family:var(--font);display:flex;flex-direction:column;
+       height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .tabbar{display:flex;align-items:stretch;background:linear-gradient(#16222c,#0d141a);
+          border-bottom:1px solid var(--bar-bd);flex:none}
+  .brand{display:flex;align-items:center;padding:0 20px;font-weight:800;letter-spacing:2px;
+         font-size:15px;white-space:nowrap;user-select:none;
+         background:linear-gradient(90deg,#ff3b1f,#ff8a1f,#ffd24a,#ff8a1f,#ff3b1f);
+         background-size:200% 100%;-webkit-background-clip:text;background-clip:text;
+         color:transparent;animation:firetext 2s linear infinite}
+  @keyframes firetext{to{background-position:200% 0}}
+  .tab{appearance:none;background:transparent;border:0;border-left:1px solid var(--bar-bd);
+       font-family:var(--font);font-weight:800;letter-spacing:2px;font-size:15px;color:var(--muted);
+       padding:16px 28px;cursor:pointer;transition:color .12s,background .12s,box-shadow .12s}
+  .tab:hover{color:var(--secondary);background:#15212a}
+  .tab[aria-selected="true"]{color:var(--strong);background:#0b0f12;box-shadow:inset 0 -3px 0 var(--active)}
+  .panes{position:relative;flex:1 1 auto;min-height:0}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--ground);display:none}
+  iframe.on{display:block}
+</style>
+</head>
+<body>
+  <nav class="tabbar" role="tablist" aria-label="War Room surfaces">
+    <span class="brand">SCORCHED EARTH</span>
+    <button class="tab" role="tab" data-tab="sitrep">SITREP</button>
+    <button class="tab" role="tab" data-tab="coa">COURSE OF ACTION</button>
+    <button class="tab" role="tab" data-tab="war-room">WAR ROOM</button>
+  </nav>
+  <div class="panes" id="panes"></div>
+<script>
+  const TOKEN = __SHELL_TOKEN__;
+  const TABS = ["sitrep","coa","war-room"];
+  const SRC = {sitrep:"/sitrep", coa:"/coa", "war-room":"/war-room"};
+  const panes = document.getElementById("panes");
+  const frames = {};                       // tab -> iframe, created on first visit
+
+  function show(tab){
+    if(!TABS.includes(tab)) tab = "sitrep";
+    if(!frames[tab]){                       // lazy-load: build the iframe the first time only
+      const f = document.createElement("iframe");
+      f.src = SRC[tab] + "?t=" + encodeURIComponent(TOKEN);
+      f.title = tab;
+      panes.appendChild(f);
+      frames[tab] = f;
+    }
+    for(const t of TABS){ if(frames[t]) frames[t].classList.toggle("on", t === tab); }
+    document.querySelectorAll(".tab").forEach(b =>
+      b.setAttribute("aria-selected", b.dataset.tab === tab ? "true" : "false"));
+    if(location.hash.slice(1) !== tab) history.replaceState(null, "", "#" + tab);
+  }
+
+  document.querySelectorAll(".tab").forEach(b =>
+    b.addEventListener("click", () => show(b.dataset.tab)));
+  window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+  show(location.hash.slice(1) || "sitrep");
+</script>
+</body></html>

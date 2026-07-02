@@ -59,6 +59,32 @@ def _open_file(path) -> None:
         subprocess.run([opener, path], check=False)
 
 
+def _serve_shell(repos, tab="sitrep") -> int:
+    """Launch the unified War Room shell: one 127.0.0.1 token-guarded server hosting the big-tab
+    frame (SITREP / COURSE OF ACTION / WAR ROOM). `tab` sets the tab the browser opens on. The
+    War Room tab starts paused (stage the queue, then Run). Blocks on serve_forever."""
+    import secrets
+    import webbrowser
+    from scorched_earth import coa_serve
+    token = secrets.token_urlsafe(32)
+    engine = coa_serve.Engine(repos)
+    engine.stop()       # War Room starts PAUSED: stage/organize the queue first, then Run
+    httpd, port = coa_serve.make_server(engine, token, render=coa_serve.render_cockpit,
+                                        shell_repos=repos)
+    frag = f"#{tab}" if tab else ""
+    url = f"http://127.0.0.1:{port}/?t={token}{frag}"
+    print(f"War Room on {url}\n(Ctrl-C to stop)", flush=True)
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nWar Room stopped.")
+    return 0
+
+
 def parse_when(val):
     """Accept '11h', '90m', '1h30m', '1d', or a raw unix timestamp -> unix seconds."""
     if val is None:
@@ -206,24 +232,10 @@ def _coa_cli(raw):
         print("No repos linked. Use: scorch link <path>")
         return 0
 
-    # --serve: host the live tabbed COA (per-repo tabs + Refresh) on 127.0.0.1, like the War Room.
-    # Refresh re-reads each repo's jobs.json (no repo re-scan). The token lives in the URL.
+    # --serve: open the unified War Room shell on its COURSE OF ACTION tab (the read-only COA,
+    # per-repo tabs + Refresh that re-reads jobs.json, no repo re-scan). One server, one token.
     if serve:
-        import secrets, webbrowser
-        from scorched_earth import coa_view
-        token = secrets.token_urlsafe(32)
-        httpd, port = coa_view.make_server(repos, token)
-        url = f"http://127.0.0.1:{port}/?t={token}"
-        print(f"COA report on {url}\n(Ctrl-C to stop)", flush=True)
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nCOA report stopped.")
-        return 0
+        return _serve_shell(repos, "coa")
 
     date = time.strftime("%Y-%m-%d", time.localtime())
     wrp = advisor.weekly_reserve_pct(snap) or 0.0
@@ -272,28 +284,12 @@ def _coa_run_cli(rest):
     date = _time.strftime("%Y-%m-%d", _time.localtime())
 
     if "--serve" in rest or sub == "serve":
-        import secrets, webbrowser
-        from scorched_earth import coa_serve
         named = [a for a in rest if not a.startswith("-") and a != "serve"]
         repos = [named[0]] if named else coa_io.list_repos()
         if not repos:
             print("No repos linked. Use: scorch link <path>")
             return 0
-        token = secrets.token_urlsafe(32)
-        engine = coa_serve.Engine(repos)
-        engine.stop()       # cockpit starts PAUSED: stage/organize the queue first, then Run
-        httpd, port = coa_serve.make_server(engine, token, render=coa_serve.render_cockpit)
-        url = f"http://127.0.0.1:{port}/?t={token}"
-        print(f"COA cockpit on {url}\n(Ctrl-C to stop)", flush=True)
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nCockpit stopped.")
-        return 0
+        return _serve_shell(repos, "war-room")   # the unified shell, opened on the live cockpit tab
 
     if sub == "queue":
         all_flag = "--all" in args

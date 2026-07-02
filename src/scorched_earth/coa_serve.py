@@ -196,13 +196,13 @@ def render_cockpit(token, state):
     return html.encode("utf-8")
 
 
-def make_server(engine, token, *, render=None):
+def make_server(engine, token, *, render=None, shell_repos=None):
     """Build a ThreadingHTTPServer bound to 127.0.0.1 on an ephemeral port.
 
     Enforces *token* on every request (query ``?t=`` for GET,
     ``X-Scorch-Token`` header for POST; wrong/absent → 403).
 
-    Routes:
+    Routes (standalone cockpit mode):
       GET /          → cockpit HTML
       GET /state     → engine.state_json() as JSON
       GET /events    → SSE stream (event: board)
@@ -212,6 +212,16 @@ def make_server(engine, token, *, render=None):
       POST /run      → engine.run(repo)          [worker thread]
       POST /stop     → engine.stop()
 
+    When *shell_repos* is given, the server runs in SHELL mode: the big-tab frame moves to
+    ``/`` and the cockpit to ``/war-room``, and the two read-only surfaces are served from the
+    same origin so the shell's iframes work under one token:
+      GET /          → the shell frame (SITREP / COURSE OF ACTION / WAR ROOM tabs)
+      GET /war-room  → cockpit HTML
+      GET /sitrep    → served sitrep (shell.render_sitrep)
+      GET /coa       → read-only COA page (coa_view.render_page)
+      GET /coa.json  → fresh coa_state (the COA tab's Refresh fetch)
+    The engine/SSE/POST routes are unchanged; the read-only tabs never touch the engine.
+
     SECURITY: POST handler reads job-ids ONLY from the body.  Any ``cmd`` or
     ``launch`` field in the body is never read or executed.
 
@@ -220,6 +230,7 @@ def make_server(engine, token, *, render=None):
     """
     if not token:
         raise ValueError("token required")
+    shell_mode = shell_repos is not None
     render = render or render_cockpit
     clients = []                               # list[queue.Queue] for SSE subscribers
     clients_lock = threading.Lock()
@@ -256,12 +267,34 @@ def make_server(engine, token, *, render=None):
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
+            if path == "/favicon.ico":
+                # Browsers request this tokenless; answer 204 before the gate so it never
+                # shows up as a 403 in the console (the shell's iframes multiply the noise).
+                self._send(204, b"", "image/x-icon")
+                return
             if self._tok_q() != token:
                 self._send(403, b'{"error":"forbidden"}')
                 return
             if path == "/":
+                if shell_mode:
+                    from . import shell
+                    self._send(200, shell.render_shell(token), "text/html; charset=utf-8")
+                else:
+                    self._send(200, render(token, engine.state_json()),
+                               "text/html; charset=utf-8")
+            elif shell_mode and path == "/war-room":
                 self._send(200, render(token, engine.state_json()),
                            "text/html; charset=utf-8")
+            elif shell_mode and path == "/sitrep":
+                from . import shell
+                self._send(200, shell.render_sitrep(), "text/html; charset=utf-8")
+            elif shell_mode and path == "/coa":
+                from . import coa_view
+                self._send(200, coa_view.render_page(token, shell_repos),
+                           "text/html; charset=utf-8")
+            elif shell_mode and path == "/coa.json":
+                from . import coa_view
+                self._send(200, json.dumps(coa_view.coa_state(shell_repos)).encode("utf-8"))
             elif path == "/state":
                 self._send(200,
                            json.dumps(engine.state_json()).encode("utf-8"))
