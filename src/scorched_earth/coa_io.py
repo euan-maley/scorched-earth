@@ -125,7 +125,7 @@ def _job_to_dict(j: Job) -> dict:
         "id": j.id, "repo": j.repo, "title": j.title, "type": j.type,
         "defcon": j.defcon, "value": j.value,
         "rationale": j.rationale, "launch": j.launch, "verify": j.verify,
-        "status": j.status,
+        "model": j.model, "status": j.status,
     }
 
 

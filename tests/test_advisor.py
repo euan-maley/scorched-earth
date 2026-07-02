@@ -145,6 +145,15 @@ _mdp, _htmlp = _io.write_coa(_repo, "# md", "<html></html>", "2026-06-24")
 check("write_coa writes md + html under .scorched/coa",
       os.path.exists(_mdp) and os.path.exists(_htmlp) and "2026-06-24" in _mdp)
 
+# the queue round-trip must preserve every runtime field; model was once silently dropped,
+# which made every queue-file run fall back to the default model (per-task model #4)
+_io.enqueue(_repo, [Job(id="qm", repo=_repo, title="Q", type="docs", defcon=4,
+                        value=1.0, model="haiku", verify="true")])
+_rt = {j.id: j for j in _io.read_queue(_repo)}["qm"]
+check("queue round-trip preserves the per-task model", _rt.model == "haiku")
+check("queue round-trip preserves the verify override", _rt.verify == "true")
+_io.unqueue(_repo, "qm")
+
 # link_repo ignores .scorched/ in the target repo, preserving existing content, idempotently
 _repo2 = tempfile.mkdtemp()
 with open(os.path.join(_repo2, ".gitignore"), "w") as f:
