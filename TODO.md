@@ -1,6 +1,25 @@
 # TODO
 
-## Current Session (2026-07-01): Phase 2 - merged shell (#13) + the UI items - DONE (bar the ROE html follow-up)
+## Current Session (2026-07-01, pt.3): Phase 3 + 4 - execution engine + live progress - DONE
+
+Built the whole execution-engine spec (`docs/superpowers/specs/2026-07-01-execution-engine-and-progress-design.md`) in 8 verified stages, one commit each, on `feat/coa-observability-freshness`. Suites 310 -> **361** (78/75/92/116). No plan-skill ceremony (user's call), TDD-ish per stage.
+
+- **Stage 1 - config:** 5 new ROE fields (`run_mode`, `context_cmd`, `attended_branch`, `roadblock_idle_secs`, `advise_on_roadblock`); the cyclable/toggleable ones wired into `/roe`. Global default + per-repo via the existing `merge_roe` cascade.
+- **Stage 2 - model (#4):** `Job.model`; officer emits it; `build_claude_cmd` appends `--model <alias>`. CLI verified: bare aliases + claude-* ids work with `-p`, so no family->id map.
+- **Stage 3 - modes + takeover (#3):** new `exec_modes.py` (resolve_mode cascade, operating_orders, compose_attended_prompt); `scorch coa run --here` execs claude in the current window, OS-sandboxed via a CLI `--settings` file.
+- **Stage 4 - session (#3):** `scorch coa run --session` spawns a new window (iTerm -> Terminal.app -> print fallback), fully free; runs `context_cmd` first.
+- **Stage 5 - deliverables (#3):** every run captures `.scorched/deliverables/<id>.md`; surfaced in the AAR (md column + card link).
+- **Stage 6 - roadblock ladder (#11):** idle watchdog + gate-fail -> `roadblocked` (branch kept), report + desktop notify, `scorch coa resume`. Wired through run_queue, the cockpit engine, board_state, AAR + cockpit badges.
+- **Stage 7 - auto-solver (#11):** one bounded advising agent tries to recover before pausing (ROE `advise_on_roadblock`).
+- **Stage 8 - live progress (#7):** `summarize_stream_line` feeds a per-job progress line into `state_json` (throttled SSE); a CRT progress line on the War Room running card.
+
+**Verified:** 361 unit/integration checks green; template renders (AAR + cockpit, roadblocked + progress) confirmed; CLI dispatch guards (`--here`/`--session`/`resume`). **Hand-verify pending (needs a real claude + terminal, cannot run headless here):** execvp takeover in a live window, the osascript session spawn, and the real `--model`/`--settings`/resume flags in anger.
+
+**Open:** branch still LOCAL/unpushed (now 18 commits: 3 Phase 1 + 7 Phase 2 + 8 Phase 3/4 + spec/docs). Deferred: the ROE editor **HTML frontend** (Phase 2 #10 follow-up, still unbuilt by choice).
+
+---
+
+## Prior Session (2026-07-01): Phase 2 - merged shell (#13) + the UI items - DONE (bar the ROE html follow-up)
 
 Built the unified **War Room shell** (Option A: one 127.0.0.1 server, one token, three big tabs SITREP / COURSE OF ACTION / WAR ROOM via iframes) and then landed all the deferred UI items inside it, one stage per commit, each verified. 7 commits on `feat/coa-observability-freshness` (LOCAL, unpushed - Phase 1 rides the same branch). Suites 78 / 64 / 89 / 79 = **310** (was 45/76/73/78 = 272).
 
@@ -35,12 +54,12 @@ Ordering locked with the user: backend before UI, merged shell (#13) before the 
 - [x] "Cratered" legend + approval legibility how/why (#9, #1) (Stages 5-6)
 - [ ] **ROE editor HTML frontend (#10 follow-up):** an ROE panel/tab in the shell over the same `roe_edit` model, backed by a guarded `POST /roe` (the one remaining Phase 2 item; user chose terminal-first)
 
-**Phase 3 - Execution engine (increasing coupling):**
-- [ ] Model selection per task, Claude picks fable/sonnet/opus/haiku (#4)
-- [ ] In-repo / non-headless run + deliverable + session context, usable in the active iTerm2 window (#3)
-- [ ] Secure start-to-end permissions/goal + manager roadblock safety net + notify user on roadblock (#11)
+**Phase 3 - Execution engine (increasing coupling):** DONE (2026-07-01 pt.3)
+- [x] Model selection per task, Claude picks fable/sonnet/opus/haiku (#4)
+- [x] In-repo / non-headless run + deliverable + session context, usable in the active iTerm2 window (#3) -- three run modes (headless/takeover/session), deliverables per job
+- [x] Secure start-to-end permissions/goal + manager roadblock safety net + notify user on roadblock (#11) -- roadblock ladder: watchdog -> advising agent -> pause + report + notify -> resume
 
-**Phase 4 - Live progress view (#7):** per-task last-command / live War Room view (CRT progress screen). Built last (needs the merged shell + the new executor).
+**Phase 4 - Live progress view (#7):** DONE (2026-07-01 pt.3) -- per-task last-command line in `state_json` (throttled SSE) + a CRT progress line on the War Room running card.
 
 Answered inline (not tasks, feed #9/#1 UI legibility in Phase 2): "cratered" = the fail state (job or its gate failed, work discarded); approval is needed when `defcon < auto_run_min_defcon` (default 3), granted via `scorch coa run --approve` or the cockpit Run button (operator-present).
 

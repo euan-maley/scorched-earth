@@ -156,8 +156,25 @@ the War Room has a manual **REFRESH** that pulls an external scan, and the SITRE
 **Refresh** that reloads the server-rendered field (served mode only; the offline file omits it).
 `/roe` now opens an
 **interactive ROE editor** (`roe_edit.py` model + a curses arrow-key list, `hjkl` too;
-`--json`/non-tty prints JSON) covering the wired rules. 76 unit checks
-(`python3 tests/test_scorched.py`) + 63 advisor checks (`python3 tests/test_advisor.py`) +
-78 runner checks (`python3 tests/test_runner.py`) + 87 cockpit checks
-(`python3 tests/test_cockpit.py`) = 304 total; all gated in CI via
+`--json`/non-tty prints JSON) covering the wired rules.
+
+**Phase 3 + 4 (execution engine + live progress) are built** (`exec_modes.py` + runner
+extensions). A job runs in one of three **run modes**, picked from the new ROE `run_mode`
+(global default + per-repo, resolved by `resolve_mode`): `headless` (the default: sandboxed
+throwaway worktree, unattended), `takeover` (`scorch coa run --here <id>` execs an interactive
+claude in your current window, still OS-sandboxed via a CLI `--settings` file so it never
+touches the repo's own `.claude`), and `session` (`scorch coa run --session <id>` spawns a new
+window, fully free, running an optional `context_cmd` like `/kerd:switch in` first). Attended
+modes inject the ROE leash + goal as operating orders. Each job also gets a **per-task model**
+(`--model`, chosen by the officer) and writes a **deliverable** to
+`.scorched/deliverables/<id>.md` (surfaced in the AAR). The **roadblock safety net**: a stuck
+job (silent past `roadblock_idle_secs`, default 600) or a failed gate becomes a `roadblocked`
+outcome (branch kept); if `advise_on_roadblock` is on, one bounded **advising agent** tries to
+recover, else the runner writes `.scorched/roadblocks/<id>.md`, fires a desktop notification,
+and leaves it for `scorch coa resume <id>`. The War Room shows a **live progress line** (the
+job's latest tool call / text) on the running card, pushed over the existing SSE (throttled).
+
+78 unit checks (`python3 tests/test_scorched.py`) + 75 advisor checks
+(`python3 tests/test_advisor.py`) + 116 runner checks (`python3 tests/test_runner.py`) +
+92 cockpit checks (`python3 tests/test_cockpit.py`) = **361 total**; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.
