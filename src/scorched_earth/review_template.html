@@ -329,7 +329,7 @@ const AAR = __REVIEW_JSON__;
         ${headerTag}
       </div>
       <h1 class="hdr__title">AFTER-ACTION REPORT</h1>
-      <div class="hdr__sub">BATTLE-DAMAGE ASSESSMENT \u00b7 ${esc(AAR.repo)} \u00b7 ${J.length} OBJECTIVES</div>
+      <div class="hdr__sub">BATTLE-DAMAGE ASSESSMENT \u00b7 ${esc(AAR.repo)} \u00b7 ${J.length} OBJECTIVE${J.length===1?"":"S"}</div>
     </div>
 
     <div class="deck">
@@ -339,7 +339,7 @@ const AAR = __REVIEW_JSON__;
         <div class="banner__accent" style="background:${live?"#ff6a1f":vCol};"></div>
         <div class="banner__col" style="padding:15px 18px;">
           <div class="mod__hd" style="margin-bottom:0;border:0;padding:0;"><span class="l">OPERATION STATUS</span><span class="r">${live?"LIVE \u00b7 AUTO-REFRESH "+AAR.refreshSeconds+"s":"COMPLETE"}</span></div>
-          <div class="progress" style="margin-top:11px;"><b>${done}</b><i> / ${J.length}</i> OBJECTIVES RESOLVED${running?` \u00b7 <span style="color:#ff8a3f;">${running} ON FIRE</span>`:""}</div>
+          <div class="progress" style="margin-top:11px;"><b>${done}</b><i> / ${J.length}</i> OBJECTIVE${J.length===1?"":"S"} RESOLVED${running?` \u00b7 <span style="color:#ff8a3f;">${running} ON FIRE</span>`:""}</div>
           <div class="chips">
             <div class="chip"><b style="color:#9fd36a;">${passed}</b><span>SECURED</span></div>
             <div class="chip"><b style="color:#e2705a;">${failed}</b><span>CRATERED</span></div>
