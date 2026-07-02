@@ -34,10 +34,13 @@ class Engine:
         self._now = now or (lambda: int(time.time()))
         self._lock = threading.Lock()
         self._stop = False
+        self._stop_reason = None                   # None | "operator" | "limit": why the drain halted
         self._running = {}                         # repo -> {"repo","id"} (one in-flight job per repo)
         self._kill_events = {}                     # repo -> threading.Event
         self._workers = set()                      # repos with a live drain worker
         self._results = {}                         # repo -> RunResult
+        self._progress = {}                        # repo -> {"line","started","ts"} (live per-job)
+        self._last_prog_bcast = 0.0                # throttle the progress SSE push
 
     # ---- public mutations (called by HTTP handlers) ----
     def _ensure_worker(self, repo):
@@ -55,6 +58,7 @@ class Engine:
         repos = [os.path.realpath(os.path.expanduser(r)) for r in repos]
         with self._lock:
             self._stop = False
+            self._stop_reason = None                # Run resumes: clear the prior halt reason
         for rp in repos:
             if self._ensure_worker(rp):
                 threading.Thread(target=self._drain_repo, args=(rp,), daemon=True).start()
@@ -82,6 +86,7 @@ class Engine:
     def stop(self):
         with self._lock:
             self._stop = True                      # halts every worker after its current job
+            self._stop_reason = "operator"
 
     def kill(self, repo, job_id):
         target = os.path.realpath(os.path.expanduser(repo))
@@ -97,14 +102,22 @@ class Engine:
         state = self._load_state()
         snap = (state or {}).get("snapshot") or {}
         wrp = advisor.weekly_reserve_pct(snap)
+        now = self._now()
         with self._lock:
             running = [dict(v) for v in self._running.values()]
+            for r in running:                      # attach the live progress line + elapsed
+                p = self._progress.get(r["repo"])
+                if p:
+                    r["progress"] = {"line": p["line"],
+                                     "elapsed": max(0, now - p["started"])}
             busy = bool(running) or bool(self._workers)
+            stopped, stop_reason = self._stop, self._stop_reason
             running_by_repo = {}
             for v in self._running.values():
                 running_by_repo.setdefault(v["repo"], []).append(v["id"])
         repos = [coa_io.board_state(r, running_by_repo.get(r, ())) for r in self.repos]
         return {"repos": repos, "running": running, "busy": busy,
+                "stopped": stopped, "stop_reason": stop_reason,
                 "weekly_reserve_pct": round(wrp, 0) if wrp is not None else None}
 
     # ---- per-repo drain worker ----
@@ -127,6 +140,8 @@ class Engine:
                     else:
                         done = False
                         self._running[repo] = {"repo": repo, "id": job.id}
+                        self._progress[repo] = {"line": "starting", "started": self._now(),
+                                                "ts": self._now()}
                         ke = threading.Event()
                         self._kill_events[repo] = ke
                         coa_io.unqueue(repo, job.id)
@@ -141,16 +156,24 @@ class Engine:
                 return
 
             runner._kill_ctx.event = ke              # per-worker-thread kill handle (thread-local)
+            runner._kill_ctx.progress = lambda line, _r=repo: self._on_progress(_r, line)
             try:
                 oc = runner.run_one(repo, job, roe, repo, seq, execute=self._execute)
             finally:
                 runner._kill_ctx.event = None
+                runner._kill_ctx.progress = None
 
             with self._lock:
+                self._progress.pop(repo, None)       # job finished: clear its live progress
                 if oc.outcome == "limit":
                     coa_io.enqueue(repo, [job])          # didn't run — put it back, resumable
                     self._stop = True                    # halt every worker
-                elif oc.outcome in ("pass", "fail"):
+                    self._stop_reason = "limit"          # hit the real weekly ceiling
+                elif oc.outcome in ("pass", "fail", "roadblocked"):
+                    if oc.outcome == "roadblocked":
+                        runner.handle_roadblock(repo, oc)    # report + notify; drain continues
+                    else:
+                        runner.write_job_deliverable(repo, oc)   # per-job deliverable record
                     rr.jobs.append(oc)
                     self._persist(repo, rr)          # killed: not appended (board -> proposed)
                 self._running.pop(repo, None)
@@ -162,6 +185,25 @@ class Engine:
             if done:
                 return
             # loop: drain the next job in THIS repo
+
+    def _on_progress(self, repo, line):
+        """Per-output-line progress sink (called on the worker thread by the runner). Stores the
+        latest activity for the live view and pushes it over SSE, throttled to at most ~1/2s so a
+        chatty stream never floods the clients."""
+        summary = runner.summarize_stream_line(line)
+        if not summary:
+            return
+        now = self._now()
+        with self._lock:
+            p = self._progress.get(repo)
+            if p is None:
+                return
+            p["line"] = summary
+            p["ts"] = now
+            if now - self._last_prog_bcast < 2:
+                return
+            self._last_prog_bcast = now
+        self._broadcast()
 
     def _persist(self, repo, rr):
         from . import review_report
@@ -190,13 +232,13 @@ def render_cockpit(token, state):
     return html.encode("utf-8")
 
 
-def make_server(engine, token, *, render=None):
+def make_server(engine, token, *, render=None, shell_repos=None):
     """Build a ThreadingHTTPServer bound to 127.0.0.1 on an ephemeral port.
 
     Enforces *token* on every request (query ``?t=`` for GET,
     ``X-Scorch-Token`` header for POST; wrong/absent → 403).
 
-    Routes:
+    Routes (standalone cockpit mode):
       GET /          → cockpit HTML
       GET /state     → engine.state_json() as JSON
       GET /events    → SSE stream (event: board)
@@ -206,6 +248,16 @@ def make_server(engine, token, *, render=None):
       POST /run      → engine.run(repo)          [worker thread]
       POST /stop     → engine.stop()
 
+    When *shell_repos* is given, the server runs in SHELL mode: the big-tab frame moves to
+    ``/`` and the cockpit to ``/war-room``, and the two read-only surfaces are served from the
+    same origin so the shell's iframes work under one token:
+      GET /          → the shell frame (SITREP / COURSE OF ACTION / WAR ROOM tabs)
+      GET /war-room  → cockpit HTML
+      GET /sitrep    → served sitrep (shell.render_sitrep)
+      GET /coa       → read-only COA page (coa_view.render_page)
+      GET /coa.json  → fresh coa_state (the COA tab's Refresh fetch)
+    The engine/SSE/POST routes are unchanged; the read-only tabs never touch the engine.
+
     SECURITY: POST handler reads job-ids ONLY from the body.  Any ``cmd`` or
     ``launch`` field in the body is never read or executed.
 
@@ -214,6 +266,7 @@ def make_server(engine, token, *, render=None):
     """
     if not token:
         raise ValueError("token required")
+    shell_mode = shell_repos is not None
     render = render or render_cockpit
     clients = []                               # list[queue.Queue] for SSE subscribers
     clients_lock = threading.Lock()
@@ -250,12 +303,34 @@ def make_server(engine, token, *, render=None):
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
+            if path == "/favicon.ico":
+                # Browsers request this tokenless; answer 204 before the gate so it never
+                # shows up as a 403 in the console (the shell's iframes multiply the noise).
+                self._send(204, b"", "image/x-icon")
+                return
             if self._tok_q() != token:
                 self._send(403, b'{"error":"forbidden"}')
                 return
             if path == "/":
+                if shell_mode:
+                    from . import shell
+                    self._send(200, shell.render_shell(token), "text/html; charset=utf-8")
+                else:
+                    self._send(200, render(token, engine.state_json()),
+                               "text/html; charset=utf-8")
+            elif shell_mode and path == "/war-room":
                 self._send(200, render(token, engine.state_json()),
                            "text/html; charset=utf-8")
+            elif shell_mode and path == "/sitrep":
+                from . import shell
+                self._send(200, shell.render_sitrep(), "text/html; charset=utf-8")
+            elif shell_mode and path == "/coa":
+                from . import coa_view
+                self._send(200, coa_view.render_page(token, shell_repos),
+                           "text/html; charset=utf-8")
+            elif shell_mode and path == "/coa.json":
+                from . import coa_view
+                self._send(200, json.dumps(coa_view.coa_state(shell_repos)).encode("utf-8"))
             elif path == "/state":
                 self._send(200,
                            json.dumps(engine.state_json()).encode("utf-8"))

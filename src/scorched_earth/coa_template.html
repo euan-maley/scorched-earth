@@ -259,8 +259,11 @@ var TOKEN = __COA_TOKEN__;
     return `<span class="defcon defcon-${d}">DEFCON ${d}</span>`;
   }
 
-  function approvalBadge(){
-    return `<span class="approval">APPROVAL REQUIRED</span>`;
+  function approvalBadge(job){
+    const d = Math.min(5, Math.max(1, (job.defcon|0)||3));
+    const why = `DEFCON ${d} is below the auto-run threshold, so it is held for approval. `
+              + `Approve with: scorch coa run --approve  (or arm it in the War Room and press RUN).`;
+    return `<span class="approval" title="${esc(why)}">APPROVAL REQUIRED</span>`;
   }
 
   function jobCard(job, idx){
@@ -274,7 +277,7 @@ var TOKEN = __COA_TOKEN__;
           ${defconBadge(job.defcon)}
           <span class="job__title">${esc(job.title)}</span>
           <span class="type">${esc(job.type)}</span>
-          ${job.approval_required ? approvalBadge() : ""}
+          ${job.approval_required ? approvalBadge(job) : ""}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
         <div class="job__cmd" title="Run/execute command. Copy this into a Claude session to launch the job"><span class="px">&#9656;</span><span class="job__cmdlbl">RUN CMD</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>
@@ -349,14 +352,27 @@ var TOKEN = __COA_TOKEN__;
     </div>`;
   }
 
+  // How long ago the repo was scanned (jobs.json mtime). The battle plan is a snapshot from
+  // that scan, not a live read, so we say so; Refresh re-reads it but never re-scans the repo.
+  function scannedAgo(ts){
+    if(!ts) return "";
+    const s = Math.floor(Date.now()/1000) - ts;
+    if(s < 45) return "just now";
+    const m = Math.floor(s/60); if(m < 60) return m + "m ago";
+    const h = Math.floor(m/60); if(h < 24) return h + "h ago";
+    return Math.floor(h/24) + "d ago";
+  }
+
   function paint(){
     const V = VERDICT[DATA.verdict] || VERDICT.unknown;
     const R = DATA.repos || [];
     if(active >= R.length) active = 0;
     const r = R[active] || {queue:[],blocked:[],note:"",name:"",roe:[]};
+    const scanned = scannedAgo(r.scannedAt);
     const sub = `DEFCON BATTLE PLAN &middot; ${(r.queue||[]).length} JOBS COMMITTED &middot; ${(r.blocked||[]).length} BLOCKED`
-              + (r.name ? ` &middot; ${esc(r.name)}` : "");
-    const refreshBtn = TOKEN ? `<button class="refresh" id="refreshBtn" title="re-read the latest scanned jobs">&#8635; REFRESH</button>` : "";
+              + (r.name ? ` &middot; ${esc(r.name)}` : "")
+              + (scanned ? ` &middot; <span style="color:#c9a05a;">SCANNED ${scanned}</span>` : "");
+    const refreshBtn = TOKEN ? `<button class="refresh" id="refreshBtn" title="Re-read jobs.json (picks up a scan run elsewhere). Does NOT re-scan the repo; run /coa to re-scan.">&#8635; REFRESH</button>` : "";
     root.innerHTML = BR + `
     <div class="hdr">
       <canvas class="hdr__scene" width="360" height="60"></canvas>

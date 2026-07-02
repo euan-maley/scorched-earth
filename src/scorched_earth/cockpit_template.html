@@ -68,6 +68,7 @@
        font-size:17px;padding:11px 26px 10px;background:#0c1217;border:1px solid var(--mod-bd);color:var(--secondary);
        cursor:pointer;transition:background .12s,color .12s,border-color .12s,box-shadow .12s}
   .btn:hover{background:#15212a;color:var(--strong)}
+  .btn.spin{opacity:.55}
   .btn .gl{font-size:14px}
   .btn--run.is-primary{border-color:var(--secured);color:#0c1206;background:var(--secured)}
   .btn--run.is-primary:hover{background:var(--secured2)}
@@ -151,11 +152,17 @@
   /* running */
   .card--running{border-left-color:var(--fire);background:linear-gradient(#16110c,#100b08);
         box-shadow:0 0 0 1px rgba(255,106,31,.22),0 0 26px rgba(255,90,20,.16)}
+  .cprog{flex-basis:100%;margin-top:5px;font-family:ui-monospace,Menlo,monospace;font-size:11px;
+        color:#ffb079;background:rgba(0,0,0,.34);border:1px solid rgba(255,106,31,.22);
+        border-radius:3px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        text-shadow:0 0 6px rgba(255,120,40,.5)}
   /* done */
   .card--pass{border-left-color:var(--secured);background:linear-gradient(#0f140d,#0c0f0a)}
   .card--fail{border-left-color:var(--fail);background:linear-gradient(#160c0a,#100806);opacity:.92}
+  .card--roadblocked{border-left-color:#e2a04d;background:linear-gradient(#161206,#100c06)}
   .card--pass .ctitle{color:#e7f1dc}
   .card--fail .ctitle{color:#e9c8bf}
+  .card--roadblocked .ctitle{color:#f0d9a8}
 
   .working{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;letter-spacing:2px;color:var(--ember2)}
 
@@ -203,6 +210,7 @@
         <span class="liveflag" id="liveFlag"></span>
         <button class="btn btn--run" id="btnRun"><span class="gl">&#9654;</span> RUN</button>
         <button class="btn btn--stop" id="btnStop"><span class="gl">&#9632;</span> STOP</button>
+        <button class="btn" id="btnRefresh" title="Re-read the board from disk (picks up a scan run elsewhere). SSE already pushes live run updates.">&#8635; REFRESH</button>
       </div>
     </div>
     <h1 class="hdr__title">WAR ROOM</h1>
@@ -268,6 +276,7 @@ const STATE = __COCKPIT_JSON__;
   function normalize(s){
     s = s || {};
     return { repos: Array.isArray(s.repos)?s.repos:[], running: Array.isArray(s.running)?s.running:[], busy: !!s.busy,
+             stopped: !!s.stopped, stop_reason: s.stop_reason||null,
              weekly_reserve_pct: s.weekly_reserve_pct!=null?s.weekly_reserve_pct:null };
   }
   const repoOf = key => state.repos.find(r=>r.repo===key) || null;
@@ -306,7 +315,8 @@ const STATE = __COCKPIT_JSON__;
 
   function updateCard(el, job, kind, idx){
     el.dataset.id = job.id;
-    el.className = "card card--"+(kind==="finished"?(job.outcome==="fail"?"fail":"pass"):kind);
+    const _fk = job.outcome==="fail"?"fail":(job.outcome==="roadblocked"?"roadblocked":"pass");
+    el.className = "card card--"+(kind==="finished"?_fk:kind);
     const grip = el.querySelector(".grip");
     const draggable = (kind==="proposed"||kind==="queued");
     el.setAttribute("draggable", draggable?"true":"false");
@@ -320,7 +330,7 @@ const STATE = __COCKPIT_JSON__;
     if(kind==="proposed"){
       const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
       foot.appendChild(html('<span class="defcon defcon-'+d+'">DEFCON '+d+'</span>'));
-      if(job.approval_required) foot.appendChild(html('<span class="capproval">APPROVAL REQUIRED</span>'));
+      if(job.approval_required) foot.appendChild(html('<span class="capproval" title="DEFCON '+d+' is below the auto-run threshold, so it is held for approval. Press RUN as the operator to approve (the cockpit auto-approves operator-driven runs), or run: scorch coa run --approve">APPROVAL REQUIRED</span>'));
       if(job.value!=null) foot.appendChild(html('<span class="cval" style="color:'+VALCOL(+job.value)+'">VAL '+esc(job.value)+'</span>'));
     } else if(kind==="queued"){
       const isNext = idx===0;
@@ -329,18 +339,23 @@ const STATE = __COCKPIT_JSON__;
       if(isNext) foot.appendChild(html('<span class="cnext">NEXT UP</span>'));
       const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
       foot.appendChild(html('<span class="defcon defcon-'+d+'"'+(isNext?'':' style="margin-left:auto"')+'>DEFCON '+d+'</span>'));
-      if(job.approval_required) foot.appendChild(html('<span class="capproval">APPROVAL REQUIRED</span>'));
+      if(job.approval_required) foot.appendChild(html('<span class="capproval" title="DEFCON '+d+' is below the auto-run threshold, so it is held for approval. Press RUN as the operator to approve (the cockpit auto-approves operator-driven runs), or run: scorch coa run --approve">APPROVAL REQUIRED</span>'));
     } else if(kind==="running"){
       foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
       const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
       foot.appendChild(html('<span class="defcon defcon-'+d+'" style="margin-left:auto">DEFCON '+d+'</span>'));
       const kb = html('<button class="btn btn--stop" data-kill="'+esc(job.id)+'" style="margin-left:auto;padding:4px 11px 3px;font-size:11px">\u2715 KILL</button>');
       foot.appendChild(kb);
+      if(job.progress && job.progress.line){
+        const el = job.progress.elapsed!=null ? ' \u00b7 '+job.progress.elapsed+'s' : '';
+        foot.appendChild(html('<span class="cprog" title="What the job is doing right now (its latest tool call or output).">\u25b8 '+esc(job.progress.line)+el+'</span>'));
+      }
     } else { // finished
-      const pass = job.outcome!=="fail";
-      const badge = pass
-        ? '<span class="cbadge" style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
-        : '<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
+      const badge = job.outcome==="roadblocked"
+        ? '<span class="cbadge" title="Stuck or gate failed; paused and the branch was kept. Read .scorched/roadblocks/'+esc(job.id)+'.md, fix, then: scorch coa resume '+esc(job.id)+'" style="color:#f0c070;border-color:#e2a04d;background:rgba(226,160,77,.16)">&#9888; ROADBLOCKED</span>'
+        : job.outcome==="fail"
+        ? '<span class="cbadge" title="The job or its verification gate failed; the work was discarded." style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>'
+        : '<span class="cbadge" title="Ran and its verification gate passed." style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>';
       foot.appendChild(html(badge));
       if(job.branch){
         const br = html('<span class="cbranch" style="flex-basis:100%"><span class="g">&#9095;</span>'+esc(job.branch)+'</span>');
@@ -384,7 +399,7 @@ const STATE = __COCKPIT_JSON__;
     const jobs = [];
     if(here){
       const base = lookupJob(repo, here.id) || { id: here.id };
-      jobs.push(Object.assign({}, base, { id: here.id }));
+      jobs.push(Object.assign({}, base, { id: here.id, progress: here.progress }));
     }
     reconcile("running", jobs, "running");
     root.querySelector('[data-cnt="running"]').textContent = here ? "1 ACTIVE" : "\u2014";
@@ -393,17 +408,24 @@ const STATE = __COCKPIT_JSON__;
   /* ---------- header / status / tabs ---------- */
   function renderHeader(){
     const busy = state.busy;
+    // HALTED: the drain hit the real weekly usage ceiling (stop_reason "limit"), distinct from a
+    // clean finish or an operator pause (both read IDLE). The un-run job was re-queued: Run resumes.
+    const halted = !busy && state.stopped && state.stop_reason === "limit";
     document.getElementById("hdrStamp").textContent =
       "// WAR ROOM \u00b7 SECTOR 07 \u00b7 " + state.repos.length + (state.repos.length===1?" SECTOR":" SECTORS");
     const dot = document.getElementById("hdrDot");
-    dot.style.background = busy?"#ff6a1f":"#6f8a8a";
-    dot.style.boxShadow = "0 0 8px "+(busy?"#ff6a1f":"#6f8a8a");
-    dot.className = "dot"+(busy?" blink":"");
+    const dotCol = busy?"#ff6a1f":(halted?"#c0392b":"#6f8a8a");
+    dot.style.background = dotCol;
+    dot.style.boxShadow = "0 0 8px "+dotCol;
+    dot.className = "dot"+(busy||halted?" blink":"");
 
     const flag = document.getElementById("liveFlag");
     if(busy){
       flag.style.borderColor="#ff6a1f"; flag.style.color="#ff8a3f";
       flag.innerHTML='<span class="dot blink" style="background:#ff6a1f;box-shadow:0 0 8px #ff6a1f"></span>LIVE';
+    } else if(halted){
+      flag.style.borderColor="#c0392b"; flag.style.color="#e2705a";
+      flag.innerHTML='<span class="dot blink" style="background:#c0392b;box-shadow:0 0 8px #c0392b"></span>HALTED';
     } else {
       flag.style.borderColor="#6f8a8a"; flag.style.color="#9ec1c1";
       flag.innerHTML='<span class="dot" style="background:#6f8a8a;box-shadow:0 0 6px #6f8a8a"></span>IDLE';
@@ -416,6 +438,9 @@ const STATE = __COCKPIT_JSON__;
     } else if(R.length > 1){
       const names = R.map(x=>(state.repos.find(r=>r.repo===x.repo)||{}).name||"?").join(", ");
       sub.innerHTML = '<span style="color:#ff8a3f">'+R.length+' RUNNING IN PARALLEL</span> &middot; '+esc(names);
+    } else if(halted){
+      sub.innerHTML = '<span style="color:#e2705a">HALTED &middot; hit the weekly usage ceiling. '
+        + 'The un-run job is back in the queue; press RUN to resume after the reset.</span>';
     } else {
       sub.textContent = "SCORCHED EARTH · LIVE QUEUE CONTROL";
     }
@@ -451,7 +476,8 @@ const STATE = __COCKPIT_JSON__;
 
   function renderStatus(repo){
     const F = repo?(repo.finished||[]):[];
-    const passed = F.filter(j=>j.outcome!=="fail").length;
+    const roadblocked = F.filter(j=>j.outcome==="roadblocked").length;
+    const passed = F.filter(j=>j.outcome==="pass").length;
     const failed = F.filter(j=>j.outcome==="fail").length;
     const queued = repo?(repo.queued||[]).length:0;
     const proposed = repo?(repo.proposed||[]).length:0;
@@ -462,6 +488,7 @@ const STATE = __COCKPIT_JSON__;
       stat(F.length+"/"+total, "DONE")+
       stat(passed,"SECURED","#9fd36a")+
       stat(failed,"CRATERED","#e2705a")+
+      (roadblocked?stat(roadblocked,"ROADBLOCKED","#f0c070"):"")+
       stat(queued,"QUEUED","#e2a04d")+
       stat(proposed,"PROPOSED","#9ec1c1");
 
@@ -506,6 +533,19 @@ const STATE = __COCKPIT_JSON__;
   document.getElementById("btnStop").addEventListener("click", ()=>{
     state.busy = false; renderHeader(); renderStatus(activeRepoObj());  // optimistic
     post("/stop", {});
+  });
+  // Manual board refresh: SSE only pushes on engine events, so an external jobs.json change
+  // (a fresh /coa scan) is invisible until we re-read /state. This does exactly that; it never
+  // re-scans the repo. Preserves the operator's active repo tab across the patch.
+  document.getElementById("btnRefresh").addEventListener("click", ()=>{
+    const btn = document.getElementById("btnRefresh"); btn.classList.add("spin");
+    fetch("/state?t=" + encodeURIComponent(TOKEN), {cache:"no-store"})
+      .then(r=>r.json())
+      .then(s=>{ const keep = activeRepo; const next = normalize(s); state = next;
+                 activeRepo = next.repos.some(r=>r.repo===keep) ? keep : (next.repos[0]?next.repos[0].repo:null);
+                 render(); })
+      .catch(()=>{})
+      .then(()=>{ btn.classList.remove("spin"); });
   });
 
   root.addEventListener("click", e=>{

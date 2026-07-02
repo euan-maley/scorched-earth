@@ -59,6 +59,90 @@ def _open_file(path) -> None:
         subprocess.run([opener, path], check=False)
 
 
+def _roe_editor(repo) -> int:
+    """Interactive ROE editor: an arrow-key list, like Claude's permissions UI. up/down move,
+    left/right change a cycle, space/enter flips a toggle, s saves, q quits. Curses is just the
+    view; all edit logic lives in the pure roe_edit model."""
+    import curses
+    from scorched_earth import coa_io, roe_edit
+
+    def run(scr):
+        curses.curs_set(0)
+        scr.keypad(True)                 # decode arrow keys to curses.KEY_* (not raw ESC sequences)
+        try:
+            curses.use_default_colors()
+        except Exception:
+            pass
+        roe = coa_io.load_roe(repo)
+        sel, dirty, msg = 0, False, ""
+        name = os.path.basename(os.path.realpath(os.path.expanduser(repo)))
+        while True:
+            ctrls = roe_edit.controls(roe)
+            scr.erase()
+            h, w = scr.getmaxyx()
+            scr.addnstr(0, 0, (f" RULES OF ENGAGEMENT  {name} ").ljust(w - 1), w - 1, curses.A_REVERSE)
+            scr.addnstr(1, 0, " up/down move   left/right change   space toggle   s save   q quit", w - 1)
+            row = 3
+            for i, c in enumerate(ctrls):
+                mark = ("[x]" if c.on else "[ ]") if c.kind == "toggle" else f"< {c.value} >"
+                line = ("  " + mark.ljust(10) + "  " + c.label).ljust(w - 1)
+                scr.addnstr(row, 0, line, w - 1, curses.A_REVERSE if i == sel else curses.A_NORMAL)
+                row += 1
+            if 0 <= sel < len(ctrls):
+                scr.addnstr(row + 1, 0, "  " + ctrls[sel].help, w - 1, curses.A_DIM)
+            foot = msg or ("UNSAVED CHANGES (press s to save)" if dirty else "")
+            if foot:
+                scr.addnstr(h - 1, 0, ("  " + foot).ljust(w - 1), w - 1, curses.A_BOLD)
+            scr.refresh()
+
+            k = scr.getch()
+            msg = ""
+            if k in (curses.KEY_UP, ord("k")):
+                sel = (sel - 1) % len(ctrls)
+            elif k in (curses.KEY_DOWN, ord("j")):
+                sel = (sel + 1) % len(ctrls)
+            elif k in (curses.KEY_LEFT, ord("h")):
+                roe = roe_edit.apply(roe, sel, -1); dirty = True
+            elif k in (curses.KEY_RIGHT, ord("l")):
+                roe = roe_edit.apply(roe, sel, +1); dirty = True
+            elif k in (ord(" "), 10, 13, curses.KEY_ENTER):
+                roe = roe_edit.apply(roe, sel, 0); dirty = True
+            elif k in (ord("s"), ord("S")):
+                roe_edit.save(repo, roe); dirty = False; msg = "saved to .scorched/roe.json"
+            elif k in (ord("q"), ord("Q")):   # not ESC: arrow keys begin with ESC and would quit
+                return
+
+    curses.wrapper(run)
+    print(f"ROE editor closed for {os.path.realpath(os.path.expanduser(repo))}")
+    return 0
+
+
+def _serve_shell(repos, tab="sitrep") -> int:
+    """Launch the unified War Room shell: one 127.0.0.1 token-guarded server hosting the big-tab
+    frame (SITREP / COURSE OF ACTION / WAR ROOM). `tab` sets the tab the browser opens on. The
+    War Room tab starts paused (stage the queue, then Run). Blocks on serve_forever."""
+    import secrets
+    import webbrowser
+    from scorched_earth import coa_serve
+    token = secrets.token_urlsafe(32)
+    engine = coa_serve.Engine(repos)
+    engine.stop()       # War Room starts PAUSED: stage/organize the queue first, then Run
+    httpd, port = coa_serve.make_server(engine, token, render=coa_serve.render_cockpit,
+                                        shell_repos=repos)
+    frag = f"#{tab}" if tab else ""
+    url = f"http://127.0.0.1:{port}/?t={token}{frag}"
+    print(f"War Room on {url}\n(Ctrl-C to stop)", flush=True)
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nWar Room stopped.")
+    return 0
+
+
 def parse_when(val):
     """Accept '11h', '90m', '1h30m', '1d', or a raw unix timestamp -> unix seconds."""
     if val is None:
@@ -185,10 +269,13 @@ def _coa_cli(raw):
 
     if verb == "roe":
         import dataclasses as _dc
-        repo = rest[0] if rest else "."
-        roe = coa_io.load_roe(repo)
-        print(_json.dumps(_dc.asdict(roe), indent=2))
-        return 0
+        named = [a for a in rest if not a.startswith("-")]
+        repo = named[0] if named else "."
+        # Interactive editor when we own a real terminal; JSON fallback for pipes/scripts/--json.
+        if "--json" in rest or not sys.stdout.isatty():
+            print(_json.dumps(_dc.asdict(coa_io.load_roe(repo)), indent=2))
+            return 0
+        return _roe_editor(repo)
 
     # advise
     state = st.load_state()
@@ -206,24 +293,10 @@ def _coa_cli(raw):
         print("No repos linked. Use: scorch link <path>")
         return 0
 
-    # --serve: host the live tabbed COA (per-repo tabs + Refresh) on 127.0.0.1, like the War Room.
-    # Refresh re-reads each repo's jobs.json (no repo re-scan). The token lives in the URL.
+    # --serve: open the unified War Room shell on its COURSE OF ACTION tab (the read-only COA,
+    # per-repo tabs + Refresh that re-reads jobs.json, no repo re-scan). One server, one token.
     if serve:
-        import secrets, webbrowser
-        from scorched_earth import coa_view
-        token = secrets.token_urlsafe(32)
-        httpd, port = coa_view.make_server(repos, token)
-        url = f"http://127.0.0.1:{port}/?t={token}"
-        print(f"COA report on {url}\n(Ctrl-C to stop)", flush=True)
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nCOA report stopped.")
-        return 0
+        return _serve_shell(repos, "coa")
 
     date = time.strftime("%Y-%m-%d", time.localtime())
     wrp = advisor.weekly_reserve_pct(snap) or 0.0
@@ -263,6 +336,75 @@ def _coa_cli(raw):
     return 0
 
 
+def _coa_attended(args):
+    """`scorch coa run <--here|--session> <job-id> [repo]` — run ONE job attended (Phase 3/4).
+    --here takes over THIS window (execvp; does not return); --session spawns a new window.
+    Resolves the repo + job, then dispatches to the exec_modes launcher."""
+    from scorched_earth import coa_io, exec_modes
+    flag = "--here" if "--here" in args else "--session"
+    override = "takeover" if flag == "--here" else "session"
+    i = args.index(flag)
+    job_id = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else None
+    if not job_id:
+        print(f"Usage: scorch coa run {flag} <job-id> [repo]")
+        return 0
+    positional = [a for a in args if not a.startswith("-")]
+    repo = next((a for a in positional if os.path.isdir(os.path.expanduser(a))), None) \
+        or (coa_io.list_repos()[0] if coa_io.list_repos() else ".")
+    roe = coa_io.load_roe(repo)
+    job = {j.id: j for j in coa_io.load_jobs(repo)}.get(job_id)
+    if job is None:
+        print(f"No job '{job_id}' in {repo}. Scan first with /coa.")
+        return 0
+    if override == "takeover":
+        print(f"Taking over this window for job '{job_id}' in {repo} (Ctrl-C to abort)...")
+        exec_modes.run_takeover(repo, job, roe)     # execvp: does not return on success
+        return 0
+    print(f"Opening a new session for job '{job_id}' in {repo}...")
+    return exec_modes.run_session(repo, job, roe)
+
+
+def _coa_resume(args):
+    """`scorch coa resume <job-id> [repo]` — continue a roadblocked headless job (Phase 3 #11).
+    Reuses the kept worktree/branch, feeds the roadblock report back in as context, re-runs the
+    gate, and records a fresh deliverable (or a new roadblock report if it stalls again)."""
+    import time as _t
+    from scorched_earth import coa_io, runner
+    ids = [a for a in args if not a.startswith("-")]
+    if not ids:
+        print("Usage: scorch coa resume <job-id> [repo]")
+        return 0
+    job_id = ids[0]
+    repo = next((a for a in ids[1:] if os.path.isdir(os.path.expanduser(a))), None) \
+        or (coa_io.list_repos()[0] if coa_io.list_repos() else ".")
+    job = {j.id: j for j in coa_io.load_jobs(repo)}.get(job_id)
+    if job is None:
+        print(f"No job '{job_id}' in {repo}.")
+        return 0
+    state = st.load_state()
+    if runner.is_stale(state, int(_t.time())):
+        print("No fresh budget snapshot. Open a Claude Code session, then resume.")
+        return 0
+    rpath = coa_io.roadblock_path(repo, job_id)
+    report = open(rpath).read() if os.path.exists(rpath) else ""
+    job.launch = ("You are RESUMING a job that hit a roadblock. Prior roadblock report:\n\n"
+                  + report + "\n\nThe partial work is on branch " + runner.branch_name(job_id)
+                  + " (checked out in this worktree). Continue from there and finish.\n\n"
+                  + (job.launch or job.title))
+    outcome, diff, note = runner.execute_job(repo, job, coa_io.load_roe(repo), resume=True)
+    repo_disp = os.path.realpath(os.path.expanduser(repo))
+    oc = runner.JobOutcome(seq=0, id=job_id, title=job.title, type=job.type, defcon=job.defcon,
+                           outcome=outcome, diff=diff, note=note, branch=runner.branch_name(job_id),
+                           merge_cmd=runner.merge_cmd(repo_disp, job_id),
+                           discard_cmd=runner.discard_cmd(repo_disp, job_id))
+    if outcome == "roadblocked":
+        runner.handle_roadblock(repo, oc)
+    else:
+        runner.write_job_deliverable(repo, oc)
+    print(f"{repo}: {job_id} resume -> {outcome}. {note}")
+    return 0
+
+
 def _coa_run_cli(rest):
     """`scorch coa <queue|run|review> …` — the Phase 2 queue-runner surface."""
     import time as _time
@@ -272,28 +414,12 @@ def _coa_run_cli(rest):
     date = _time.strftime("%Y-%m-%d", _time.localtime())
 
     if "--serve" in rest or sub == "serve":
-        import secrets, webbrowser
-        from scorched_earth import coa_serve
         named = [a for a in rest if not a.startswith("-") and a != "serve"]
         repos = [named[0]] if named else coa_io.list_repos()
         if not repos:
             print("No repos linked. Use: scorch link <path>")
             return 0
-        token = secrets.token_urlsafe(32)
-        engine = coa_serve.Engine(repos)
-        engine.stop()       # cockpit starts PAUSED: stage/organize the queue first, then Run
-        httpd, port = coa_serve.make_server(engine, token, render=coa_serve.render_cockpit)
-        url = f"http://127.0.0.1:{port}/?t={token}"
-        print(f"COA cockpit on {url}\n(Ctrl-C to stop)", flush=True)
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nCockpit stopped.")
-        return 0
+        return _serve_shell(repos, "war-room")   # the unified shell, opened on the live cockpit tab
 
     if sub == "queue":
         all_flag = "--all" in args
@@ -318,7 +444,14 @@ def _coa_run_cli(rest):
         print(f"Queued {len(pick)} job(s); {len(q)} in {repo}/.scorched/queue.json.")
         return 0
 
+    if sub == "resume":
+        return _coa_resume(args)
+
     if sub == "run":
+        # --here <job-id> takes over THIS window (attended, sandboxed); --session <job-id> spawns
+        # a new window (attended, free). Both are single-job; plain `run` drains headless.
+        if "--here" in args or "--session" in args:
+            return _coa_attended(args)
         approve = "--approve" in args
         repos = [a for a in args if not a.startswith("-")] or coa_io.list_repos() or ["."]
         state = st.load_state()

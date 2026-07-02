@@ -167,6 +167,8 @@ _r3 = _mk_repo([Job(id="s1", repo=".", title="S1", type="test", value=5),
 _eng3 = Engine([_r3], execute=_exec_stop, load_state=lambda: _STATE, now=lambda: 1)
 _eng3.run(_r3); _wait_idle(_eng3)
 check("engine: stop halts the chain after the current job", _ran3 == ["s1"])
+check("engine: operator stop is reflected in state_json (stopped + reason)",
+      _eng3.state_json()["stopped"] is True and _eng3.state_json()["stop_reason"] == "operator")
 
 # Run clears a prior Stop (Stop is a pause, not a permanent kill)
 _ran_sr = []
@@ -180,6 +182,25 @@ _engsr.run(_rs); _wait_idle(_engsr)   # Run must clear the stop flag and drain
 check("engine: Run resumes after a prior Stop (clears the stop flag)",
       sorted(_ran_sr) == ["p1", "p2"] and _io.read_queue(_rs) == []
       and _engsr.state_json()["busy"] is False)
+check("engine: Run clears the halt reason (stop is a pause, not a permanent halt)",
+      _engsr.state_json()["stopped"] is False and _engsr.state_json()["stop_reason"] is None)
+
+# --- Stage 8: live per-task progress in state_json --------------------------------
+_rp = _mk_repo([Job(id="w1", repo=".", title="W1", type="test", value=5)])
+_engp = Engine([_rp], execute=_exec, load_state=lambda: _STATE, now=lambda: 100)
+_rp_real = os.path.realpath(_rp)
+with _engp._lock:                       # simulate a job mid-flight with some progress
+    _engp._running[_rp_real] = {"repo": _rp_real, "id": "w1"}
+    _engp._progress[_rp_real] = {"line": "starting", "started": 90, "ts": 90}
+_engp._on_progress(_rp_real, '{"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pytest -q"}}]}}')
+_run0 = _engp.state_json()["running"][0]
+check("state_json attaches the live progress line to a running job",
+      _run0["progress"]["line"] == "tool: Bash pytest -q")
+check("state_json reports elapsed seconds for a running job (now - started)",
+      _run0["progress"]["elapsed"] == 10)
+_engp._on_progress(_rp_real, "   ")     # blank line must not clobber the last real activity
+check("progress sink ignores a blank line (keeps the last activity)",
+      _engp.state_json()["running"][0]["progress"]["line"] == "tool: Bash pytest -q")
 
 # --- Task 6: HTTP server (token, routing, SSE) ------------------------------------
 import http.client  # noqa: E402
@@ -414,6 +435,8 @@ check("a usage-limit halts the engine; the limit job is re-queued (resumable)",
 _sj = _hl.state_json()
 check("state_json drops headroom/fit", "headroom" not in _sj)
 check("state_json exposes weekly reserve context", "weekly_reserve_pct" in _sj)
+check("state_json reports the halt reason on a usage-limit (stopped + reason=limit)",
+      _sj["stopped"] is True and _sj["stop_reason"] == "limit")
 check("board briefs carry defcon + approval_required",
       all("defcon" in jb and "approval_required" in jb
           for r in _sj["repos"] for jb in r["proposed"] + r["queued"]))
@@ -533,6 +556,85 @@ check("cockpit no longer labels the HUD 'BUDGET SPENT'", "BUDGET SPENT" not in _
 # token + JSON substitution
 check("__COCKPIT_TOKEN__ and __COCKPIT_JSON__ are fully substituted",
       "__COCKPIT_TOKEN__" not in _hd and "__COCKPIT_JSON__" not in _hd)
+
+# --- Phase 2: HALTED banner keyed on stop_reason == "limit" (#2/#8) ----------------
+# The cockpit paints the flag client-side from state_json; these confirm the template wires
+# the HALTED branch (distinct from IDLE) off the limit reason and carries the resume hint.
+_hh = render_cockpit("tk", {"repos": [], "running": [], "busy": False,
+                            "stopped": True, "stop_reason": "limit"}).decode("utf-8")
+check("cockpit wires a HALTED flag off stop_reason == 'limit'",
+      'stop_reason === "limit"' in _hh and "HALTED" in _hh)
+check("cockpit HALTED state carries a resume hint (re-queued; press RUN)",
+      "resume" in _hh.lower() and "RUN" in _hh)
+check("cockpit HALTED is distinct from an operator pause (operator does not force HALTED)",
+      'state.stop_reason === "limit"' in _hh)  # operator/None fall through to IDLE
+
+# --- Phase 2: CRATERED (fail) badge is legible (#9) --------------------------------
+check("cockpit CRATERED badge explains the fail state (work discarded)",
+      "CRATERED" in _hh and "work was discarded" in _hh)
+
+# --- Phase 2: approval marker explains why + how (#1) ------------------------------
+check("cockpit approval marker explains why (auto-run threshold) and how (RUN / --approve)",
+      "auto-run threshold" in _hh and "scorch coa run --approve" in _hh and "APPROVAL REQUIRED" in _hh)
+
+# --- Phase 2: manual board REFRESH pulls an external jobs.json change (#6) ----------
+# SSE only pushes on engine events, so a fresh /coa scan is invisible until /state is re-read.
+check("cockpit wires a manual REFRESH that re-reads /state (no re-scan)",
+      "btnRefresh" in _hh and '/state?t="' in _hh and "re-scan" in _hh)
+
+# --- Phase 2: the unified shell (one server, big-tab frame over all three surfaces) ---
+from scorched_earth import shell as _shell  # noqa: E402
+# In shell mode make_server serves the frame at / and folds in the two read-only tabs
+# (/sitrep, /coa, /coa.json) alongside the live /war-room + /state + /events + POSTs, all
+# under the one token. The read-only tabs never touch the engine.
+_sh_repo = tempfile.mkdtemp(); os.makedirs(os.path.join(_sh_repo, ".scorched"), exist_ok=True)
+with open(os.path.join(_sh_repo, ".scorched", "jobs.json"), "w") as _f:
+    json.dump([{"id": "sh1", "title": "ShellJob", "type": "test", "defcon": 3, "value": 5}], _f)
+_sh_eng = Engine([_sh_repo], execute=lambda *a: ("pass", None, "ok"),
+                 load_state=lambda: _STATE, now=lambda: 1)
+_sh_eng.stop()
+_sh_httpd, _sh_port = make_server(_sh_eng, "sh-tok", shell_repos=[_sh_repo])
+import threading as _shth  # noqa: E402
+_shth.Thread(target=_sh_httpd.serve_forever, daemon=True).start()
+def _shget(path, tok="sh-tok"):
+    c = http.client.HTTPConnection("127.0.0.1", _sh_port, timeout=3)
+    q = (f"?t={tok}" if tok is not None else "")
+    c.request("GET", path + q); r = c.getresponse(); b = r.read(); c.close(); return r.status, b
+
+_s, _b = _shget("/")
+check("shell mode: GET / serves the big-tab frame with all three tabs",
+      _s == 200 and b'data-tab="sitrep"' in _b and b'data-tab="coa"' in _b
+      and b'data-tab="war-room"' in _b and b'id="panes"' in _b)
+check("shell frame injects the token (no __SHELL_TOKEN__ placeholder leak)",
+      b"__SHELL_TOKEN__" not in _b)
+check("shell mode: GET /war-room serves the live cockpit", _shget("/war-room")[0] == 200)
+_s, _b = _shget("/coa")
+check("shell mode: GET /coa serves the read-only COA page", _s == 200 and len(_b) > 200)
+_s, _b = _shget("/coa.json")
+check("shell mode: GET /coa.json returns fresh COA json (the tab's Refresh fetch)",
+      _s == 200 and isinstance(json.loads(_b), dict))
+check("shell mode: GET /sitrep serves the sitrep tab", _shget("/sitrep")[0] == 200)
+check("shell mode: every route is token-guarded (no token -> 403)", _shget("/", tok=None)[0] == 403)
+check("shell mode: the engine routes (/state) are still served alongside the tabs",
+      _shget("/state")[0] == 200)
+_sh_httpd.shutdown()
+
+# standalone cockpit mode is unchanged: no shell_repos -> GET / is still the cockpit itself
+_st_eng = Engine([_sh_repo], execute=lambda *a: ("pass", None, "ok"),
+                 load_state=lambda: _STATE, now=lambda: 1)
+_st_httpd, _st_port = make_server(_st_eng, "st-tok")   # no shell_repos -> legacy cockpit at /
+_shth.Thread(target=_st_httpd.serve_forever, daemon=True).start()
+_c = http.client.HTTPConnection("127.0.0.1", _st_port, timeout=3)
+_c.request("GET", "/?t=st-tok"); _r = _c.getresponse(); _sb = _r.read(); _c.close()
+check("standalone (no shell_repos): GET / is still the cockpit, not the shell frame",
+      _r.status == 200 and b'data-tab="war-room"' not in _sb)
+_st_httpd.shutdown()
+
+# render_shell fills the frame and never leaks the placeholder
+_frame = _shell.render_shell("frame-tok").decode("utf-8")
+check("render_shell substitutes the token and embeds it",
+      "__SHELL_TOKEN__" not in _frame and "frame-tok" in _frame
+      and _frame.lstrip().lower().startswith("<!doctype html"))
 
 print(f"\n{passed} checks passed.")
 if failures:

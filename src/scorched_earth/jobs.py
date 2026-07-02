@@ -27,6 +27,7 @@ class Job:
     rationale: str = ""
     launch: str = ""              # prompt/command to run it
     verify: str = ""              # per-job test-gate override; falls back to ROE test_cmd
+    model: str = ""               # per-task model (fable|sonnet|opus|haiku or a claude-* id); "" = inherit
     status: str = "proposed"      # proposed | queued | done
 
 
@@ -49,6 +50,7 @@ def parse_jobs(data, repo: str = "") -> List[Job]:
             rationale=d.get("rationale", ""),
             launch=d.get("launch", ""),
             verify=d.get("verify", ""),
+            model=d.get("model") or "",
             status=d.get("status", "proposed"),
         ))
     return out

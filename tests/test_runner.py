@@ -154,11 +154,14 @@ check("render_review_html refresh injection survives running state",
       render_review_html(_running).lower().count("http-equiv") == 1)
 check("render_review_html contains a DEFCON badge (defcon-2 CSS present for defcon=2 job)",
       "defcon-2" in render_review_html(_running))
+# Phase 2 (#9): the CRATERED (fail) state is legible - the field legend explains what it means.
+check("AAR legend explains CRATERED = the fail state (work discarded)",
+      "CRATERED" in _html_run and "work was discarded" in _html_run)
 
 # --- Task 6: command builders + sandbox settings ----------------------------------
 from scorched_earth.runner import (worktree_path, branch_name, build_claude_cmd,  # noqa: E402
                                     build_gate_cmd, merge_cmd, discard_cmd,
-                                    write_sandbox_settings)
+                                    write_sandbox_settings, model_arg)
 
 _jb = Job(id="cov", repo=_repo, title="Coverage", type="test", defcon=3, value=5,
           launch="Raise coverage to 90%, TDD.")
@@ -170,12 +173,96 @@ check("build_claude_cmd is a headless claude invocation carrying the launch",
 check("build_claude_cmd prelude forbids push", any("do not push" in a.lower() for a in _cmd))
 check("build_claude_cmd includes --dangerously-skip-permissions",
       "--dangerously-skip-permissions" in _cmd)
+check("build_claude_cmd omits --model when the job names none", "--model" not in _cmd)
+_cmd_m = build_claude_cmd(Job(id="m", repo=_repo, title="M", type="test", defcon=1,
+                              value=9, launch="deep audit", model="opus"),
+                          worktree_path(_repo, "m"))
+check("build_claude_cmd passes --model opus for a modelled job",
+      _cmd_m[_cmd_m.index("--model") + 1] == "opus")
+check("model_arg accepts aliases and claude-* ids",
+      model_arg(Job(id="a", repo="r", title="", type="test", model="haiku")) == ["--model", "haiku"]
+      and model_arg(Job(id="b", repo="r", title="", type="test", model="claude-opus-4-8"))
+      == ["--model", "claude-opus-4-8"])
+check("model_arg ignores an unknown/empty model (inherit default)",
+      model_arg(Job(id="c", repo="r", title="", type="test", model="gpt-9")) == []
+      and model_arg(Job(id="d", repo="r", title="", type="test")) == [])
 check("build_gate_cmd prefers per-job verify",
       build_gate_cmd(Job(id="x", repo="r", title="x", type="test", defcon=3, value=1,
                          verify="make test"), _rfd({"test_cmd": "pytest"})) == "make test")
 check("build_gate_cmd falls back to ROE test_cmd",
       build_gate_cmd(_jb, _rfd({"test_cmd": "pytest -q"})) == "pytest -q")
 check("build_gate_cmd is None when neither set", build_gate_cmd(_jb, ROE()) is None)
+
+# --- Stage 3: run-mode cascade + attended prompt/command builders -----------------
+from scorched_earth import exec_modes as _em  # noqa: E402
+
+check("resolve_mode: a valid per-task override wins",
+      _em.resolve_mode(ROE(run_mode="headless"), "session") == "session")
+check("resolve_mode: falls back to ROE run_mode when no override",
+      _em.resolve_mode(ROE(run_mode="takeover")) == "takeover")
+check("resolve_mode: an invalid override is ignored, ROE used",
+      _em.resolve_mode(ROE(run_mode="session"), "bogus") == "session")
+check("resolve_mode: an unknown run_mode falls back to headless",
+      _em.resolve_mode(ROE(run_mode="weird")) == "headless")
+
+_roe_att = ROE(goals=["ship v2"], exclude_paths=["infra/"], allowed_types=["test"],
+               context_cmd="/kerd:switch in")
+_orders = _em.operating_orders(_roe_att)
+check("operating_orders carries goal, exclusions, allowed types, and no-push",
+      "ship v2" in _orders and "infra/" in _orders and "test" in _orders
+      and "do not push" in _orders.lower())
+
+_jb3 = Job(id="j3", repo=_repo, title="T", type="test", defcon=1, value=9,
+           launch="Do the audit", model="opus")
+_prompt = _em.compose_attended_prompt(_jb3, _roe_att)
+check("compose_attended_prompt runs the context_cmd before the task",
+      "/kerd:switch in" in _prompt and _prompt.index("switch in") < _prompt.index("Do the audit"))
+check("compose_attended_prompt injects orders, model hint, and the task",
+      "ship v2" in _prompt and "opus" in _prompt and "Do the audit" in _prompt)
+check("compose_attended_prompt omits the context line when context_cmd unset",
+      "gather context" not in _em.compose_attended_prompt(_jb3, ROE(goals=["g"])))
+
+_tk = _em.build_takeover_cmd(_jb3, _roe_att, "/tmp/s.json")
+check("build_takeover_cmd is interactive claude with the prompt, --settings, and --model",
+      _tk[0] == "claude" and "-p" not in _tk and _tk[_tk.index("--settings") + 1] == "/tmp/s.json"
+      and _tk[_tk.index("--model") + 1] == "opus")
+check("build_takeover_cmd does not skip permissions (operator present)",
+      "--dangerously-skip-permissions" not in _tk)
+
+# --- Stage 4: session mode (new-window spawn) -------------------------------------
+_ss = _em.build_session_cmd(_jb3, _roe_att)
+check("build_session_cmd is interactive claude, no --settings (session is fully free), with model",
+      _ss[0] == "claude" and "-p" not in _ss and "--settings" not in _ss
+      and "--dangerously-skip-permissions" not in _ss and _ss[_ss.index("--model") + 1] == "opus")
+check("build_session_cmd still carries the composed prompt (context_cmd + task)",
+      any("/kerd:switch in" in a for a in _ss) and any("Do the audit" in a for a in _ss))
+_scr = _em._session_script("/tmp/myrepo", _ss)
+_body = open(_scr).read()
+check("_session_script cd's to the repo and execs the session command",
+      _body.startswith("#!/bin/bash") and "cd /tmp/myrepo" in _body and "exec claude" in _body)
+os.remove(_scr)
+
+# --- Stage 5: deliverables --------------------------------------------------------
+from scorched_earth.runner import render_deliverable_md, write_job_deliverable  # noqa: E402
+_oc_pass = JobOutcome(seq=1, id="dlv", title="Cover", type="test", defcon=3, outcome="pass",
+                      branch="scorched/dlv", diff={"files": 2, "insertions": 10, "deletions": 1},
+                      note="gate passed.", merge_cmd="git merge scorched/dlv",
+                      discard_cmd="git branch -D scorched/dlv")
+_dmd = render_deliverable_md(_oc_pass, "/tmp/r")
+check("render_deliverable_md carries title, diff, outcome, and take/drop cmds",
+      "Cover (dlv)" in _dmd and "2 files, +10/-1" in _dmd and "outcome: pass" in _dmd
+      and "git merge scorched/dlv" in _dmd)
+_drepo = tempfile.mkdtemp()
+write_job_deliverable(_drepo, _oc_pass)
+check("write_job_deliverable writes the file and stamps a repo-relative path",
+      _oc_pass.deliverable == ".scorched/deliverables/dlv.md"
+      and os.path.exists(_io.deliverable_path(_drepo, "dlv")))
+_oc_block = JobOutcome(seq=2, id="bk", title="B", type="refactor", defcon=2, outcome="blocked-roe")
+write_job_deliverable(_drepo, _oc_block)
+check("write_job_deliverable skips non-run outcomes (no deliverable for blocked)",
+      _oc_block.deliverable is None and not os.path.exists(_io.deliverable_path(_drepo, "bk")))
+check("compose_attended_prompt instructs writing the deliverable file",
+      ".scorched/deliverables/j3.md" in _em.compose_attended_prompt(_jb3, _roe_att))
 check("merge_cmd / discard_cmd reference the branch",
       "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
 
@@ -391,6 +478,86 @@ _rr = _rn.run_queue(_lim_repo, _state_ok, now=1, date="2026-06-25", execute=_lim
 check("run_queue halts the queue on a usage-limit outcome (j2 never runs)", _calls == ["j1"])
 check("run_queue records the limit job as 'limit', not 'fail'",
       any(j.outcome == "limit" for j in _rr.jobs))
+
+# --- Stage 6: roadblock ladder (watchdog, report, notify, resume) -----------------
+from scorched_earth.runner import (_run_killable, render_roadblock_md, handle_roadblock,  # noqa: E402
+                                   execute_job as _exec_real)
+import scorched_earth.statusline as _sl  # noqa: E402
+_sl._notify = lambda *a, **k: True       # silence real desktop notifications during tests
+
+_st_idle, _out_idle, _rc_idle = _run_killable(["sleep", "2"], ".", None, poll=0.05, idle_secs=0.3)
+check("_run_killable flags a silent job as idle (the roadblock watchdog)", _st_idle == "idle")
+
+_oc_rb = JobOutcome(seq=1, id="rb", title="Stuck job", type="audit", defcon=1,
+                    outcome="roadblocked", branch="scorched/rb", note="roadblock: gate FAILED (pytest).")
+_rbmd = render_roadblock_md(_oc_rb, "/tmp/r")
+check("render_roadblock_md carries what-happened, the branch, and the resume command",
+      "Stuck job (rb)" in _rbmd and "scorched/rb" in _rbmd and "scorch coa resume rb" in _rbmd)
+
+_rbrepo = tempfile.mkdtemp()
+handle_roadblock(_rbrepo, _oc_rb)
+check("handle_roadblock writes the report and stamps a repo-relative path",
+      _oc_rb.roadblock == ".scorched/roadblocks/rb.md" and os.path.exists(_io.roadblock_path(_rbrepo, "rb")))
+_oc_ok = JobOutcome(seq=1, id="p", title="P", type="test", defcon=3, outcome="pass")
+handle_roadblock(_rbrepo, _oc_ok)
+check("handle_roadblock is a no-op for non-roadblocked outcomes", _oc_ok.roadblock is None)
+
+_ghostrepo = tempfile.mkdtemp()
+_go, _gd, _gn = _exec_real(_ghostrepo, Job(id="ghost", repo=_ghostrepo, title="G", type="test"),
+                           ROE(), resume=True)
+check("execute_job resume with no prior worktree returns a clean fail",
+      _go == "fail" and "no prior worktree" in _gn)
+
+_rbq_repo = _mk_runner_repo([_RJ(id="k1", repo=".", title="1", type="docs", defcon=3, value=9),
+                             _RJ(id="k2", repo=".", title="2", type="docs", defcon=3, value=8)])
+def _rb_exec(repo, job, roe):
+    return ("roadblocked", None, "roadblock: stuck") if job.id == "k1" else ("pass", None, "ok")
+_rrq = _rn.run_queue(_rbq_repo, _state_ok, now=1, date="2026-06-26", execute=_rb_exec)
+check("run_queue records a roadblock but does NOT halt (k2 still runs)",
+      [j.outcome for j in _rrq.jobs] == ["roadblocked", "pass"] and _rrq.state == "done")
+check("run_queue writes the roadblock report + counts it in the summary",
+      os.path.exists(_io.roadblock_path(_rbq_repo, "k1")) and "roadblocked" in _rrq.note)
+check("board_state files a roadblocked job under finished, not proposed",
+      any(j.get("outcome") == "roadblocked" for j in _io.board_state(_rbq_repo)["finished"]))
+
+# --- Stage 7: advising-agent auto-solver ------------------------------------------
+from scorched_earth.runner import build_advisor_cmd  # noqa: E402
+import scorched_earth.runner as _rnmod  # noqa: E402
+_adv = build_advisor_cmd(Job(id="a", repo="r", title="A", type="test", launch="raise coverage",
+                             model="sonnet"), ROE(), "gate FAILED (pytest)")
+check("build_advisor_cmd is a headless recovery invocation with problem + task + model",
+      _adv[0] == "claude" and "-p" in _adv and any("RECOVERY" in a for a in _adv)
+      and any("gate FAILED (pytest)" in a for a in _adv) and any("raise coverage" in a for a in _adv)
+      and _adv[_adv.index("--model") + 1] == "sonnet")
+
+_savedadv = _rnmod._try_advise
+_rnmod._try_advise = lambda wt, job, roe, base, reason: (True, {"files": 1, "insertions": 3,
+                                                               "deletions": 0}, "fixed")
+_ao = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                  ROE(advise_on_roadblock=True), "sha", "gate FAILED (pytest)")
+check("advise auto-solve turns a roadblock into a pass", _ao[0] == "pass" and "auto-solved" in _ao[2])
+_rnmod._try_advise = lambda *a: (False, None, "nope")
+_au = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                  ROE(advise_on_roadblock=True), "sha", "stuck")
+check("advise failure leaves the job roadblocked", _au[0] == "roadblocked" and "could not recover" in _au[2])
+_seen = []
+_rnmod._try_advise = lambda *a: (_seen.append(1), (True, None, "x"))[1]
+_aoff = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                    ROE(advise_on_roadblock=False), "sha", "stuck")
+check("advise_on_roadblock=False skips the advising agent entirely",
+      _aoff[0] == "roadblocked" and not _seen)
+_rnmod._try_advise = _savedadv
+
+# --- Stage 8: live progress summary line ------------------------------------------
+from scorched_earth.runner import summarize_stream_line as _sum  # noqa: E402
+check("summarize_stream_line extracts a tool_use call",
+      _sum('{"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pytest -q"}}]}}')
+      == "tool: Bash pytest -q")
+check("summarize_stream_line extracts assistant text",
+      _sum('{"message":{"content":[{"type":"text","text":"Working on coverage"}]}}')
+      == "Working on coverage")
+check("summarize_stream_line trims a non-JSON line", _sum("hello there")[:5] == "hello")
+check("summarize_stream_line returns empty for blank input", _sum("   ") == "")
 
 print(f"\n{passed} checks passed.")
 if failures:

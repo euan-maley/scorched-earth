@@ -17,6 +17,7 @@ _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "review_template.html")
 _OUTCOME_LABELS = {
     "blocked-roe": "BLOCKED (ROE)",
     "blocked-approval": "NEEDS APPROVAL",
+    "roadblocked": "ROADBLOCKED",
 }
 
 
@@ -27,6 +28,7 @@ def _job_obj(j) -> dict:
         "outcomeLabel": _OUTCOME_LABELS.get(j.outcome, (j.outcome or "").upper()),
         "branch": j.branch, "diff": j.diff,
         "note": j.note, "mergeCmd": j.merge_cmd, "discardCmd": j.discard_cmd,
+        "deliverable": j.deliverable, "roadblock": j.roadblock,
     }
 
 
@@ -44,15 +46,15 @@ def aar_dict(rr: RunResult) -> dict:
 
 
 def render_review_md(rr: RunResult) -> str:
-    lines = [f"# After-Action Report — {rr.generated_at}", "",
+    lines = [f"# After-Action Report: {rr.generated_at}", "",
              f"{rr.repo} · {rr.note}", "",
-             "| # | job | type | DEFCON | outcome | branch | diff |",
-             "|---|-----|------|--------|---------|--------|------|"]
+             "| # | job | type | DEFCON | outcome | branch | diff | deliverable |",
+             "|---|-----|------|--------|---------|--------|------|-------------|"]
     for j in rr.jobs:
         d = (f"+{j.diff['insertions']}/-{j.diff['deletions']} ({j.diff['files']}f)"
-             if j.diff else "—")
+             if j.diff else "-")
         lines.append(f"| {j.seq} | {j.title} | {j.type} | {j.defcon} | {j.outcome} "
-                     f"| {j.branch or '—'} | {d} |")
+                     f"| {j.branch or '-'} | {d} | {j.deliverable or '-'} |")
     return "\n".join(lines) + "\n"
 
 

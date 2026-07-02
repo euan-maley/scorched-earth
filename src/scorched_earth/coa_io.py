@@ -65,13 +65,43 @@ def unlink_repo(repo_path: str) -> bool:
 
 def load_roe(repo_path: str) -> ROE:
     base = roe_from_dict(st._read_json(ROE_DEFAULT_PATH, {}), DEFAULT_ROE)
-    override = roe_from_dict(st._read_json(os.path.join(_repo_dir(repo_path), "roe.json"), {}))
+    override = roe_from_dict(st._read_json(roe_path(repo_path), {}))
     return merge_roe(base, override)
+
+
+def roe_path(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "roe.json")
+
+
+def read_roe_raw(repo_path: str) -> dict:
+    """The repo's OWN roe.json as a dict (not merged with the global default). {} if none.
+    The interactive editor reads this so it can preserve freeform keys it does not manage."""
+    return st._read_json(roe_path(repo_path), {})
+
+
+def write_roe_raw(repo_path: str, d: dict) -> str:
+    """Atomically write the repo's roe.json. Creates .scorched/ if absent."""
+    os.makedirs(_repo_dir(repo_path), exist_ok=True)
+    p = roe_path(repo_path)
+    tmp = f"{p}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, p)
+    return p
 
 
 def load_jobs(repo_path: str) -> List[Job]:
     data = st._read_json(os.path.join(_repo_dir(repo_path), "jobs.json"), [])
     return parse_jobs(data, repo=os.path.realpath(os.path.expanduser(repo_path)))
+
+
+def jobs_scanned_at(repo_path: str):
+    """Epoch seconds of the repo's jobs.json (its last scan), or None if never scanned.
+    The scan writes jobs.json, so the file mtime IS the scan time, no schema change needed."""
+    try:
+        return os.path.getmtime(os.path.join(_repo_dir(repo_path), "jobs.json"))
+    except OSError:
+        return None
 
 
 def write_coa(repo_path: str, md: str, html: str, date: str) -> Tuple[str, str]:
@@ -149,6 +179,49 @@ def runs_dir(repo_path: str) -> str:
     return os.path.join(_repo_dir(repo_path), "runs")
 
 
+def deliverables_dir(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "deliverables")
+
+
+def deliverable_path(repo_path: str, job_id: str) -> str:
+    return os.path.join(deliverables_dir(repo_path), f"{job_id}.md")
+
+
+def deliverable_rel(job_id: str) -> str:
+    """The repo-relative deliverable path, for display / attended prompts."""
+    return os.path.join(".scorched", "deliverables", f"{job_id}.md")
+
+
+def write_deliverable(repo_path: str, job_id: str, text: str) -> str:
+    out = deliverables_dir(repo_path)
+    os.makedirs(out, exist_ok=True)
+    path = deliverable_path(repo_path, job_id)
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
+def roadblocks_dir(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "roadblocks")
+
+
+def roadblock_path(repo_path: str, job_id: str) -> str:
+    return os.path.join(roadblocks_dir(repo_path), f"{job_id}.md")
+
+
+def roadblock_rel(job_id: str) -> str:
+    return os.path.join(".scorched", "roadblocks", f"{job_id}.md")
+
+
+def write_roadblock(repo_path: str, job_id: str, text: str) -> str:
+    out = roadblocks_dir(repo_path)
+    os.makedirs(out, exist_ok=True)
+    path = roadblock_path(repo_path, job_id)
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
 def write_run_record(repo_path: str, record: dict, date: str) -> str:
     out = runs_dir(repo_path)
     os.makedirs(out, exist_ok=True)
@@ -184,7 +257,8 @@ def board_state(repo_path: str, running_ids=()) -> dict:
     roe = load_roe(repo_path)
     queued = read_queue(repo_path)
     rec = read_run_record(repo_path) or {}
-    finished = [j for j in (rec.get("jobs") or []) if j.get("outcome") in ("pass", "fail")]
+    finished = [j for j in (rec.get("jobs") or [])
+                if j.get("outcome") in ("pass", "fail", "roadblocked")]
     # An in-flight job has been unqueued (at pick) but not yet written to the run record
     # (on completion); without `running_ids` it would fall back into `proposed` because it's
     # still in jobs.json. The Engine passes the currently-running id(s) so the live board

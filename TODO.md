@@ -1,6 +1,71 @@
 # TODO
 
-## Current Session (2026-06-29): hold your fire (over-burn warning) + deck rename/recolor
+## Current Session (2026-07-01, pt.3): Phase 3 + 4 - execution engine + live progress - DONE
+
+Built the whole execution-engine spec (`docs/superpowers/specs/2026-07-01-execution-engine-and-progress-design.md`) in 8 verified stages, one commit each, on `feat/coa-observability-freshness`. Suites 310 -> **361** (78/75/92/116). No plan-skill ceremony (user's call), TDD-ish per stage.
+
+- **Stage 1 - config:** 5 new ROE fields (`run_mode`, `context_cmd`, `attended_branch`, `roadblock_idle_secs`, `advise_on_roadblock`); the cyclable/toggleable ones wired into `/roe`. Global default + per-repo via the existing `merge_roe` cascade.
+- **Stage 2 - model (#4):** `Job.model`; officer emits it; `build_claude_cmd` appends `--model <alias>`. CLI verified: bare aliases + claude-* ids work with `-p`, so no family->id map.
+- **Stage 3 - modes + takeover (#3):** new `exec_modes.py` (resolve_mode cascade, operating_orders, compose_attended_prompt); `scorch coa run --here` execs claude in the current window, OS-sandboxed via a CLI `--settings` file.
+- **Stage 4 - session (#3):** `scorch coa run --session` spawns a new window (iTerm -> Terminal.app -> print fallback), fully free; runs `context_cmd` first.
+- **Stage 5 - deliverables (#3):** every run captures `.scorched/deliverables/<id>.md`; surfaced in the AAR (md column + card link).
+- **Stage 6 - roadblock ladder (#11):** idle watchdog + gate-fail -> `roadblocked` (branch kept), report + desktop notify, `scorch coa resume`. Wired through run_queue, the cockpit engine, board_state, AAR + cockpit badges.
+- **Stage 7 - auto-solver (#11):** one bounded advising agent tries to recover before pausing (ROE `advise_on_roadblock`).
+- **Stage 8 - live progress (#7):** `summarize_stream_line` feeds a per-job progress line into `state_json` (throttled SSE); a CRT progress line on the War Room running card.
+
+**Verified:** 361 unit/integration checks green; template renders (AAR + cockpit, roadblocked + progress) confirmed; CLI dispatch guards (`--here`/`--session`/`resume`). **Hand-verify pending (needs a real claude + terminal, cannot run headless here):** execvp takeover in a live window, the osascript session spawn, and the real `--model`/`--settings`/resume flags in anger.
+
+**Open:** branch still LOCAL/unpushed (now 18 commits: 3 Phase 1 + 7 Phase 2 + 8 Phase 3/4 + spec/docs). Deferred: the ROE editor **HTML frontend** (Phase 2 #10 follow-up, still unbuilt by choice).
+
+---
+
+## Prior Session (2026-07-01): Phase 2 - merged shell (#13) + the UI items - DONE (bar the ROE html follow-up)
+
+Built the unified **War Room shell** (Option A: one 127.0.0.1 server, one token, three big tabs SITREP / COURSE OF ACTION / WAR ROOM via iframes) and then landed all the deferred UI items inside it, one stage per commit, each verified. 7 commits on `feat/coa-observability-freshness` (LOCAL, unpushed - Phase 1 rides the same branch). Suites 78 / 64 / 89 / 79 = **310** (was 45/76/73/78 = 272).
+
+- **Stage 0 - shell:** `shell.py` + `shell_template.html`; `coa_serve.make_server(shell_repos=)` shell mode (frame at `/`, cockpit at `/war-room`, folds in `/sitrep` `/coa` `/coa.json`); `bin/scorch` `_serve_shell` (both `coa --serve` and `advise --serve` route through it). Iframes (no CSS/JS collision, failure isolation). `/favicon.ico` -> 204 before the token gate (killed the 403 console noise). Real Playwright drive: 3 tabs render, hash deep-links, lazy-load, cockpit SSE paints the live board, 0 console errors.
+- **Stage 1 - HALTED (#2/#8):** cockpit reads `stop_reason` -> red HALTED flag + resume hint on `limit`; operator-pause/clean stay IDLE. Verified all 3 states in-browser.
+- **Stage 2 - freshness (#5/#6):** COA "SCANNED Nh ago" from `scannedAt` + honest Refresh tooltip; War Room manual REFRESH re-reads `/state`. Verified end-to-end (external jobs.json add -> REFRESH surfaces it; SSE alone did not).
+- **Stage 3 - ROE editor TERMINAL (#10):** pure `roe_edit.py` model (controls + apply reducer + save preserving freeform) + a curses arrow-key list in `scorch roe` (hjkl too; `--json`/non-tty -> JSON). Fixed an ESC-as-quit bug (arrows begin with ESC). Arrow decoding is standard curses+keypad on a real terminal, not reproducible headlessly (hjkl is the verified path).
+- **Stage 4 - sitrep refresh (#12):** `report.render_html(served=True)` emits a Refresh button that reloads `/sitrep`; offline file omits it. Verified in-browser.
+- **Stage 5 - cratered legend (#9):** explanatory tooltips on the AAR field legend + cockpit CRATERED badge (fail state = job/gate failed, work discarded).
+- **Stage 6 - approval legibility (#1):** COA + cockpit approval badges now tooltip WHY (DEFCON below the auto-run threshold) + HOW (`scorch coa run --approve` / press RUN as operator).
+
+**Remaining Phase 2 item:** the ROE editor **HTML frontend** (#10 follow-up) - a panel/tab in the shell over the same `roe_edit` model, backed by a guarded `POST /roe`. User chose terminal-first; this is the clean next task.
+
+**Open:** branch still LOCAL/unpushed (7 Phase 2 commits + 3 Phase 1). Push/merge decision pending (was deliberately held at Phase 1 close-out).
+
+---
+
+## ROADMAP: bug/idea backlog (user list, 2026-07-01) - fix + build ALL, phased
+
+Ordering locked with the user: backend before UI, merged shell (#13) before the UI work, executor settled before the live-progress view. User chose "merge shell first, UI once."
+
+**Phase 1 - Backend bug fixes (no UI dep):** DONE (branch `feat/coa-observability-freshness`, 2 commits)
+- [x] Observability: `stop_reason` / `stopped` in `state_json` (#2/#8 backend). +3 cockpit checks.
+- [x] Freshness: `scannedAt` (mtime) in `coa_state` + `/coa` stale-aware re-scan (#5/#6 backend + #5 scan-skip). +2 advisor checks.
+
+**Phase 2 - Merged shell (#13) THEN all UI once:** DONE except the ROE html follow-up.
+- [x] Build the unified shell: SITREP + COURSE OF ACTION + WAR ROOM, big tabs, one server + token, iframes (Stage 0)
+- [x] HALTED state + resume hint (#2/#8) (Stage 1)
+- [x] Freshness UI + honest Refresh + war-room refresh (#5/#6) (Stage 2)
+- [x] ROE interactive editor, TERMINAL (#10) (Stage 3) -- curses arrow-key list + pure roe_edit model
+- [x] Sitrep refresh (#12) (Stage 4)
+- [x] "Cratered" legend + approval legibility how/why (#9, #1) (Stages 5-6)
+- [ ] **ROE editor HTML frontend (#10 follow-up):** an ROE panel/tab in the shell over the same `roe_edit` model, backed by a guarded `POST /roe` (the one remaining Phase 2 item; user chose terminal-first)
+
+**Phase 3 - Execution engine (increasing coupling):** DONE (2026-07-01 pt.3)
+- [x] Model selection per task, Claude picks fable/sonnet/opus/haiku (#4)
+- [x] In-repo / non-headless run + deliverable + session context, usable in the active iTerm2 window (#3) -- three run modes (headless/takeover/session), deliverables per job
+- [x] Secure start-to-end permissions/goal + manager roadblock safety net + notify user on roadblock (#11) -- roadblock ladder: watchdog -> advising agent -> pause + report + notify -> resume
+
+**Phase 4 - Live progress view (#7):** DONE (2026-07-01 pt.3) -- per-task last-command line in `state_json` (throttled SSE) + a CRT progress line on the War Room running card.
+
+Answered inline (not tasks, feed #9/#1 UI legibility in Phase 2): "cratered" = the fail state (job or its gate failed, work discarded); approval is needed when `defcon < auto_run_min_defcon` (default 3), granted via `scorch coa run --approve` or the cockpit Run button (operator-present).
+
+---
+
+## Prior Session (2026-06-29): hold your fire (over-burn warning) + deck rename/recolor
 
 Branch `feat/hold-your-fire-deck` (not yet merged or published).
 
