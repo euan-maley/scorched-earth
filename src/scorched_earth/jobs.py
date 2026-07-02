@@ -9,6 +9,7 @@ from typing import List
 
 
 def clamp_defcon(n) -> int:
+    """Coerce a value to an int DEFCON clamped to 1..5, defaulting to 3 on bad input."""
     try:
         n = int(n)
     except (TypeError, ValueError):
