@@ -172,9 +172,14 @@ job (silent past `roadblock_idle_secs`, default 600) or a failed gate becomes a 
 outcome (branch kept); if `advise_on_roadblock` is on, one bounded **advising agent** tries to
 recover, else the runner writes `.scorched/roadblocks/<id>.md`, fires a desktop notification,
 and leaves it for `scorch coa resume <id>`. The War Room shows a **live progress line** (the
-job's latest tool call / text) on the running card, pushed over the existing SSE (throttled).
+job's latest tool call / text) on the running card, pushed over the existing SSE (throttled), and
+a full **CRT field monitor** (`▣ CRT`, a beige retro-monitor overlay with a green phosphor screen)
+that streams every running job's steps. The shell now has a fourth tab, **AFTER-ACTION** (`/aar`),
+which re-renders the latest run with an **OPEN** button on each deliverable/roadblock (served by a
+token-guarded, path-validated `/artifact` route). The runner's worktree setup is idempotent: a
+re-run over a leftover `scorched/<id>` branch clears the stale pair instead of hard-failing.
 
 78 unit checks (`python3 tests/test_scorched.py`) + 75 advisor checks
-(`python3 tests/test_advisor.py`) + 116 runner checks (`python3 tests/test_runner.py`) +
-92 cockpit checks (`python3 tests/test_cockpit.py`) = **361 total**; all gated in CI via
+(`python3 tests/test_advisor.py`) + 119 runner checks (`python3 tests/test_runner.py`) +
+99 cockpit checks (`python3 tests/test_cockpit.py`) = **371 total**; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.
