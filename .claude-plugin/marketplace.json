@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "scorched-earth",
-      "description": "Signals when remaining weekly Claude budget can only be spent by maxing out every remaining 5-hour window (unused weekly usage doesn't roll over). Adds a 🟢 statusline light, a 🔥 habit-based preemptive nudge, the `scorch` CLI, the `/scorched-earth` skill, and a DEFCON-ranked Course of Action layer (`/coa`, `/war-room`) that finds high-impact work in your linked repos and runs it under a leash.",
+      "description": "Signals when remaining weekly Claude budget can only be spent by maxing out every remaining 5-hour window (unused weekly usage doesn't roll over). Adds a 🟢 statusline light, a 🔥 habit-based preemptive nudge, the `scorch` CLI, the `/scorched-earth` skill, and a DEFCON-ranked Course of Action layer (`/coa`, `/war-room`) that finds high-impact work in your linked repos and runs it under a leash: headless, in your terminal, or a fresh session, per-task model selection, and a roadblock safety net that recovers, pauses, and resumes stuck jobs.",
       "source": "./",
       "category": "productivity",
       "keywords": ["claude-code", "claude", "usage", "rate-limit", "statusline", "weekly-limit", "burn-rate", "forecast", "cli", "autonomous-agents", "coding-agent", "task-runner", "course-of-action", "productivity"]

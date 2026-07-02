@@ -102,11 +102,24 @@ SITREP (the field report), COURSE OF ACTION (the ranked plan), and WAR ROOM (the
 a kanban board with drag-to-queue and a runner that drains your linked repos in parallel). One
 server, one token, switch freely between all three; `/coa` and `/sitrep` open the same shell on
 their tab. The cockpit flags a HALTED state (with a resume hint) when it hits the weekly usage
-ceiling, and each surface has an honest Refresh. The URL carries a one-time access token, so
-treat it like a credential and don't paste it around.
+ceiling, shows each running job's latest step live, and each surface has an honest Refresh. The
+URL carries a one-time access token, so treat it like a credential and don't paste it around.
+
+**Run modes.** Headless is the default (sandboxed worktree, unattended), but a job can run
+in the mode you pick, set globally or per repo in the ROE: **takeover** hands it to your
+current terminal window (still network-sandboxed), and **session** opens a fresh Claude Code
+session in the repo, optionally running a context command like your session-start first. Each
+job picks its own model by weight (haiku for knockouts, opus for the big campaigns) and leaves
+a deliverable you can read.
+
+**Roadblock safety net.** If an unattended job gets stuck or fails its gate, Scorched Earth
+tries a recovery agent first; if that can't fix it, the job pauses, writes up what happened and
+how to fix it, pings you, and keeps the branch so you can pick it back up with
+`scorch coa resume`. One roadblock doesn't stop the rest of the run.
 
 `/roe` opens an interactive editor for the Rules of Engagement: arrow keys to move, left/right
-to change a setting or cycle the auto-run DEFCON threshold, space to toggle, `s` to save.
+to change a setting, cycle the run mode or the auto-run DEFCON threshold, space to toggle,
+`s` to save.
 
 ## Install
 
