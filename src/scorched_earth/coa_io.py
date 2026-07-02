@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple
 
 from . import state as st
 from .jobs import Job, parse_jobs
-from .roe import ROE, DEFAULT_ROE, roe_from_dict, merge_roe
+from .roe import ROE, DEFAULT_ROE, roe_from_dict
 
 REPOS_PATH = os.path.join(st.STATE_DIR, "repos.json")
 ROE_DEFAULT_PATH = os.path.join(st.STATE_DIR, "roe.default.json")
@@ -64,10 +64,27 @@ def unlink_repo(repo_path: str) -> bool:
     return False
 
 
+def load_global_roe() -> ROE:
+    """The GLOBAL Rules of Engagement: the built-in defaults overlaid with the central
+    roe.default.json. Applies to every repo that hasn't gone repo-specific."""
+    return roe_from_dict(st._read_json(ROE_DEFAULT_PATH, {}), DEFAULT_ROE)
+
+
+def read_global_roe_raw() -> dict:
+    """The central roe.default.json as a dict (not merged). {} if none."""
+    return st._read_json(ROE_DEFAULT_PATH, {})
+
+
+def write_global_roe_raw(d: dict) -> str:
+    st._write_json(ROE_DEFAULT_PATH, d)
+    return ROE_DEFAULT_PATH
+
+
 def load_roe(repo_path: str) -> ROE:
-    base = roe_from_dict(st._read_json(ROE_DEFAULT_PATH, {}), DEFAULT_ROE)
-    override = roe_from_dict(st._read_json(roe_path(repo_path), {}))
-    return merge_roe(base, override)
+    """The repo's effective ROE: global, overlaid with whatever keys the repo's own roe.json
+    actually SETS (presence-based: a repo value equal to the built-in default still wins over a
+    different global). A repo with no managed keys follows global entirely."""
+    return roe_from_dict(st._read_json(roe_path(repo_path), {}), load_global_roe())
 
 
 def roe_path(repo_path: str) -> str:

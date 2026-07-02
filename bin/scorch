@@ -59,10 +59,11 @@ def _open_file(path) -> None:
         subprocess.run([opener, path], check=False)
 
 
-def _roe_editor(repo) -> int:
+def _roe_editor(repo, global_scope=False) -> int:
     """Interactive ROE editor: an arrow-key list, like Claude's permissions UI. up/down move,
     left/right change a cycle, space/enter flips a toggle, s saves, q quits. Curses is just the
-    view; all edit logic lives in the pure roe_edit model."""
+    view; all edit logic lives in the pure roe_edit model. With global_scope it edits the
+    GLOBAL rules (central roe.default.json) instead of a repo's."""
     import curses
     from scorched_earth import coa_io, roe_edit
 
@@ -73,9 +74,10 @@ def _roe_editor(repo) -> int:
             curses.use_default_colors()
         except Exception:
             pass
-        roe = coa_io.load_roe(repo)
+        roe = coa_io.load_global_roe() if global_scope else coa_io.load_roe(repo)
         sel, dirty, msg = 0, False, ""
-        name = os.path.basename(os.path.realpath(os.path.expanduser(repo)))
+        name = ("GLOBAL (all repos)" if global_scope
+                else os.path.basename(os.path.realpath(os.path.expanduser(repo))))
         while True:
             ctrls = roe_edit.controls(roe)
             scr.erase()
@@ -118,12 +120,18 @@ def _roe_editor(repo) -> int:
             elif k in (ord(" "), 10, 13, curses.KEY_ENTER):
                 roe = roe_edit.apply(roe, sel, 0); dirty = True
             elif k in (ord("s"), ord("S")):
-                roe_edit.save(repo, roe); dirty = False; msg = "saved to .scorched/roe.json"
+                if global_scope:
+                    roe_edit.save_global(roe); msg = "saved to the GLOBAL rules (roe.default.json)"
+                else:
+                    roe_edit.save(repo, roe); msg = "saved to .scorched/roe.json"
+                dirty = False
             elif k in (ord("q"), ord("Q")):   # not ESC: arrow keys begin with ESC and would quit
                 return
 
     curses.wrapper(run)
-    print(f"ROE editor closed for {os.path.realpath(os.path.expanduser(repo))}")
+    print("ROE editor closed for "
+          + ("the GLOBAL rules" if global_scope
+             else os.path.realpath(os.path.expanduser(repo))))
     return 0
 
 
@@ -287,11 +295,13 @@ def _coa_cli(raw):
             # has no tty for the curses editor.
             repos = [repo] if named else (coa_io.list_repos() or [repo])
             return _serve_shell(repos, tab="roe")
+        global_scope = "--global" in rest
         # Interactive editor when we own a real terminal; JSON fallback for pipes/scripts/--json.
         if "--json" in rest or not sys.stdout.isatty():
-            print(_json.dumps(_dc.asdict(coa_io.load_roe(repo)), indent=2))
+            src = coa_io.load_global_roe() if global_scope else coa_io.load_roe(repo)
+            print(_json.dumps(_dc.asdict(src), indent=2))
             return 0
-        return _roe_editor(repo)
+        return _roe_editor(repo, global_scope=global_scope)
 
     # advise
     state = st.load_state()

@@ -389,6 +389,40 @@ check("saved roe.json reloads through load_roe with the new values",
       _io.load_roe(_rrepo).auto_run_min_defcon == 5 and _io.load_roe(_rrepo).max_jobs == 3
       and _io.load_roe(_rrepo).run_mode == "session")
 
+# --- global vs repo-specific rules (the scope toggle) ------------------------------
+# NB: _io was reloaded under a temp HOME above, so save_global writes the TEMP central file.
+_re.save_global(_ROEcls(run_mode="takeover", auto_run_min_defcon=2))
+check("save_global + load_global_roe round-trip the central rules",
+      _io.load_global_roe().run_mode == "takeover"
+      and _io.load_global_roe().auto_run_min_defcon == 2)
+_fg = _tfr.mkdtemp(); os.makedirs(os.path.join(_fg, ".scorched"))
+with open(os.path.join(_fg, ".scorched", "roe.json"), "w") as _f:
+    _jsr.dump({"test_cmd": "true"}, _f)
+check("a repo with no managed keys follows global (and reads as not specific)",
+      _io.load_roe(_fg).run_mode == "takeover"
+      and not _re.is_specific(_io.read_roe_raw(_fg)))
+_re.set_mode(_fg, True)
+_fg_raw = _io.read_roe_raw(_fg)
+check("going repo-specific snapshots the effective values and keeps freeform",
+      _fg_raw["run_mode"] == "takeover" and _fg_raw["test_cmd"] == "true"
+      and _re.is_specific(_fg_raw))
+_re.save(_fg, _ROEcls(run_mode="headless"))
+check("presence-based override: a repo value equal to the built-in default still beats global",
+      _io.load_roe(_fg).run_mode == "headless")
+_re.set_mode(_fg, False)
+_fg_raw2 = _io.read_roe_raw(_fg)
+check("back to global strips the managed keys, keeps freeform, follows global again",
+      not _re.is_specific(_fg_raw2) and _fg_raw2["test_cmd"] == "true"
+      and _io.load_roe(_fg).run_mode == "takeover")
+check("switching to global PARKS the stripped overrides (nothing is lost)",
+      _re.PARKED_KEY in _fg_raw2 and _fg_raw2[_re.PARKED_KEY]["run_mode"] == "headless")
+_re.set_mode(_fg, True)
+_fg_raw3 = _io.read_roe_raw(_fg)
+check("switching back restores the parked specifics, not a snapshot of global",
+      _fg_raw3["run_mode"] == "headless" and _re.PARKED_KEY not in _fg_raw3
+      and _fg_raw3["test_cmd"] == "true" and _io.load_roe(_fg).run_mode == "headless")
+_re.save_global(_ROEcls())   # reset the temp central rules for anything later
+
 # --- coa_view.py (served, read-only) ---------------------------------------------
 from scorched_earth import coa_view as _cv  # noqa: E402
 import threading as _thr, urllib.request as _url, urllib.error as _uerr  # noqa: E402

@@ -365,6 +365,9 @@ def make_server(engine, token, *, render=None, shell_repos=None):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            # Every response here is dynamic state; a cached copy is a stale tab (a reopened
+            # shell iframe was observed painting an old page from the browser cache).
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             if body:
                 self.wfile.write(body)
@@ -467,21 +470,33 @@ def make_server(engine, token, *, render=None, shell_repos=None):
                 for _rp in run_repos:
                     if os.path.realpath(os.path.expanduser(_rp or "")) not in engine.repos:
                         self._send(400, b'{"error":"unknown repo"}'); return
-            if path in ("/queue", "/unqueue", "/reorder", "/kill", "/roe"):
+            is_global_roe = path == "/roe" and body.get("scope") == "global"
+            if path in ("/queue", "/unqueue", "/reorder", "/kill", "/roe") and not is_global_roe:
                 if os.path.realpath(os.path.expanduser(repo or "")) not in engine.repos:
                     self._send(400, b'{"error":"unknown repo"}'); return
             if path == "/roe":
-                # One editor step (index, direction), applied by the pure roe_edit reducer and
-                # saved server-side; only shell mode serves the editor page but the write path
-                # validates independently: allowlisted repo, int index, direction in -1/0/1.
+                # The editor write path: a mode flip ({repo, mode: global|specific}) or one
+                # editor step ({index, direction}, repo-scoped or scope:"global"), applied by
+                # the pure roe_edit reducer and saved server-side. Only shell mode serves the
+                # editor page but the write path validates independently: allowlisted repo (or
+                # the explicit global scope), int index, direction in -1/0/1.
                 if not shell_mode:
                     self._send(404, b'{"error":"not found"}'); return
-                idx, dirn = body.get("index"), body.get("direction")
-                if not isinstance(idx, int) or isinstance(idx, bool) or dirn not in (-1, 0, 1):
-                    self._send(400, b'{"error":"bad step"}'); return
                 from . import roe_view
                 try:
-                    fresh = roe_view.apply_step(repo, idx, dirn)
+                    mode = body.get("mode")
+                    if mode is not None:
+                        if is_global_roe or mode not in ("global", "specific"):
+                            self._send(400, b'{"error":"bad mode"}'); return
+                        fresh = roe_view.set_mode(repo, mode == "specific")
+                    else:
+                        idx, dirn = body.get("index"), body.get("direction")
+                        if not isinstance(idx, int) or isinstance(idx, bool) or dirn not in (-1, 0, 1):
+                            self._send(400, b'{"error":"bad step"}'); return
+                        if is_global_roe:
+                            fresh = roe_view.apply_step_global(idx, dirn)
+                        else:
+                            fresh = roe_view.apply_step(repo, idx, dirn)
                 except Exception as e:             # noqa: BLE001
                     self._send(500, json.dumps({"error": str(e)}).encode("utf-8")); return
                 self._send(200, json.dumps(fresh).encode("utf-8"))

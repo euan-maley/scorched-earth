@@ -46,6 +46,11 @@
   .saved{font-size:12px;font-weight:800;letter-spacing:2px;color:#7cb342;opacity:0;
          transition:opacity .2s}
   .saved.on{opacity:1}
+  .savebtn{font-family:var(--font);font-size:12px;font-weight:800;letter-spacing:1.5px;
+           color:#9ec1c1;background:none;border:1px solid var(--mod-bd);padding:5px 14px;
+           cursor:pointer;border-radius:2px;white-space:nowrap;min-width:92px}
+  .savebtn:hover{border-color:#3d5a24;color:#b8d9a0}
+  .savebtn.ok{color:#7cb342;border-color:#3d5a24;cursor:default}
   .refresh{font-family:var(--font);font-size:12px;font-weight:800;letter-spacing:1.5px;
            color:var(--ember2);background:none;border:1px solid #5a3014;padding:5px 12px;
            cursor:pointer;border-radius:2px;white-space:nowrap}
@@ -58,9 +63,22 @@
   .tabs__chev{color:var(--ember2);font-size:14px}
   .tab{font-family:var(--font);font-size:13px;font-weight:700;letter-spacing:1.2px;
        color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;
-       padding:10px 14px;cursor:pointer}
+       padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
   .tab:hover{color:var(--secondary)}
   .tab.active{color:var(--strong);border-bottom-color:var(--ember)}
+  .tab .spec{font-size:10px;letter-spacing:1px;color:var(--ember2);border:1px solid #5a3014;
+             padding:1px 5px}
+
+  .moderow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 14px;
+           border:1px solid var(--mod-bd);background:var(--track)}
+  .moderow__label{font-weight:800;letter-spacing:1.5px;font-size:13px;color:var(--head)}
+  .modebtn{font-family:var(--font);font-size:13px;font-weight:800;letter-spacing:1px;
+           cursor:pointer;border:1px solid var(--mod-bd);background:none;padding:5px 14px;
+           color:var(--muted)}
+  .modebtn.on{color:var(--amber);border-color:#5a3014;background:#140d06}
+  .moderow__note{font-size:12px;color:var(--muted);flex-basis:100%;line-height:1.4}
+  .row.locked .cyc__btn,.row.locked .tgl{pointer-events:none;opacity:.35}
+  .row.locked .row__label,.row.locked .cyc__val{opacity:.55}
 
   .deck{padding:18px;display:flex;flex-direction:column;gap:14px}
   .mod{border:1px solid var(--mod-bd);background:var(--mod);padding:14px 16px}
@@ -109,17 +127,18 @@ var TOKEN = __ROE_TOKEN__;
 (function(){
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const root = document.getElementById("roe");
-  let active = 0;
+  let active = 0;                 // 0 = GLOBAL, i>0 = DATA.repos[i-1]
 
   function tabsHTML(){
     const R = DATA.repos || [];
-    if(R.length <= 1) return "";
-    return `<div class="tabs"><span class="tabs__label">REPOS <span class="tabs__chev">&#8250;</span></span>` +
-      R.map((rp,i)=>`<button class="tab${i===active?' active':''}" data-i="${i}">${esc(rp.name||rp.repo)}</button>`).join("") +
+    return `<div class="tabs"><span class="tabs__label">SCOPE <span class="tabs__chev">&#8250;</span></span>` +
+      `<button class="tab${active===0?' active':''}" data-i="0">GLOBAL</button>` +
+      R.map((rp,i)=>`<button class="tab${active===i+1?' active':''}" data-i="${i+1}">` +
+        `<span>${esc(rp.name||rp.repo)}</span>${rp.specific?'<span class="spec">SPECIFIC</span>':''}</button>`).join("") +
       `</div>`;
   }
 
-  function rowHTML(c, i){
+  function rowHTML(c, i, locked){
     let ctl;
     if(c.kind === "cycle"){
       ctl = `<span class="cyc">
@@ -130,8 +149,19 @@ var TOKEN = __ROE_TOKEN__;
     } else {
       ctl = `<button class="tgl${c.on?' on':''}" data-act="flip" data-i="${i}">${c.on?"[x] ON":"[&nbsp;&nbsp;] OFF"}</button>`;
     }
-    return `<div class="row"><span class="row__label">${esc(c.label)}</span>${ctl}
+    return `<div class="row${locked?' locked':''}"><span class="row__label">${esc(c.label)}</span>${ctl}
             <span class="row__help">${esc(c.help)}</span></div>`;
+  }
+
+  function modeHTML(r){
+    return `<div class="moderow">
+      <span class="moderow__label">RULES SOURCE</span>
+      <button class="modebtn${r.specific?'':' on'}" data-mode="global">GLOBAL</button>
+      <button class="modebtn${r.specific?' on':''}" data-mode="specific">REPO-SPECIFIC</button>
+      <span class="moderow__note">${r.specific
+        ? "This repo carries its own rules; the global rules do not apply here. Switch to GLOBAL to drop the overrides and follow the global rules again."
+        : "This repo follows the global rules (shown dimmed below). Switch to REPO-SPECIFIC to override them for this repo only, starting from the current values."}</span>
+    </div>`;
   }
 
   function freeformHTML(f){
@@ -148,8 +178,14 @@ var TOKEN = __ROE_TOKEN__;
 
   function paint(){
     const R = DATA.repos || [];
-    if(active >= R.length) active = 0;
-    const r = R[active] || {controls:[], freeform:{}, name:""};
+    if(active > R.length) active = 0;
+    const isGlobal = active === 0;
+    const r = isGlobal ? (DATA.global || {controls:[], freeform:{}})
+                       : (R[active-1] || {controls:[], freeform:{}, name:"", specific:false});
+    const locked = !isGlobal && !r.specific;
+    const scopeName = isGlobal ? "GLOBAL (all repos)" : esc(r.name);
+    const savePath = isGlobal ? "~/.claude/scorched-earth/roe.default.json"
+                              : esc(r.repo) + "/.scorched/roe.json";
     root.innerHTML =
       '<span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br brr"></span>' +
       `<div class="hdr">
@@ -157,20 +193,27 @@ var TOKEN = __ROE_TOKEN__;
           <div class="hdr__tag"><span class="dot"></span><span>// ROE &middot; STANDING ORDERS</span></div>
           <span style="display:flex;align-items:center;gap:14px">
             <span class="saved" id="saved">&#10003; SAVED</span>
-            <button class="refresh" id="refreshBtn" title="Re-read every repo's roe.json">&#8635; REFRESH</button>
+            <button class="savebtn" id="saveBtn" title="Everything already saves on click; this re-reads the files and confirms what's persisted.">SAVE</button>
+            <button class="refresh" id="refreshBtn" title="Re-read the global rules and every repo's roe.json">&#8635; REFRESH</button>
           </span>
         </div>
         <h1 class="hdr__title">RULES OF ENGAGEMENT</h1>
-        <div class="hdr__sub">AS SET BY THE OPERATOR &middot; EVERY CHANGE SAVES INSTANTLY &middot; ${esc(r.name)}</div>
+        <div class="hdr__sub">AS SET BY THE OPERATOR &middot; EVERY CHANGE SAVES INSTANTLY &middot; ${scopeName}</div>
       </div>` +
       tabsHTML() +
       `<div class="deck">
+        ${isGlobal
+          ? `<div class="moderow"><span class="moderow__label">GLOBAL RULES</span>
+             <span class="moderow__note">Apply to every linked repo except the ones set REPO-SPECIFIC on their own tab.</span></div>`
+          : modeHTML(r)}
         <div class="mod">
-          <div class="mod__hd"><span class="l">WIRED RULES</span><span class="r">click &#8249;&nbsp;&#8250; to cycle &middot; click a toggle to flip</span></div>
-          ${(r.controls||[]).map(rowHTML).join("")}
+          <div class="mod__hd"><span class="l">WIRED RULES</span><span class="r">${locked
+            ? "following global &middot; switch to REPO-SPECIFIC to edit"
+            : "click &#8249;&nbsp;&#8250; to cycle &middot; click a toggle to flip"}</span></div>
+          ${(r.controls||[]).map((c,i)=>rowHTML(c,i,locked)).join("")}
         </div>
         ${freeformHTML(r.freeform)}
-        <div class="meta"><span>SAVED TO ${esc(r.repo)}/.scorched/roe.json</span><span>// FIELD INTEL &middot; RULES OF ENGAGEMENT</span></div>
+        <div class="meta"><span>SAVED TO ${savePath}</span><span>// FIELD INTEL &middot; RULES OF ENGAGEMENT</span></div>
       </div>
       <div class="scan"></div><div class="vig"></div>`;
   }
@@ -184,15 +227,31 @@ var TOKEN = __ROE_TOKEN__;
     savedTimer = setTimeout(()=>el.classList.remove("on"), 1200);
   }
 
-  function step(index, direction){
-    const r = (DATA.repos||[])[active];
-    if(!r) return;
+  function post(body, onFresh){
     fetch("/roe", {method:"POST",
                    headers:{"X-Scorch-Token": TOKEN, "Content-Type":"application/json"},
-                   body: JSON.stringify({repo: r.repo, index: index, direction: direction})})
+                   body: JSON.stringify(body)})
       .then(res => res.ok ? res.json() : null)
-      .then(fresh => { if(fresh && fresh.controls){ DATA.repos[active] = fresh; paint(); flashSaved(); } })
+      .then(fresh => { if(fresh && fresh.controls){ onFresh(fresh); paint(); flashSaved(); } })
       .catch(()=>{});
+  }
+
+  function step(index, direction){
+    if(active === 0){
+      post({scope: "global", index: index, direction: direction}, f => { DATA.global = f; });
+      return;
+    }
+    const r = (DATA.repos||[])[active-1];
+    if(!r || !r.specific) return;          // following global: rows are locked
+    post({repo: r.repo, index: index, direction: direction},
+         f => { DATA.repos[active-1] = f; });
+  }
+
+  function setMode(mode){
+    if(active === 0) return;
+    const r = (DATA.repos||[])[active-1];
+    if(!r || (mode === "specific") === !!r.specific) return;
+    post({repo: r.repo, mode: mode}, f => { DATA.repos[active-1] = f; });
   }
 
   function doRefresh(){
@@ -202,10 +261,30 @@ var TOKEN = __ROE_TOKEN__;
       .catch(()=>{});
   }
 
+  // The SAVE button is for peace of mind: every click already persisted, so this re-reads
+  // the files from the server and confirms with a checkmark that what you see is what's on
+  // disk. It never writes anything.
+  function doSave(){
+    fetch("/roe.json?t=" + encodeURIComponent(TOKEN), {cache:"no-store"})
+      .then(res => res.json())
+      .then(fresh => {
+        if(fresh && fresh.repos){ DATA = fresh; paint(); }
+        const b = document.getElementById("saveBtn");
+        if(!b) return;
+        b.classList.add("ok"); b.innerHTML = "&#10003; SAVED";
+        setTimeout(()=>{ const b2 = document.getElementById("saveBtn");
+                         if(b2){ b2.classList.remove("ok"); b2.textContent = "SAVE"; } }, 1500);
+      })
+      .catch(()=>{});
+  }
+
   root.addEventListener("click", function(e){
     const tab = e.target.closest(".tab");
     if(tab){ active = parseInt(tab.getAttribute("data-i"),10) || 0; paint(); return; }
     if(e.target.closest("#refreshBtn")){ doRefresh(); return; }
+    if(e.target.closest("#saveBtn")){ doSave(); return; }
+    const mb = e.target.closest(".modebtn");
+    if(mb){ setMode(mb.getAttribute("data-mode")); return; }
     const btn = e.target.closest("[data-act]");
     if(!btn) return;
     const i = parseInt(btn.getAttribute("data-i"), 10);

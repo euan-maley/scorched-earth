@@ -672,6 +672,8 @@ _page = _rv.render_page("RT", [_roe_repo]).decode("utf-8")
 check("roe_view.render_page fills the template (no placeholder leak)",
       "__ROE_JSON__" not in _page and "__ROE_TOKEN__" not in _page
       and "RULES OF ENGAGEMENT" in _page)
+check("the page carries the peace-of-mind SAVE button (verifies persisted state, never writes)",
+      'id="saveBtn"' in _page and "peace of mind" in _page)
 
 _roe_eng = Engine([_roe_repo], execute=lambda *a: ("pass", None, "ok"),
                   load_state=lambda: _STATE, now=lambda: 1)
@@ -711,6 +713,18 @@ check("POST /roe rejects a malformed step (index/direction validation)",
       _roepost({"repo": _roe_repo, "index": "3", "direction": 1})[0] == 400
       and _roepost({"repo": _roe_repo, "index": 0, "direction": 2})[0] == 400
       and _roepost({"repo": _roe_repo, "index": True, "direction": 1})[0] == 400)
+check("roe_state exposes the GLOBAL scope alongside the repos",
+      isinstance(json.loads(_roeget("/roe.json")[1])["global"].get("controls"), list))
+_s, _b = _roepost({"repo": _roe_repo, "mode": "global"})
+check("POST /roe mode=global strips the repo's overrides (follows global again)",
+      _s == 200 and json.loads(_b)["specific"] is False
+      and "attended_branch" not in json.load(open(os.path.join(_roe_repo, ".scorched", "roe.json"))))
+_s, _b = _roepost({"repo": _roe_repo, "mode": "specific"})
+check("POST /roe mode=specific snapshots the effective values and detaches",
+      _s == 200 and json.loads(_b)["specific"] is True)
+check("POST /roe rejects a bad mode (and a mode flip on the global scope)",
+      _roepost({"repo": _roe_repo, "mode": "weird"})[0] == 400
+      and _roepost({"repo": _roe_repo, "scope": "global", "mode": "global"})[0] == 400)
 check("POST /roe without the token header is forbidden",
       _roepost({"repo": _roe_repo, "index": 0, "direction": 1}, tok=None)[0] == 403)
 _roe_httpd.shutdown()

@@ -134,3 +134,46 @@ def save(repo_path: str, roe: ROE) -> str:
     any freeform keys already there. Returns the file path."""
     from . import coa_io
     return coa_io.write_roe_raw(repo_path, to_raw(roe, coa_io.read_roe_raw(repo_path)))
+
+
+def save_global(roe: ROE) -> str:
+    """Persist `roe` as the GLOBAL rules (central roe.default.json), same managed-fields-only
+    contract as save. Applies to every repo that hasn't gone repo-specific."""
+    from . import coa_io
+    return coa_io.write_global_roe_raw(to_raw(roe, coa_io.read_global_roe_raw()))
+
+
+def is_specific(raw: dict) -> bool:
+    """Whether a repo's raw roe.json carries its own managed rules (repo-specific) or follows
+    the global rules (no managed keys present). Derived from the file, no extra state."""
+    return any(k in (raw or {}) for k in MANAGED_FIELDS)
+
+
+# Where a repo's stripped overrides are parked when it switches to FOLLOW-GLOBAL, so switching
+# back to REPO-SPECIFIC restores exactly what it had (not a fresh snapshot of global). It's a
+# freeform-style key: to_raw/save preserve it, load_roe ignores it, is_specific doesn't count it.
+PARKED_KEY = "_parked_specific"
+
+
+def set_mode(repo_path: str, specific: bool) -> dict:
+    """Flip a repo between FOLLOW-GLOBAL and REPO-SPECIFIC. Going global strips every managed
+    key so the global rules flow through again, PARKING the stripped values under PARKED_KEY;
+    going specific restores the parked values if any (a round-trip loses nothing), else
+    snapshots the current effective (merged) values as the starting point. Freeform keys
+    survive both ways. Returns the written raw dict."""
+    from . import coa_io
+    raw = coa_io.read_roe_raw(repo_path)
+    if specific:
+        parked = raw.pop(PARKED_KEY, None)
+        if isinstance(parked, dict) and any(k in parked for k in MANAGED_FIELDS):
+            d = dict(raw)
+            d.update({k: v for k, v in parked.items() if k in MANAGED_FIELDS})
+        else:
+            d = to_raw(coa_io.load_roe(repo_path), raw)
+    else:
+        stash = {k: raw[k] for k in MANAGED_FIELDS if k in raw}
+        d = {k: v for k, v in raw.items() if k not in MANAGED_FIELDS}
+        if stash:
+            d[PARKED_KEY] = stash
+    coa_io.write_roe_raw(repo_path, d)
+    return d
