@@ -80,19 +80,29 @@ def _roe_editor(repo) -> int:
             ctrls = roe_edit.controls(roe)
             scr.erase()
             h, w = scr.getmaxyx()
-            scr.addnstr(0, 0, (f" RULES OF ENGAGEMENT  {name} ").ljust(w - 1), w - 1, curses.A_REVERSE)
-            scr.addnstr(1, 0, " up/down move   left/right change   space toggle   s save   q quit", w - 1)
+
+            def put(y, text, attr=0):
+                # Bounded draw: a terminal shorter than the control list (or a resize
+                # mid-session) must scroll the list off, never crash curses.
+                if 0 <= y < h and w > 1:
+                    try:
+                        scr.addnstr(y, 0, text, w - 1, attr)
+                    except curses.error:
+                        pass
+
+            put(0, (f" RULES OF ENGAGEMENT  {name} ").ljust(w - 1), curses.A_REVERSE)
+            put(1, " up/down move   left/right change   space toggle   s save   q quit")
             row = 3
             for i, c in enumerate(ctrls):
                 mark = ("[x]" if c.on else "[ ]") if c.kind == "toggle" else f"< {c.value} >"
                 line = ("  " + mark.ljust(10) + "  " + c.label).ljust(w - 1)
-                scr.addnstr(row, 0, line, w - 1, curses.A_REVERSE if i == sel else curses.A_NORMAL)
+                put(row, line, curses.A_REVERSE if i == sel else curses.A_NORMAL)
                 row += 1
             if 0 <= sel < len(ctrls):
-                scr.addnstr(row + 1, 0, "  " + ctrls[sel].help, w - 1, curses.A_DIM)
+                put(row + 1, "  " + ctrls[sel].help, curses.A_DIM)
             foot = msg or ("UNSAVED CHANGES (press s to save)" if dirty else "")
             if foot:
-                scr.addnstr(h - 1, 0, ("  " + foot).ljust(w - 1), w - 1, curses.A_BOLD)
+                put(h - 1, ("  " + foot).ljust(w - 1), curses.A_BOLD)
             scr.refresh()
 
             k = scr.getch()

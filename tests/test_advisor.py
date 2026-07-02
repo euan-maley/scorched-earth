@@ -180,6 +180,48 @@ check("scorch advise refuses cleanly with no snapshot",
 _p3 = subprocess.run([sys.executable, _scorch, "roe", _r], capture_output=True, text=True, env=_env)
 check("scorch roe prints JSON", _p3.returncode == 0 and "auto_run_min_defcon" in _p3.stdout)
 
+# the curses editor must survive a terminal shorter than its control list (it once
+# crashed in addnstr drawing the help line past the bottom row)
+if hasattr(os, "fork"):
+    import pty as _pty
+    import fcntl as _fcntl
+    import termios as _termios
+    import struct as _struct
+    import select as _select
+    import time as _time
+    _pid, _fd = _pty.fork()
+    if _pid == 0:  # child: the editor on a real (tiny) tty
+        os.environ.update(_env)
+        os.environ["TERM"] = "xterm"
+        os.execvp(sys.executable, [sys.executable, _scorch, "roe", _r])
+    _fcntl.ioctl(_fd, _termios.TIOCSWINSZ, _struct.pack("HHHH", 6, 60, 0, 0))
+    _buf = b""
+    _deadline = _time.time() + 8
+    _sent_q = False
+    while _time.time() < _deadline:
+        _rl, _, _ = _select.select([_fd], [], [], 0.3)
+        if _rl:
+            try:
+                _c = os.read(_fd, 65536)
+            except OSError:
+                break
+            if not _c:
+                break
+            _buf += _c
+        elif not _sent_q:  # first quiet moment: screen drawn, drive then quit
+            try:
+                os.write(_fd, b"jjlhq")
+                _sent_q = True
+            except OSError:
+                break
+    try:
+        os.close(_fd)
+    except OSError:
+        pass
+    _, _st = os.waitpid(_pid, 0)
+    check("scorch roe editor survives a 6-row terminal (bounded draw)",
+          _st == 0 and b"Traceback" not in _buf)
+
 # --- slash commands exist with frontmatter ---------------------------------------
 _cmds = os.path.join(os.path.dirname(__file__), "..", "commands")
 for _c in ("coa", "roe"):
