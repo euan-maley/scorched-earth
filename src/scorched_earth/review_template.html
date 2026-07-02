@@ -350,11 +350,11 @@ const AAR = __REVIEW_JSON__;
         <div class="mod__hd"><span class="l">THE FIELD</span><span class="r">ONE CELL PER OBJECTIVE</span></div>
         <div class="strip">${J.map(cell).join("")}</div>
         <div class="stripleg">
-          <span><i class="swatch" style="background:#7bb04a;"></i>SECURED</span>
-          <span><i class="swatch" style="background:#5a241a;"></i>CRATERED</span>
-          <span><i class="swatch" style="background:#ff6a1f;"></i>ON FIRE</span>
-          <span><i class="swatch" style="background:#3a4a4a;"></i>FENCED (ROE)</span>
-          <span><i class="swatch" style="background:#3a1a1a;"></i>APPROVAL</span>
+          <span title="Ran and its verification gate passed."><i class="swatch" style="background:#7bb04a;"></i>SECURED</span>
+          <span title="The job or its verification gate failed; the work was discarded."><i class="swatch" style="background:#5a241a;"></i>CRATERED</span>
+          <span title="Running now."><i class="swatch" style="background:#ff6a1f;"></i>ON FIRE</span>
+          <span title="Blocked by the Rules of Engagement (type not allowed to run unattended)."><i class="swatch" style="background:#3a4a4a;"></i>FENCED (ROE)</span>
+          <span title="Held for approval (DEFCON below the auto-run threshold)."><i class="swatch" style="background:#3a1a1a;"></i>APPROVAL</span>
         </div>
       </div>
 

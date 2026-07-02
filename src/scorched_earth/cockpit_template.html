@@ -342,8 +342,8 @@ const STATE = __COCKPIT_JSON__;
     } else { // finished
       const pass = job.outcome!=="fail";
       const badge = pass
-        ? '<span class="cbadge" style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
-        : '<span class="cbadge" style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
+        ? '<span class="cbadge" title="Ran and its verification gate passed." style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
+        : '<span class="cbadge" title="The job or its verification gate failed; the work was discarded." style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
       foot.appendChild(html(badge));
       if(job.branch){
         const br = html('<span class="cbranch" style="flex-basis:100%"><span class="g">&#9095;</span>'+esc(job.branch)+'</span>');

@@ -552,6 +552,10 @@ check("cockpit HALTED state carries a resume hint (re-queued; press RUN)",
 check("cockpit HALTED is distinct from an operator pause (operator does not force HALTED)",
       'state.stop_reason === "limit"' in _hh)  # operator/None fall through to IDLE
 
+# --- Phase 2: CRATERED (fail) badge is legible (#9) --------------------------------
+check("cockpit CRATERED badge explains the fail state (work discarded)",
+      "CRATERED" in _hh and "work was discarded" in _hh)
+
 # --- Phase 2: manual board REFRESH pulls an external jobs.json change (#6) ----------
 # SSE only pushes on engine events, so a fresh /coa scan is invisible until /state is re-read.
 check("cockpit wires a manual REFRESH that re-reads /state (no re-scan)",

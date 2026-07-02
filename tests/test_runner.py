@@ -154,6 +154,9 @@ check("render_review_html refresh injection survives running state",
       render_review_html(_running).lower().count("http-equiv") == 1)
 check("render_review_html contains a DEFCON badge (defcon-2 CSS present for defcon=2 job)",
       "defcon-2" in render_review_html(_running))
+# Phase 2 (#9): the CRATERED (fail) state is legible - the field legend explains what it means.
+check("AAR legend explains CRATERED = the fail state (work discarded)",
+      "CRATERED" in _html_run and "work was discarded" in _html_run)
 
 # --- Task 6: command builders + sandbox settings ----------------------------------
 from scorched_earth.runner import (worktree_path, branch_name, build_claude_cmd,  # noqa: E402
