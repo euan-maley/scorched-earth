@@ -1,35 +1,20 @@
 # TODO
 
-## Current Session (2026-07-01): Phase 2 - merged shell (#13) + the deferred UI items
+## Current Session (2026-07-01): Phase 2 - merged shell (#13) + the UI items - DONE (bar the ROE html follow-up)
 
-Decision locked: **Option A** - one unified 127.0.0.1 server, three big tabs (SITREP / COURSE OF ACTION / WAR ROOM), one token. Static `scorch --sitrep` stays as the offline artifact (additive, not replaced). Mechanism: **iframes** - the shell is a tab frame that embeds each existing renderer unchanged in its own iframe (no CSS/JS collision, preserves failure isolation, chrome-first). Sequenced shell-first: land + verify the structural merge before any UI rides on it.
+Built the unified **War Room shell** (Option A: one 127.0.0.1 server, one token, three big tabs SITREP / COURSE OF ACTION / WAR ROOM via iframes) and then landed all the deferred UI items inside it, one stage per commit, each verified. 7 commits on `feat/coa-observability-freshness` (LOCAL, unpushed - Phase 1 rides the same branch). Suites 78 / 64 / 89 / 79 = **310** (was 45/76/73/78 = 272).
 
-### Stage 0 - the shell (chrome first, no feature work) - DONE
-Built: `shell.py` + `shell_template.html`; `coa_serve.make_server(shell_repos=)` shell mode (frame at `/`, cockpit at `/war-room`, folds in `/sitrep` `/coa` `/coa.json`); `bin/scorch` `_serve_shell` (both `coa --serve` and `advise --serve` route through it). Iframes chosen (kept - no CSS/JS collision). Bonus: `/favicon.ico` -> 204 before the token gate (killed the 403 console noise the iframes multiplied). Verified: in-process route drive + a real Playwright drive (all 3 tabs render, hash deep-links, lazy-load, cockpit SSE paints the live board, 0 console errors). +10 cockpit checks (73 -> 83). Suites 45/76/83/78.
-- New `shell.py` (or fold into `coa_serve.py`): one `ThreadingHTTPServer`, one token, routes:
-  - `GET /` -> `shell_template.html` (big tab bar + 3 iframes; deep-link `#sitrep|#coa|#war-room`)
-  - `GET /sitrep` -> served sitrep (`report.render_html`), `GET /coa` -> served COA, `GET /war-room` -> cockpit
-  - existing data/SSE/action routes fold in under the one server + token: `/coa.json`, `/events` (SSE), POST run/stop
-- New `shell_template.html`: tab bar + iframes + active-tab state (hash-routed).
-- Command wiring (sub-decision, settle here): `/war-room` launches the unified shell; `/coa` + `/sitrep` open it on their tab. Standalone `scorch --sitrep` file output kept for offline sharing.
-- **Verify:** one launch; all three tabs render + function - COA Refresh re-reads, War Room SSE + a real run drains/halts, sitrep field renders + countdowns tick. Four suites green.
+- **Stage 0 - shell:** `shell.py` + `shell_template.html`; `coa_serve.make_server(shell_repos=)` shell mode (frame at `/`, cockpit at `/war-room`, folds in `/sitrep` `/coa` `/coa.json`); `bin/scorch` `_serve_shell` (both `coa --serve` and `advise --serve` route through it). Iframes (no CSS/JS collision, failure isolation). `/favicon.ico` -> 204 before the token gate (killed the 403 console noise). Real Playwright drive: 3 tabs render, hash deep-links, lazy-load, cockpit SSE paints the live board, 0 console errors.
+- **Stage 1 - HALTED (#2/#8):** cockpit reads `stop_reason` -> red HALTED flag + resume hint on `limit`; operator-pause/clean stay IDLE. Verified all 3 states in-browser.
+- **Stage 2 - freshness (#5/#6):** COA "SCANNED Nh ago" from `scannedAt` + honest Refresh tooltip; War Room manual REFRESH re-reads `/state`. Verified end-to-end (external jobs.json add -> REFRESH surfaces it; SSE alone did not).
+- **Stage 3 - ROE editor TERMINAL (#10):** pure `roe_edit.py` model (controls + apply reducer + save preserving freeform) + a curses arrow-key list in `scorch roe` (hjkl too; `--json`/non-tty -> JSON). Fixed an ESC-as-quit bug (arrows begin with ESC). Arrow decoding is standard curses+keypad on a real terminal, not reproducible headlessly (hjkl is the verified path).
+- **Stage 4 - sitrep refresh (#12):** `report.render_html(served=True)` emits a Refresh button that reloads `/sitrep`; offline file omits it. Verified in-browser.
+- **Stage 5 - cratered legend (#9):** explanatory tooltips on the AAR field legend + cockpit CRATERED badge (fail state = job/gate failed, work discarded).
+- **Stage 6 - approval legibility (#1):** COA + cockpit approval badges now tooltip WHY (DEFCON below the auto-run threshold) + HOW (`scorch coa run --approve` / press RUN as operator).
 
-### Stages 1-6 - UI items inside the shell (each: build -> verify -> commit; docs travel with code)
-1. **HALTED state + resume hint (#2/#8):** cockpit reads `stop_reason` (already emitted) -> HALTED banner distinct from IDLE + resume hint on `limit`. +cockpit checks.
-2. **Freshness UI + honest Refresh (#5/#6):** COA tab shows "scanned Nh ago" from `scannedAt`; Refresh honest about re-read vs re-scan. War Room refresh (#6).
-3. **ROE interactive editor (#10):** TERMINAL DONE - `roe_edit.py` pure model (controls + apply reducer + save) + a curses arrow-key list in `scorch roe` (hjkl too; `--json`/non-tty falls back to JSON). Wired rules only (auto-run DEFCON, run cap, allowed/unattended types). Found+fixed an ESC-as-quit bug (arrows start with ESC). +16 advisor checks. HTML frontend = deferred follow-up (user chose terminal-first): an ROE panel in the shell over the same model, backed by a guarded POST /roe.
-4. **Sitrep refresh (#12):** refresh button on the served sitrep tab.
-5. **Cratered legend (#9):** "cratered" = the fail state, added to COA/AAR legend.
-6. **Approval legibility how/why (#1):** surface why (defcon < auto_run_min_defcon) + how (`scorch coa run --approve` / cockpit Run button).
+**Remaining Phase 2 item:** the ROE editor **HTML frontend** (#10 follow-up) - a panel/tab in the shell over the same `roe_edit` model, backed by a guarded `POST /roe`. User chose terminal-first; this is the clean next task.
 
-### Files
-new `shell.py` + `shell_template.html`; edits to `coa_serve.py`, `coa_view.py`, `report.py`, `coa_template.html`, `cockpit_template.html`, `review_template.html`, `roe.py`/`jobs.py`, `commands/*.md`. Docs (CLAUDE.md architecture lines + playbook Current Status) travel with each change.
-
-### Verification
-Four suites (`test_advisor` / `test_scorched` / `test_cockpit` / `test_runner`) green after each stage + a manual browser drive of the shell. Commit incrementally, roughly one stage per commit, on branch `feat/coa-observability-freshness` (Phase 1 rides in the same branch, still unpushed).
-
-### The one reversible call flagged
-iframes vs inlining all three into one document. iframes chosen for isolation (dissolves the CSS-seam risk). If iframe token/SSE plumbing turns ugly in Stage 0, fall back to inline with namespaced CSS - decide inside Stage 0, not now.
+**Open:** branch still LOCAL/unpushed (7 Phase 2 commits + 3 Phase 1). Push/merge decision pending (was deliberately held at Phase 1 close-out).
 
 ---
 
@@ -41,9 +26,14 @@ Ordering locked with the user: backend before UI, merged shell (#13) before the 
 - [x] Observability: `stop_reason` / `stopped` in `state_json` (#2/#8 backend). +3 cockpit checks.
 - [x] Freshness: `scannedAt` (mtime) in `coa_state` + `/coa` stale-aware re-scan (#5/#6 backend + #5 scan-skip). +2 advisor checks.
 
-**Phase 2 - Merged shell (#13) THEN all UI once:**
-- [ ] Brainstorm + build the unified HTML: COA + War Room + Sitrep, big tabs
-- [ ] UI in the shell: HALTED state + resume hint (#2/#8), freshness UI + honest Refresh (#5/#6), war-room refresh (#6), ROE toggle true/false/cycle in terminal + html (#10), sitrep refresh (#12), "cratered" legend (#9), approval legibility how/why (#1)
+**Phase 2 - Merged shell (#13) THEN all UI once:** DONE except the ROE html follow-up.
+- [x] Build the unified shell: SITREP + COURSE OF ACTION + WAR ROOM, big tabs, one server + token, iframes (Stage 0)
+- [x] HALTED state + resume hint (#2/#8) (Stage 1)
+- [x] Freshness UI + honest Refresh + war-room refresh (#5/#6) (Stage 2)
+- [x] ROE interactive editor, TERMINAL (#10) (Stage 3) -- curses arrow-key list + pure roe_edit model
+- [x] Sitrep refresh (#12) (Stage 4)
+- [x] "Cratered" legend + approval legibility how/why (#9, #1) (Stages 5-6)
+- [ ] **ROE editor HTML frontend (#10 follow-up):** an ROE panel/tab in the shell over the same `roe_edit` model, backed by a guarded `POST /roe` (the one remaining Phase 2 item; user chose terminal-first)
 
 **Phase 3 - Execution engine (increasing coupling):**
 - [ ] Model selection per task, Claude picks fable/sonnet/opus/haiku (#4)

@@ -97,9 +97,16 @@ against a test command you set. The Rules of Engagement (`/roe`) decide what's a
 unattended: DEFCON 1 and 2 sit behind an approval gate by default, and `max_jobs` caps a run
 so an overnight campaign can't sprawl.
 
-`/war-room` opens the live version, a localhost cockpit with a kanban board, drag-to-queue,
-and a runner that drains your linked repos in parallel, one job each at a time. The URL
-carries a one-time access token, so treat it like a credential and don't paste it around.
+`/war-room` opens the unified **War Room shell**: one localhost page with three big tabs,
+SITREP (the field report), COURSE OF ACTION (the ranked plan), and WAR ROOM (the live cockpit,
+a kanban board with drag-to-queue and a runner that drains your linked repos in parallel). One
+server, one token, switch freely between all three; `/coa` and `/sitrep` open the same shell on
+their tab. The cockpit flags a HALTED state (with a resume hint) when it hits the weekly usage
+ceiling, and each surface has an honest Refresh. The URL carries a one-time access token, so
+treat it like a credential and don't paste it around.
+
+`/roe` opens an interactive editor for the Rules of Engagement: arrow keys to move, left/right
+to change a setting or cycle the auto-run DEFCON threshold, space to toggle, `s` to save.
 
 ## Install
 
