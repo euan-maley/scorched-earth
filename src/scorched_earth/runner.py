@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import signal
 import subprocess
 import threading
 import time
@@ -111,8 +113,13 @@ def summarize_stream_line(line):
                 txt = (block.get("text") or "").strip().replace("\n", " ")
                 if txt:
                     return txt[:200]
-    t = obj.get("type") if isinstance(obj, dict) else None
-    return ("[" + str(t) + "]")[:200] if t else s[:200]
+    # A parsed JSON object with no extractable tool_use/text hint is structural-only chatter
+    # (e.g. a bare "assistant"/"user" message wrapper). Returning "" lets the caller keep the
+    # previous line on screen instead of flashing a meaningless "[assistant]"/"[user]" marker
+    # onto the live CRT feed.
+    if isinstance(obj, dict):
+        return ""
+    return s[:200]
 
 
 def detect_rate_limit(output):
@@ -136,14 +143,15 @@ def worktree_path(repo: str, job_id: str) -> str:
 
 
 def merge_cmd(repo: str, job_id: str) -> str:
-    return "git -C {} merge {}".format(repo, branch_name(job_id))
+    return "git -C {} merge {}".format(shlex.quote(repo), shlex.quote(branch_name(job_id)))
 
 
 def discard_cmd(repo: str, job_id: str) -> str:
     return (
         "git -C {repo} worktree remove --force {wt} && "
         "git -C {repo} branch -D {br}"
-    ).format(repo=repo, wt=worktree_path(repo, job_id), br=branch_name(job_id))
+    ).format(repo=shlex.quote(repo), wt=shlex.quote(worktree_path(repo, job_id)),
+             br=shlex.quote(branch_name(job_id)))
 
 
 # ---------------------------------------------------------------------------
@@ -276,9 +284,15 @@ def _diffstat(worktree: str, base_sha: str) -> Optional[dict]:
     files = ins = dele = 0
     for line in p.stdout.strip().splitlines():
         parts = line.split("\t")
-        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        if len(parts) < 2:
+            continue
+        if parts[0].isdigit() and parts[1].isdigit():
             ins += int(parts[0])
             dele += int(parts[1])
+            files += 1
+        elif parts[0] == "-" and parts[1] == "-":
+            # binary file: git reports "-\t-\tpath" (no line counts) instead of numbers.
+            # Still count it as a changed file so a binary-only change isn't reported as None.
             files += 1
     return {"files": files, "insertions": ins, "deletions": dele}
 
@@ -293,13 +307,24 @@ def _diffstat(worktree: str, base_sha: str) -> Optional[dict]:
 _kill_ctx = threading.local()
 
 
+def _signal_group(p, sig):
+    """Send sig to p's whole process group (catches grandchildren a plain p.terminate()/p.kill()
+    would leave running, e.g. a shell launching claude). Falls back to the direct-child signal
+    when the group lookup fails (already dead, no permission, or start_new_session wasn't used)."""
+    try:
+        os.killpg(os.getpgid(p.pid), sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        (p.terminate if sig == signal.SIGTERM else p.kill)()
+
+
 def _terminate(p, grace):
-    """SIGTERM then SIGKILL after grace."""
-    p.terminate()
+    """SIGTERM then SIGKILL after grace, to the whole process group."""
+    _signal_group(p, signal.SIGTERM)
     try:
         p.wait(timeout=grace)
     except subprocess.TimeoutExpired:
-        p.kill(); p.wait()
+        _signal_group(p, signal.SIGKILL)
+        p.wait()
 
 
 def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None, on_line=None):
@@ -313,7 +338,11 @@ def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None, on_
     OS pipe buffer (~64KB) while the main loop only polls poll()/kill_event. Without this drain a
     long run deadlocks: the child blocks on write(), poll() stays None forever, the worker hangs.
     The reader also stamps the last-output time so the idle watchdog can spot a stuck job."""
-    p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # start_new_session=True puts the child in its own process group, so _terminate can signal
+    # the whole group (e.g. a shell + its claude grandchild) instead of just the direct child,
+    # which would otherwise survive SIGTERM/SIGKILL and keep running after a "killed" outcome.
+    p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         start_new_session=True)
     if kill_event is None and idle_secs is None and on_line is None:
         out, _ = p.communicate()        # fast path: no kill/idle/progress watch -> communicate()
         return "done", out or "", p.returncode

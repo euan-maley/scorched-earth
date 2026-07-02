@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -265,6 +266,9 @@ check("compose_attended_prompt instructs writing the deliverable file",
       ".scorched/deliverables/j3.md" in _em.compose_attended_prompt(_jb3, _roe_att))
 check("merge_cmd / discard_cmd reference the branch",
       "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
+check("merge_cmd / discard_cmd shell-quote a repo path with spaces (copy-paste safe)",
+      shlex.split(merge_cmd("/tmp/my repo", "cov"))[2] == "/tmp/my repo"
+      and "/tmp/my repo" in shlex.split(discard_cmd("/tmp/my repo", "cov")))
 
 # write_sandbox_settings: API-only network, sandbox enabled
 _wt = tempfile.mkdtemp()
@@ -589,6 +593,10 @@ check("summarize_stream_line extracts assistant text",
       == "Working on coverage")
 check("summarize_stream_line trims a non-JSON line", _sum("hello there")[:5] == "hello")
 check("summarize_stream_line returns empty for blank input", _sum("   ") == "")
+check("summarize_stream_line returns '' (keep prior line) for structural-only JSON, "
+      "not a bracket marker like '[assistant]'",
+      _sum('{"type":"assistant","message":{"content":[]}}') == ""
+      and _sum('{"type":"user"}') == "")
 
 # --- v2.7.3: AAR served re-render + OPEN links ------------------------------------
 from scorched_earth.review_report import rr_from_record, render_review_html  # noqa: E402
@@ -646,6 +654,29 @@ check("limit during resume keeps the kept branch + worktree",
       and _gitc(_kwrepo, "rev-parse", "--verify", "--quiet", "scorched/z").returncode == 0
       and os.path.isdir(os.path.join(_kwrepo, ".scorched", "wt", "z")))
 os.environ["PATH"] = _oldpath
+
+# --- Fix: _diffstat must count binary-only changes (git emits "-\t-\tpath" for binaries,
+# and the isdigit() filter used to drop that line entirely, undercounting/omitting files) ---
+from scorched_earth.runner import _diffstat as _dstat  # noqa: E402
+_binrepo = tempfile.mkdtemp()
+_gitc(_binrepo, "init")
+with open(os.path.join(_binrepo, "README.md"), "w") as _f:
+    _f.write("base\n")
+_gitc(_binrepo, "add", "."); _gitc(_binrepo, "commit", "-m", "base")
+_bin_base_sha = _gitc(_binrepo, "rev-parse", "HEAD").stdout.strip()
+with open(os.path.join(_binrepo, "image.png"), "wb") as _f:
+    _f.write(b"\x89PNG\r\n\x1a\n\x00\x00\x00binary-blob\x00\x00")
+_gitc(_binrepo, "add", "."); _gitc(_binrepo, "commit", "-m", "add binary")
+_bindiff = _dstat(_binrepo, _bin_base_sha)
+check("_diffstat counts a binary-only change as a file instead of dropping it",
+      _bindiff is not None and _bindiff["files"] == 1)
+
+# --- Fix: _run_killable must kill the whole process group, not just the direct child, so a
+# shell-wrapped grandchild doesn't outlive a kill (start_new_session=True + os.killpg) ---
+_kev = _kt.Event(); _kev.set()
+_killgroup_res = _run_killable(["/bin/sh", "-c", "sleep 5"], None, _kev, grace=2.0, poll=0.05)
+check("_run_killable with a pre-set kill event terminates a shell-wrapped child ('killed')",
+      _killgroup_res[0] == "killed")
 
 print(f"\n{passed} checks passed.")
 if failures:
