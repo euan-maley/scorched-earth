@@ -23,6 +23,9 @@ class ROE:
     run_mode: str = "headless"                      # headless | takeover | session (global default + per-repo)
     context_cmd: Optional[str] = None               # attended pre-task command, e.g. "/kerd:switch in" (freeform)
     attended_branch: bool = False                   # attended jobs get a scorched/<id> branch vs. current branch
+    attended_perms: str = "skip"                    # skip | edits | prompt: how much an attended claude may do
+                                                    # unasked (skip = --dangerously-skip-permissions, the "hit go
+                                                    # and it works" default; edits = acceptEdits; prompt = ask)
     roadblock_idle_secs: int = 600                  # headless: seconds of silence before a job is flagged stuck
     advise_on_roadblock: bool = True                # try the advising agent to auto-solve before pausing
     # goal rules

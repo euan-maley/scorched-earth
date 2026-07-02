@@ -54,6 +54,11 @@ check("ROE defaults: run_mode headless, attended_branch off, advise on, idle 600
       DEFAULT_ROE.run_mode == "headless" and DEFAULT_ROE.attended_branch is False
       and DEFAULT_ROE.advise_on_roadblock is True and DEFAULT_ROE.roadblock_idle_secs == 600
       and DEFAULT_ROE.context_cmd is None)
+check("ROE default attended_perms is skip (hit go and it works), overridable per repo",
+      DEFAULT_ROE.attended_perms == "skip"
+      and roe_from_dict({"attended_perms": "edits"}).attended_perms == "edits"
+      and merge_roe(roe_from_dict({"attended_perms": "edits"}),
+                    roe_from_dict({"attended_perms": "prompt"})).attended_perms == "prompt")
 check("roe_from_dict reads run_mode + attended_branch",
       roe_from_dict({"run_mode": "session", "attended_branch": True}).run_mode == "session")
 check("merge_roe: per-repo run_mode overrides the global default",
@@ -318,8 +323,8 @@ import tempfile as _tfr, json as _jsr
 
 _r0 = _ROEcls()
 _ctrls = _re.controls(_r0)
-check("roe_edit controls = 6 top rows + one toggle per known type x2",
-      len(_ctrls) == 6 + 2 * len(_re.KNOWN_TYPES))
+check("roe_edit controls = 7 top rows + one toggle per known type x2",
+      len(_ctrls) == 7 + 2 * len(_re.KNOWN_TYPES))
 check("roe_edit first control is the run-mode cycle",
       _ctrls[0].field == "run_mode" and _ctrls[0].kind == "cycle" and _ctrls[0].value == "headless")
 check("roe_edit second control is the auto-run DEFCON cycle",
@@ -333,9 +338,13 @@ check("run_mode cycle headless -> takeover -> session",
 check("run_mode cycle wraps session -> headless",
       _re.apply(_ROEcls(run_mode="session"), 0, +1).run_mode == "headless")
 check("attended_branch toggle flips off -> on (index 3)", _re.apply(_r0, 3, 0).attended_branch is True)
-check("advise_on_roadblock toggle flips on -> off (index 4)", _re.apply(_r0, 4, 0).advise_on_roadblock is False)
-check("roadblock_idle_secs cycle 600 -> 900 on right (index 5)",
-      _re.apply(_r0, 5, +1).roadblock_idle_secs == 900)
+check("attended_perms cycle skip -> edits -> prompt -> wraps (index 4)",
+      _re.apply(_r0, 4, +1).attended_perms == "edits"
+      and _re.apply(_ROEcls(attended_perms="prompt"), 4, +1).attended_perms == "skip"
+      and _ctrls[4].field == "attended_perms" and _ctrls[4].value == "skip")
+check("advise_on_roadblock toggle flips on -> off (index 5)", _re.apply(_r0, 5, 0).advise_on_roadblock is False)
+check("roadblock_idle_secs cycle 600 -> 900 on right (index 6)",
+      _re.apply(_r0, 6, +1).roadblock_idle_secs == 900)
 
 _r3 = _ROEcls(auto_run_min_defcon=3)
 check("DEFCON cycle right 3 -> 4", _re.apply(_r3, 1, +1).auto_run_min_defcon == 4)
@@ -349,10 +358,10 @@ check("max_jobs cycle off -> 10 on left (wrap through None)", _re.apply(_rm, 2, 
 
 check("allowed_types default (None) shows every known type enabled",
       all(c.on for c in _ctrls if c.field == "allowed_types"))
-_off = _re.apply(_r0, 6, 0)   # index 6 = first allowed_types toggle (KNOWN_TYPES[0] = "test")
+_off = _re.apply(_r0, 7, 0)   # index 7 = first allowed_types toggle (KNOWN_TYPES[0] = "test")
 check("toggling an allowed type off yields an explicit list without it",
       _off.allowed_types is not None and "test" not in _off.allowed_types and "docs" in _off.allowed_types)
-check("toggling it back on restores it", "test" in _re.apply(_off, 6, 0).allowed_types)
+check("toggling it back on restores it", "test" in _re.apply(_off, 7, 0).allowed_types)
 
 _un = {c.member: c.on for c in _ctrls if c.field == "unattended_types"}
 check("unattended default reflects SAFE_UNATTENDED (safe on, transformative off)",
@@ -372,7 +381,8 @@ check("save overwrites the managed fields",
       and _written["allowed_types"] == ["test", "docs"])
 check("save persists the new execution-mode fields",
       _written["run_mode"] == "session" and _written["attended_branch"] is True
-      and _written["advise_on_roadblock"] is False and _written["roadblock_idle_secs"] == 900)
+      and _written["advise_on_roadblock"] is False and _written["roadblock_idle_secs"] == 900
+      and _written["attended_perms"] == "skip")
 check("save preserves freeform keys it does not manage",
       _written["test_cmd"] == "pytest -q" and _written["goals"] == ["ship it"])
 check("saved roe.json reloads through load_roe with the new values",

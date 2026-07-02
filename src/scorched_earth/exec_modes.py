@@ -9,9 +9,12 @@ owns the two ATTENDED modes and the shared machinery:
     replace or spawn a process and are verified by hand, not unit-tested.
 
 takeover keeps the OS sandbox (delivered via a CLI --settings file so the real repo's own
-.claude/settings.json is never touched); session is fully free. Neither uses
---dangerously-skip-permissions: the present operator approves actions (for takeover the sandbox
-locks network + credentials on top). Only headless (disposable worktree) skips permissions."""
+.claude/settings.json is never touched); session is fully free. How much an attended claude may
+do WITHOUT asking is the ROE `attended_perms` dial (perms_args): default `skip`
+(--dangerously-skip-permissions), because the operator hit go precisely so the job runs
+without babysitting permission prompts; `edits` auto-approves file edits only; `prompt` asks
+for everything. For takeover the OS sandbox still locks network + credentials underneath
+`skip`, the same trust model as the headless worktree."""
 
 from __future__ import annotations
 
@@ -88,19 +91,36 @@ def compose_attended_prompt(job: Job, roe: ROE) -> str:
 # Command builders (pure)
 # ---------------------------------------------------------------------------
 
+VALID_PERMS = ("skip", "edits", "prompt")
+
+
+def perms_args(roe: ROE) -> List[str]:
+    """The permission flags an attended claude gets, from the ROE attended_perms dial: `skip`
+    runs --dangerously-skip-permissions (the default: the operator hit go so the job should do
+    the work, not queue up permission prompts), `edits` auto-approves file edits but still asks
+    for commands, `prompt` asks for everything. Unknown values fall back to skip. Pure."""
+    p = getattr(roe, "attended_perms", "skip") or "skip"
+    if p == "prompt":
+        return []
+    if p == "edits":
+        return ["--permission-mode", "acceptEdits"]
+    return ["--dangerously-skip-permissions"]
+
+
 def build_takeover_cmd(job: Job, roe: ROE, settings_path: str) -> List[str]:
     """Interactive claude that seizes the current window. The composed opening prompt is the
-    positional argument; the OS sandbox rides --settings (a temp file outside the repo). No
-    --dangerously-skip-permissions: the present operator approves, the sandbox locks network."""
+    positional argument; the OS sandbox rides --settings (a temp file outside the repo) and
+    still confines the default skip-permissions run (API-only network, no credentials)."""
     return ["claude", compose_attended_prompt(job, roe),
-            "--settings", settings_path] + model_arg(job)
+            "--settings", settings_path] + perms_args(roe) + model_arg(job)
 
 
 def build_session_cmd(job: Job, roe: ROE) -> List[str]:
-    """Interactive claude for a fresh, fully-free session (no OS sandbox, no skip-permissions):
-    the composed opening prompt as the positional arg, plus the per-task model. The 'run it in
-    front of me with full context' mode; the operator and the injected orders are the only leash."""
-    return ["claude", compose_attended_prompt(job, roe)] + model_arg(job)
+    """Interactive claude for a fresh session in a new window (no OS sandbox): the composed
+    opening prompt as the positional arg, the ROE permission dial, plus the per-task model. The
+    'run it in front of me with full context' mode; the operator, the injected orders, and the
+    attended_perms dial are the leash."""
+    return ["claude", compose_attended_prompt(job, roe)] + perms_args(roe) + model_arg(job)
 
 
 # ---------------------------------------------------------------------------

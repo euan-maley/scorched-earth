@@ -3,9 +3,9 @@ Engagement as a flat list of controls plus a reducer for arrow-key input, so the
 (curses) frontend and a later html frontend share one source of truth.
 
 Only WIRED rules are exposed - fields the advisor/runner actually consume:
-  run_mode (cycle), auto_run_min_defcon (cycle), max_jobs (cycle), attended_branch (toggle),
-  advise_on_roadblock (toggle), roadblock_idle_secs (cycle), allowed_types + unattended_types
-  (toggle rows). Freeform fields (test_cmd/setup_cmd/context_cmd/goals/exclude_paths/
+  run_mode (cycle), attended_perms (cycle), auto_run_min_defcon (cycle), max_jobs (cycle),
+  attended_branch (toggle), advise_on_roadblock (toggle), roadblock_idle_secs (cycle),
+  allowed_types + unattended_types (toggle rows). Freeform fields (test_cmd/setup_cmd/context_cmd/goals/exclude_paths/
   min_weekly_left) are left to hand-editing and preserved untouched on save. No dead toggles."""
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from .runner import SAFE_UNATTENDED
 # Canonical job types (freeform in data, but these are the known ones the scan/runner emit).
 KNOWN_TYPES = ["test", "docs", "perf", "audit", "refactor", "fix", "infra"]
 RUN_MODE_CYCLE = ["headless", "takeover", "session"]   # how a job runs (Phase 3)
+PERMS_CYCLE = ["skip", "edits", "prompt"]   # attended_perms: what an attended claude may do unasked
 DEFCON_CYCLE = [1, 2, 3, 4, 5]              # auto_run_min_defcon: DEFCON >= N auto-runs; below N asks
 MAX_JOBS_CYCLE = [None, 1, 2, 3, 5, 10]     # None = off (no run cap)
 IDLE_SECS_CYCLE = [300, 600, 900, 1800]     # roadblock idle timeout: 5 / 10 / 15 / 30 min
@@ -58,6 +59,10 @@ def controls(roe: ROE) -> list:
         Control("attended_branch", None,
                 "Attended branch", "toggle", "", roe.attended_branch,
                 "Attended jobs run on a fresh scorched/<id> branch (on) or your current branch (off)."),
+        Control("attended_perms", None,
+                "Attended permissions", "cycle", roe.attended_perms, None,
+                "skip = no permission prompts (hit go, it works); edits = auto-approve file "
+                "edits only; prompt = ask for everything."),
         Control("advise_on_roadblock", None,
                 "Auto-advise on roadblock", "toggle", "", roe.advise_on_roadblock,
                 "On a headless roadblock, try an advising agent to auto-solve before pausing."),
@@ -91,6 +96,8 @@ def apply(roe: ROE, index: int, direction: int) -> ROE:
     c = ctrls[index]
     if c.field == "run_mode":
         return replace(roe, run_mode=_cycle(RUN_MODE_CYCLE, roe.run_mode, direction or 1))
+    if c.field == "attended_perms":
+        return replace(roe, attended_perms=_cycle(PERMS_CYCLE, roe.attended_perms, direction or 1))
     if c.field == "auto_run_min_defcon":
         return replace(roe, auto_run_min_defcon=_cycle(DEFCON_CYCLE, roe.auto_run_min_defcon, direction or 1))
     if c.field == "max_jobs":
@@ -108,8 +115,9 @@ def apply(roe: ROE, index: int, direction: int) -> ROE:
 
 
 # Which ROE fields the editor manages (overwritten on save); everything else in roe.json is kept.
-MANAGED_FIELDS = ("run_mode", "auto_run_min_defcon", "max_jobs", "attended_branch",
-                  "advise_on_roadblock", "roadblock_idle_secs", "allowed_types", "unattended_types")
+MANAGED_FIELDS = ("run_mode", "attended_perms", "auto_run_min_defcon", "max_jobs",
+                  "attended_branch", "advise_on_roadblock", "roadblock_idle_secs",
+                  "allowed_types", "unattended_types")
 
 
 def to_raw(roe: ROE, base_raw: dict | None = None) -> dict:

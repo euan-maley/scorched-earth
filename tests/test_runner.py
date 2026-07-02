@@ -227,14 +227,26 @@ _tk = _em.build_takeover_cmd(_jb3, _roe_att, "/tmp/s.json")
 check("build_takeover_cmd is interactive claude with the prompt, --settings, and --model",
       _tk[0] == "claude" and "-p" not in _tk and _tk[_tk.index("--settings") + 1] == "/tmp/s.json"
       and _tk[_tk.index("--model") + 1] == "opus")
-check("build_takeover_cmd does not skip permissions (operator present)",
-      "--dangerously-skip-permissions" not in _tk)
+check("build_takeover_cmd default (attended_perms skip) runs without permission prompts",
+      "--dangerously-skip-permissions" in _tk)
+
+# the attended_perms dial: skip (default) / edits / prompt
+check("perms_args: skip is the default and unknown values fall back to it",
+      _em.perms_args(ROE()) == ["--dangerously-skip-permissions"]
+      and _em.perms_args(ROE(attended_perms="weird")) == ["--dangerously-skip-permissions"])
+check("perms_args: edits auto-approves file edits only",
+      _em.perms_args(ROE(attended_perms="edits")) == ["--permission-mode", "acceptEdits"])
+check("perms_args: prompt asks for everything (no flags)",
+      _em.perms_args(ROE(attended_perms="prompt")) == [])
+_tk_prompt = _em.build_takeover_cmd(_jb3, ROE(attended_perms="prompt"), "/tmp/s.json")
+check("attended_perms prompt strips the skip flag from the takeover command",
+      "--dangerously-skip-permissions" not in _tk_prompt)
 
 # --- Stage 4: session mode (new-window spawn) -------------------------------------
 _ss = _em.build_session_cmd(_jb3, _roe_att)
 check("build_session_cmd is interactive claude, no --settings (session is fully free), with model",
       _ss[0] == "claude" and "-p" not in _ss and "--settings" not in _ss
-      and "--dangerously-skip-permissions" not in _ss and _ss[_ss.index("--model") + 1] == "opus")
+      and "--dangerously-skip-permissions" in _ss and _ss[_ss.index("--model") + 1] == "opus")
 check("build_session_cmd still carries the composed prompt (context_cmd + task)",
       any("/kerd:switch in" in a for a in _ss) and any("Do the audit" in a for a in _ss))
 _scr = _em._session_script("/tmp/myrepo", _ss)
