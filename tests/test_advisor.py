@@ -201,6 +201,20 @@ check("scorch advise refuses cleanly with no snapshot",
 _p3 = subprocess.run([sys.executable, _scorch, "roe", _r], capture_output=True, text=True, env=_env)
 check("scorch roe prints JSON", _p3.returncode == 0 and "auto_run_min_defcon" in _p3.stdout)
 
+# `scorch coa resume` with no repo arg should default to the linked repo you're standing IN,
+# not just the first linked repo (bin/scorch _default_repo).
+_pref_env = dict(os.environ)
+_pref_env["HOME"] = tempfile.mkdtemp()
+_first_repo = tempfile.mkdtemp()
+_cwd_repo = tempfile.mkdtemp()
+subprocess.run([sys.executable, _scorch, "link", _first_repo], capture_output=True, text=True, env=_pref_env)
+subprocess.run([sys.executable, _scorch, "link", _cwd_repo], capture_output=True, text=True, env=_pref_env)
+_resume = subprocess.run([sys.executable, _scorch, "coa", "resume", "ghost-id"],
+                         capture_output=True, text=True, env=_pref_env, cwd=_cwd_repo)
+check("scorch coa resume prefers the linked CWD repo over the first-linked repo",
+      _resume.returncode == 0 and os.path.realpath(_cwd_repo) in _resume.stdout
+      and os.path.realpath(_first_repo) not in _resume.stdout)
+
 # the curses editor must survive a terminal shorter than its control list (it once
 # crashed in addnstr drawing the help line past the bottom row)
 if hasattr(os, "fork"):

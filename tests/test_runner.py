@@ -243,6 +243,32 @@ check("_session_script cd's to the repo and execs the session command",
       _body.startswith("#!/bin/bash") and "cd /tmp/myrepo" in _body and "exec claude" in _body)
 os.remove(_scr)
 
+# --- Stage 4b: _maybe_branch reuses an already-existing scorched/<id> branch ------
+_bt_repo = tempfile.mkdtemp()
+subprocess.run(["git", "init", "-q", _bt_repo], check=True)
+subprocess.run(["git", "-C", _bt_repo, "config", "user.email", "t@t.com"], check=True)
+subprocess.run(["git", "-C", _bt_repo, "config", "user.name", "t"], check=True)
+with open(os.path.join(_bt_repo, "f.txt"), "w") as _f:
+    _f.write("x")
+subprocess.run(["git", "-C", _bt_repo, "add", "."], check=True)
+subprocess.run(["git", "-C", _bt_repo, "commit", "-q", "-m", "init"], check=True)
+_start_branch = subprocess.run(["git", "-C", _bt_repo, "branch", "--show-current"],
+                               capture_output=True, text=True).stdout.strip()
+subprocess.run(["git", "-C", _bt_repo, "checkout", "-b", "scorched/x", "-q"], check=True)
+subprocess.run(["git", "-C", _bt_repo, "checkout", "-q", _start_branch], check=True)
+_bt_job = Job(id="x", repo=_bt_repo, title="X", type="test", defcon=3, value=1)
+_em._maybe_branch(_bt_repo, _bt_job, ROE(attended_branch=True))
+_bt_now = subprocess.run(["git", "-C", _bt_repo, "branch", "--show-current"],
+                         capture_output=True, text=True).stdout.strip()
+check("_maybe_branch checks out an already-existing scorched/<id> branch instead of silently "
+      "staying on the starting branch",
+      _bt_now == "scorched/x" and _bt_now != _start_branch)
+
+check("_as_quote doubles backslashes for safe AppleScript embedding",
+      _em._as_quote("a\\b") == "a\\\\b")
+check("_as_quote escapes double quotes for safe AppleScript embedding",
+      _em._as_quote('say "hi"') == 'say \\"hi\\"')
+
 # --- Stage 5: deliverables --------------------------------------------------------
 from scorched_earth.runner import render_deliverable_md, write_job_deliverable  # noqa: E402
 _oc_pass = JobOutcome(seq=1, id="dlv", title="Cover", type="test", defcon=3, outcome="pass",

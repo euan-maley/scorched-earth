@@ -346,6 +346,17 @@ def _coa_cli(raw):
     return 0
 
 
+def _default_repo():
+    """The repo to fall back to when none is named on the command line: prefer the CWD if it's
+    already a linked repo (or has a .scorched dir), else the first linked repo, else '.'."""
+    from scorched_earth import coa_io
+    cwd = os.getcwd()
+    if os.path.isdir(os.path.join(cwd, ".scorched")) or os.path.realpath(cwd) in coa_io.list_repos():
+        return cwd
+    repos = coa_io.list_repos()
+    return repos[0] if repos else "."
+
+
 def _coa_attended(args):
     """`scorch coa run <--here|--session> <job-id> [repo]` — run ONE job attended (Phase 3/4).
     --here takes over THIS window (execvp; does not return); --session spawns a new window.
@@ -358,9 +369,9 @@ def _coa_attended(args):
     if not job_id:
         print(f"Usage: scorch coa run {flag} <job-id> [repo]")
         return 0
-    positional = [a for a in args if not a.startswith("-")]
+    positional = [a for a in args if not a.startswith("-") and a != job_id]
     repo = next((a for a in positional if os.path.isdir(os.path.expanduser(a))), None) \
-        or (coa_io.list_repos()[0] if coa_io.list_repos() else ".")
+        or _default_repo()
     roe = coa_io.load_roe(repo)
     job = {j.id: j for j in coa_io.load_jobs(repo)}.get(job_id)
     if job is None:
@@ -386,7 +397,7 @@ def _coa_resume(args):
         return 0
     job_id = ids[0]
     repo = next((a for a in ids[1:] if os.path.isdir(os.path.expanduser(a))), None) \
-        or (coa_io.list_repos()[0] if coa_io.list_repos() else ".")
+        or _default_repo()
     job = {j.id: j for j in coa_io.load_jobs(repo)}.get(job_id)
     if job is None:
         print(f"No job '{job_id}' in {repo}.")

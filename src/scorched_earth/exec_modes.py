@@ -118,17 +118,37 @@ def write_temp_sandbox_settings() -> str:
 
 def _maybe_branch(root: str, job: Job, roe: ROE) -> None:
     """Attended jobs run on the current branch by default; opt into a fresh scorched/<id> branch
-    with ROE attended_branch."""
-    if roe.attended_branch:
-        subprocess.run(["git", "-C", root, "checkout", "-b", branch_name(job.id)],
-                       capture_output=True, text=True)
+    with ROE attended_branch. If that branch already exists, check it out instead of failing
+    silently onto whatever branch happened to be current; if that also fails, raise so the
+    caller can report it instead of quietly working on the wrong branch."""
+    if not roe.attended_branch:
+        return
+    name = branch_name(job.id)
+    created = subprocess.run(["git", "-C", root, "checkout", "-b", name],
+                             capture_output=True, text=True)
+    if created.returncode == 0:
+        return
+    exists = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", name],
+                            capture_output=True, text=True)
+    if exists.returncode == 0:
+        switched = subprocess.run(["git", "-C", root, "checkout", name],
+                                  capture_output=True, text=True)
+        if switched.returncode == 0:
+            return
+        raise RuntimeError(f"Could not switch to existing branch '{name}' in {root}: "
+                           f"{switched.stderr.strip()}")
+    raise RuntimeError(f"Could not create branch '{name}' in {root}: {created.stderr.strip()}")
 
 
 def run_takeover(repo: str, job: Job, roe: ROE) -> None:
     """Seize THIS terminal window: exec an interactive claude in the real repo. Replaces the
     current process, so it never returns on success. Verified by hand (execvp)."""
     root = os.path.realpath(os.path.expanduser(repo))
-    _maybe_branch(root, job, roe)
+    try:
+        _maybe_branch(root, job, roe)
+    except RuntimeError as exc:
+        print(str(exc))
+        return
     os.chdir(root)
     cmd = build_takeover_cmd(job, roe, write_temp_sandbox_settings())
     os.execvp(cmd[0], cmd)
@@ -154,11 +174,17 @@ def _osascript(src: str) -> bool:
         return False
 
 
+def _as_quote(s: str) -> str:
+    """Escape a string for safe embedding inside a double-quoted AppleScript string literal."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _spawn_terminal(script_path: str) -> bool:
     """Open a new terminal window/tab running script_path. macOS: iTerm first, then Terminal.app.
     Linux: best-effort common emulators. Returns True if one launched, else False (caller prints
     the manual command)."""
     if sys.platform == "darwin":
+        safe_path = _as_quote(script_path)
         iterm = ('tell application "iTerm"\n'
                  '  if (count of windows) = 0 then\n'
                  '    create window with default profile\n'
@@ -166,10 +192,10 @@ def _spawn_terminal(script_path: str) -> bool:
                  '    tell current window to create tab with default profile\n'
                  '  end if\n'
                  '  tell current session of current window to write text "bash {}"\n'
-                 'end tell').format(script_path)
+                 'end tell').format(safe_path)
         if _osascript(iterm):
             return True
-        return _osascript('tell application "Terminal" to do script "bash {}"'.format(script_path))
+        return _osascript('tell application "Terminal" to do script "bash {}"'.format(safe_path))
     for term in (["x-terminal-emulator", "-e"], ["gnome-terminal", "--"],
                  ["konsole", "-e"], ["xterm", "-e"]):
         if shutil.which(term[0]):
@@ -186,7 +212,11 @@ def run_session(repo: str, job: Job, roe: ROE) -> int:
     window stays put. Falls back to printing the exact command if no terminal can be opened.
     Verified by hand (spawns a window)."""
     root = os.path.realpath(os.path.expanduser(repo))
-    _maybe_branch(root, job, roe)
+    try:
+        _maybe_branch(root, job, roe)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
     cmd = build_session_cmd(job, roe)
     if not _spawn_terminal(_session_script(root, cmd)):
         print("Could not open a new terminal. Run this job yourself:")

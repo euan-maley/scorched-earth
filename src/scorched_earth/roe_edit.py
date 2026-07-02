@@ -47,7 +47,8 @@ def controls(roe: ROE) -> list:
     out = [
         Control("run_mode", None,
                 "Run mode", "cycle", roe.run_mode, None,
-                "headless = sandboxed worktree; takeover = this window, sandboxed; session = new free session."),
+                "headless = sandboxed worktree; takeover = this window, sandboxed; "
+                "session = new window, fully free (no OS sandbox; the operator is the only leash)."),
         Control("auto_run_min_defcon", None,
                 "Auto-run threshold", "cycle", f"DEFCON {roe.auto_run_min_defcon}", None,
                 "Jobs at DEFCON >= N auto-run; below N (more critical) needs approval."),
