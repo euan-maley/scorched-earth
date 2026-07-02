@@ -427,9 +427,15 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
             if not os.path.isdir(wt):
                 return "fail", None, "resume: no prior worktree at {} (nothing to continue).".format(wt)
         else:
+            # A leftover worktree/branch from a prior interrupted run would make `worktree add`
+            # fail ("branch already exists"); clear the stale pair so a re-run starts clean (the
+            # earlier attempt was already recorded or discarded). Same job id is never in flight
+            # twice, so this only ever removes a dead leftover.
+            if os.path.isdir(wt) or _git(root, "rev-parse", "--verify", "--quiet", br).returncode == 0:
+                _discard_worktree(root, job.id)
             # Worktree add is INSIDE the try AND its return code is checked: _git never raises
-            # (no check=True), so a failed add (dup branch, full disk) must not silently proceed
-            # against a missing worktree, nor abort the whole run.
+            # (no check=True), so a failed add (full disk, etc.) must not silently proceed against
+            # a missing worktree, nor abort the whole run.
             wadd = _git(root, "worktree", "add", "-b", br, wt, "HEAD")
             if wadd.returncode != 0:
                 return "fail", None, "worktree add failed: " + (wadd.stderr or "").strip()[:200]
