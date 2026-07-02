@@ -117,9 +117,13 @@ tries a recovery agent first; if that can't fix it, the job pauses, writes up wh
 how to fix it, pings you, and keeps the branch so you can pick it back up with
 `scorch coa resume`. One roadblock doesn't stop the rest of the run.
 
-`/roe` opens an interactive editor for the Rules of Engagement: arrow keys to move, left/right
-to change a setting, cycle the run mode or the auto-run DEFCON threshold, space to toggle,
-`s` to save.
+`/roe` opens the Rules of Engagement editor in your browser: a RULES OF ENGAGEMENT tab in the
+War Room shell with a GLOBAL scope (rules for every repo) plus per-repo tabs, each with a
+rules-source toggle (follow global, or go repo-specific; switching back and forth never loses
+your overrides). Every click saves instantly. Attended runs skip permission prompts by default
+(hit go and it works), dialable per repo to `edits` or `prompt`. The same editor lives in the
+terminal as `scorch roe` (arrow keys, space to toggle, `s` to save; `--global` edits the
+global rules).
 
 ## Install
 

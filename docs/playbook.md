@@ -65,6 +65,15 @@ plugin/skill; install flow asks the user how they want the light displayed.
 - **The plugin version string gates updates.** `claude plugin update` only pulls a fresh copy
   when the version number in `plugin.json` changes; merging to `main` alone does NOT reach existing
   testers. Bump `plugin.json` + `pyproject.toml` for any change you want people to receive.
+- **A running server caches Python code, not templates.** The serve handlers re-read the
+  `*_template.html` files per request, but modules are cached in-process: after editing any
+  `.py`, restart `scorch coa --serve` / `roe --web` before live-verifying (a 2026-07-02
+  park-feature drive silently exercised the old code until restart).
+- **Served tabs and browser cache:** every dynamic response sends `Cache-Control: no-store`
+  (since v2.7.4; a reopened shell iframe was observed painting a stale cached page before).
+- **The queue-file round-trip must carry every Job field.** `_job_to_dict` silently dropped
+  `model` once (and `depth` before that); a new Job field needs adding there plus a
+  round-trip check, or it vanishes on every queue-path run.
 - `rate_limits` and either bucket can be missing early in a session → segment must
   emit nothing, never error (the statusline must keep rendering).
 - `resets_at` is unix **seconds**, not ms.
@@ -182,7 +191,24 @@ which re-renders the latest run with an **OPEN** button on each deliverable/road
 token-guarded, path-validated `/artifact` route). The runner's worktree setup is idempotent: a
 re-run over a leftover `scorched/<id>` branch clears the stale pair instead of hard-failing.
 
-78 unit checks (`python3 tests/test_scorched.py`) + 75 advisor checks
-(`python3 tests/test_advisor.py`) + 119 runner checks (`python3 tests/test_runner.py`) +
-99 cockpit checks (`python3 tests/test_cockpit.py`) = **371 total**; all gated in CI via
+**v2.7.4 (the product-review release):** a full hands-on QA + code review of the 13-item
+backlog work fixed one critical (a usage limit during `resume` destroyed the kept roadblock
+work) and a wave of majors/minors: the CLI now dequeues finished jobs like the cockpit (a
+re-run never silently re-executes), kept work always survives re-dispatch and mid-job limits
+(auto-resume from the kept branch), a limit/kill during the advising attempt escalates instead
+of reading as roadblocked, setup/gate subprocesses are killable, per-task `model` survives the
+queue round-trip, the curses ROE editor survives short terminals, process-group kill, quoted
+copy-paste commands, binary diffs counted, honest `scannedAt` (a scan-meta sidecar, not
+jobs.json mtime), and `Cache-Control: no-store` on every served response. New features: the
+ROE **attended_perms** dial (`skip` default: attended runs get `--dangerously-skip-permissions`
+so a dispatched job works instead of queueing prompts; `edits` / `prompt` dial it back), and
+the **served ROE editor** (the RULES OF ENGAGEMENT shell tab, launched by `/roe` via
+`scorch roe --web`): a GLOBAL scope tab + per-repo rules-source toggles (follow global vs
+repo-specific, with stripped overrides parked and restored on round-trip), instant-save clicks
+through the token-guarded `POST /roe`, and a peace-of-mind SAVE button that verifies persisted
+state without writing. `scorch roe --global` opens the terminal editor on the global rules.
+
+78 unit checks (`python3 tests/test_scorched.py`) + 91 advisor checks
+(`python3 tests/test_advisor.py`) + 139 runner checks (`python3 tests/test_runner.py`) +
+116 cockpit checks (`python3 tests/test_cockpit.py`) = **424 total**; all gated in CI via
 `.github/workflows/test.yml`. Forecast and R both start provisional and sharpen with real usage.

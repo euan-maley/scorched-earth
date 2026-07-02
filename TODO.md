@@ -1,17 +1,18 @@
 # TODO
 
-## Current Session (2026-07-02, pt.2): product review of the 13-item backlog work
+## Current Session (2026-07-02, pt.2): product review + fix wave + ROE editor tab - DONE, released v2.7.4
 
-Goal: review the shipped features from the 2026-07-01 backlog list, hands-on QA first, then code review of the riskiest/flagged areas. Fix small as we go, report big for triage.
+Full hands-on QA of all 13 backlog items (every one exercised live: shell tabs, freshness with a real external-change pickup, approval tooltips, a real haiku run watched through the CRT, a real --session window spawn that did its job + deliverable, a stub-driven roadblock->resume cycle, HALTED from a crafted limit state, /artifact security probes), then a code review (fable inline on the runner core after two of three review agents died on the session usage limit; the surviving agent's findings all spot-verified), then the full fix wave and two user-requested features. Released as **v2.7.4** (main + tag + GitHub Release). Suites 371 -> **424** (78/91/139/116).
 
-1. [ ] Setup: confirm linked repos + staged jobs, boot `scorch coa --serve` (shell) in background, connect Playwright
-2. [ ] QA sweep A (browser): shell tabs #13, sitrep refresh #12, freshness #5/#6, approval tooltips #1, cratered legend #9, AFTER-ACTION tab + OPEN buttons
-3. [ ] QA sweep B (live run): one real haiku docs job; live progress #7, CRT monitor, deliverable -> AAR OPEN
-4. [ ] QA sweep C (terminal/engine): ROE editor #10 (pty), run modes #3/#4 (--session real spawn, takeover to the exec boundary), roadblock ladder #11 (stalling stub + resume), HALTED #2/#8 (crafted limit state, real limit unforceable)
-5. [ ] Code review: parallel agents on /artifact, exec_modes.py, runner roadblock ladder, coa_serve shell routes + QA-flagged areas
-6. [x] Findings: small fixes committed as found (docs in same commit); ranked findings list for triage
-7. [x] Fix wave: all review findings fixed (fable on the runner-semantics core, sonnet agents on the mechanical batches); attended_perms ROE dial added (user request)
-8. [x] ROE editor HTML frontend (#10 follow-up, user request): a 5th shell tab over the roe_edit model behind a guarded POST /roe; /roe command launches it via `scorch roe --web` (built + browser-verified; closes the last Phase 2 roadmap item)
+- [x] QA sweeps A/B/C: 13/13 features pass; 4 small fixes inline (model dropped by the queue round-trip = #4 silently broken on the queue path, ROE editor crash on short terminals, 0m idle wording, OBJECTIVES plural)
+- [x] Review findings ALL fixed: critical (limit-during-resume destroyed kept work), majors (CLI dequeue semantics now match the cockpit, stale-clear auto-resumes kept branches, advise-path limit/kill escalation, wrong-repo resolution, silent branch failure, killable gate/setup), minors (group kill, quoted commands, binary diffs, CRT marker noise, cwd-default resume, AppleScript escaping, scan-meta scannedAt, session-mode help)
+- [x] Cost split per user: fable only on the interlocking runner semantics + features; 3 sonnet agents on the mechanical batches, each reviewed + committed by me
+- [x] feat: **attended_perms** ROE dial (skip default = --dangerously-skip-permissions on attended runs; edits | prompt)
+- [x] feat: **served ROE editor** (RULES OF ENGAGEMENT shell tab; /roe launches it via `scorch roe --web`) - closes the last Phase 2 item (#10 follow-up)
+- [x] feat: **global vs repo-specific rules** (GLOBAL scope tab + per-repo rules-source toggle; presence-based merge; stripped overrides PARKED and restored on round-trip; peace-of-mind SAVE button; Cache-Control: no-store on all served responses)
+- [x] Released v2.7.4, pushed public, GitHub Release
+
+**Open / next:** restart Claude windows to pick up v2.7.4 (the hook re-copies the bare /roe alias from the new plugin version). Possible follow-ups: park-key surfacing in the terminal editor; square/story cuts of the dispatch image (carried).
 
 ---
 
