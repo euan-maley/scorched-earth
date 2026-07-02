@@ -454,9 +454,10 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
             _discard_worktree(root, job.id)
             return "killed", None, "killed by operator, work discarded."
         if status == "idle":                            # stuck: try recovery, else keep for resume
-            mins = int((roe.roadblock_idle_secs or 0) / 60)
+            secs = int(roe.roadblock_idle_secs or 0)
+            dur = "{}m".format(secs // 60) if secs >= 60 else "{}s".format(secs)
             return _roadblock_or_advise(wt, job, roe, base_sha,
-                                        "no output for {}m (stuck)".format(mins))
+                                        "no output for {} (stuck)".format(dur))
         if detect_rate_limit(out):
             _discard_worktree(root, job.id)             # nothing landed; job returns to the queue
             return "limit", None, "stopped: usage limit reached, re-queued, resume after reset."
