@@ -336,6 +336,29 @@ def _coa_cli(raw):
     return 0
 
 
+def _coa_attended(args):
+    """`scorch coa run --here <job-id> [repo]` — take over THIS window for one job (Phase 3).
+    Resolves the repo + job, then execs an interactive claude in the real repo (takeover). The
+    exec replaces this process, so on success nothing after it runs."""
+    from scorched_earth import coa_io, exec_modes
+    i = args.index("--here")
+    job_id = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else None
+    if not job_id:
+        print("Usage: scorch coa run --here <job-id> [repo]")
+        return 0
+    positional = [a for a in args if not a.startswith("-")]
+    repo = next((a for a in positional if os.path.isdir(os.path.expanduser(a))), None) \
+        or (coa_io.list_repos()[0] if coa_io.list_repos() else ".")
+    roe = coa_io.load_roe(repo)
+    job = {j.id: j for j in coa_io.load_jobs(repo)}.get(job_id)
+    if job is None:
+        print(f"No job '{job_id}' in {repo}. Scan first with /coa.")
+        return 0
+    print(f"Taking over this window for job '{job_id}' in {repo} (Ctrl-C to abort)...")
+    exec_modes.run_takeover(repo, job, roe)     # execvp: does not return on success
+    return 0
+
+
 def _coa_run_cli(rest):
     """`scorch coa <queue|run|review> …` — the Phase 2 queue-runner surface."""
     import time as _time
@@ -376,6 +399,10 @@ def _coa_run_cli(rest):
         return 0
 
     if sub == "run":
+        # --here <job-id>: take over THIS window for one job (attended, sandboxed). --session
+        # <job-id> (Stage 4) spawns a new one. Both are single-job; plain `run` drains headless.
+        if "--here" in args:
+            return _coa_attended(args)
         approve = "--approve" in args
         repos = [a for a in args if not a.startswith("-")] or coa_io.list_repos() or ["."]
         state = st.load_state()

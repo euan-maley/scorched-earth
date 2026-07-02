@@ -192,6 +192,42 @@ check("build_gate_cmd prefers per-job verify",
 check("build_gate_cmd falls back to ROE test_cmd",
       build_gate_cmd(_jb, _rfd({"test_cmd": "pytest -q"})) == "pytest -q")
 check("build_gate_cmd is None when neither set", build_gate_cmd(_jb, ROE()) is None)
+
+# --- Stage 3: run-mode cascade + attended prompt/command builders -----------------
+from scorched_earth import exec_modes as _em  # noqa: E402
+
+check("resolve_mode: a valid per-task override wins",
+      _em.resolve_mode(ROE(run_mode="headless"), "session") == "session")
+check("resolve_mode: falls back to ROE run_mode when no override",
+      _em.resolve_mode(ROE(run_mode="takeover")) == "takeover")
+check("resolve_mode: an invalid override is ignored, ROE used",
+      _em.resolve_mode(ROE(run_mode="session"), "bogus") == "session")
+check("resolve_mode: an unknown run_mode falls back to headless",
+      _em.resolve_mode(ROE(run_mode="weird")) == "headless")
+
+_roe_att = ROE(goals=["ship v2"], exclude_paths=["infra/"], allowed_types=["test"],
+               context_cmd="/kerd:switch in")
+_orders = _em.operating_orders(_roe_att)
+check("operating_orders carries goal, exclusions, allowed types, and no-push",
+      "ship v2" in _orders and "infra/" in _orders and "test" in _orders
+      and "do not push" in _orders.lower())
+
+_jb3 = Job(id="j3", repo=_repo, title="T", type="test", defcon=1, value=9,
+           launch="Do the audit", model="opus")
+_prompt = _em.compose_attended_prompt(_jb3, _roe_att)
+check("compose_attended_prompt runs the context_cmd before the task",
+      "/kerd:switch in" in _prompt and _prompt.index("switch in") < _prompt.index("Do the audit"))
+check("compose_attended_prompt injects orders, model hint, and the task",
+      "ship v2" in _prompt and "opus" in _prompt and "Do the audit" in _prompt)
+check("compose_attended_prompt omits the context line when context_cmd unset",
+      "gather context" not in _em.compose_attended_prompt(_jb3, ROE(goals=["g"])))
+
+_tk = _em.build_takeover_cmd(_jb3, _roe_att, "/tmp/s.json")
+check("build_takeover_cmd is interactive claude with the prompt, --settings, and --model",
+      _tk[0] == "claude" and "-p" not in _tk and _tk[_tk.index("--settings") + 1] == "/tmp/s.json"
+      and _tk[_tk.index("--model") + 1] == "opus")
+check("build_takeover_cmd does not skip permissions (operator present)",
+      "--dangerously-skip-permissions" not in _tk)
 check("merge_cmd / discard_cmd reference the branch",
       "scorched/cov" in merge_cmd(_repo, "cov") and "scorched/cov" in discard_cmd(_repo, "cov"))
 

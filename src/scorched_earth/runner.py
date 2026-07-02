@@ -118,8 +118,8 @@ def discard_cmd(repo: str, job_id: str) -> str:
 # Sandbox settings
 # ---------------------------------------------------------------------------
 
-def write_sandbox_settings(worktree: str) -> None:
-    """Write <worktree>/.claude/settings.json with Claude Code sandbox config.
+def sandbox_settings_dict() -> dict:
+    """The Claude Code OS-sandbox config, as a settings dict.
 
     Network is restricted to api.anthropic.com only — npm/pypi are NOT allowlisted
     because the runner pre-warms deps via setup_cmd (trusted, network-enabled) BEFORE
@@ -132,9 +132,7 @@ def write_sandbox_settings(worktree: str) -> None:
     - failIfUnavailable: true makes a missing sandbox a hard error rather than silently
       running unconfined — correct for an autonomous executor.
     """
-    claude_dir = os.path.join(worktree, ".claude")
-    os.makedirs(claude_dir, exist_ok=True)
-    settings = {
+    return {
         "sandbox": {
             "enabled": True,
             "failIfUnavailable": True,
@@ -150,8 +148,15 @@ def write_sandbox_settings(worktree: str) -> None:
             },
         }
     }
+
+
+def write_sandbox_settings(worktree: str) -> None:
+    """Write <worktree>/.claude/settings.json with the OS-sandbox config (headless mode).
+    Attended takeover delivers the same dict via a CLI --settings file instead (see exec_modes)."""
+    claude_dir = os.path.join(worktree, ".claude")
+    os.makedirs(claude_dir, exist_ok=True)
     with open(os.path.join(claude_dir, "settings.json"), "w") as fh:
-        json.dump(settings, fh, indent=2)
+        json.dump(sandbox_settings_dict(), fh, indent=2)
 
 
 # ---------------------------------------------------------------------------
