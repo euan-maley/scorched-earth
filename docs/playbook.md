@@ -152,7 +152,9 @@ cockpit SSE opens only when you enter the War Room). `scorch coa --serve` and
 `scorch --sitrep` file still writes standalone. Inside the shell so far: the cockpit shows a
 **HALTED** banner + resume hint on a usage-limit halt (vs a clean IDLE), the COA tab shows a
 **SCANNED Nh ago** freshness label with an honest Refresh (re-reads jobs.json, never re-scans),
-and the War Room has a manual **REFRESH** that pulls an external scan. `/roe` now opens an
+the War Room has a manual **REFRESH** that pulls an external scan, and the SITREP tab has a
+**Refresh** that reloads the server-rendered field (served mode only; the offline file omits it).
+`/roe` now opens an
 **interactive ROE editor** (`roe_edit.py` model + a curses arrow-key list, `hjkl` too;
 `--json`/non-tty prints JSON) covering the wired rules. 76 unit checks
 (`python3 tests/test_scorched.py`) + 63 advisor checks (`python3 tests/test_advisor.py`) +

@@ -109,7 +109,7 @@ def _modes(history: list, state: dict) -> dict:
 
 # ---- page assembly ------------------------------------------------------------
 
-def render_html(state: dict | None, history: list, generated_at: int) -> str:
+def render_html(state: dict | None, history: list, generated_at: int, served: bool = False) -> str:
     snap = (state or {}).get("snapshot", {})
     active_h, active_prov = habits.active_hours(history)
     st = _stats(state, history, active_fraction=active_h / 24.0)
@@ -201,8 +201,13 @@ def render_html(state: dict | None, history: list, generated_at: int) -> str:
     <div class="meta"><span>GENERATED {stamp}</span><span>// FIELD INTEL &middot; {weeks} WEEK{'S' if weeks != 1 else ''} OF DATA &middot; ~{active_h:.0f}H ACTIVE/DAY{' (EST)' if active_prov else ''}</span></div>
     """
 
+    # Served mode gets a Refresh button: it reloads /sitrep, which re-renders off the latest
+    # snapshot server-side. The offline file has no live source, so it ships without the button.
+    refresh = ('<button class="refreshbtn" onclick="location.reload()" '
+               'title="Re-read the latest budget snapshot">&#8635; REFRESH</button>') if served else ""
+
     return (_SHELL.replace("__DECK__", deck).replace("__DATA__", json.dumps(data))
-            .replace("__STAMP__", stamp)
+            .replace("__STAMP__", stamp).replace("__REFRESH__", refresh)
             .replace("__CYCLE_START__", cyc_start).replace("__CYCLE_END__", cyc_end)
             .replace("__BURN__", "burn" if burn else ""))
 
@@ -254,6 +259,8 @@ body{font-family:'VT323',monospace;padding:22px 16px}
 .hdr .su{font-size:18px;color:#86abab;letter-spacing:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hdr .pk{font-size:20px;color:#8fb8b8;letter-spacing:1px;white-space:nowrap;flex:none}
 .hdr .pk b{color:#e2a04d;font-weight:400} .hdr .pk i{color:#86abab;font-style:normal}
+.refreshbtn{flex:none;font-family:inherit;font-size:12px;letter-spacing:1px;color:#9ec1c1;background:#0c1217;border:1px solid #2b3d44;padding:6px 12px;cursor:pointer}
+.refreshbtn:hover{background:#15212a;color:#eef3f3}
 
 .fieldwrap{padding:16px;background:linear-gradient(#3a2817,#2c1e11)}
 .toggle{display:flex;margin-bottom:12px}
@@ -328,7 +335,7 @@ body.burn .panel{box-shadow:0 0 0 1px #ff6a1f,0 0 40px rgba(255,90,20,.5),0 14px
 
 <div class="hdr"><div class="l"><span class="hudDot d"></span><span class="ti">THE FIELD</span>
 <span class="su">// WEEKLY BURN · SECTOR 07</span></div>
-<div class="pk">PEAK <b id="peakV">—</b> <i id="peakD"></i></div></div>
+<div class="pk">PEAK <b id="peakV">—</b> <i id="peakD"></i></div>__REFRESH__</div>
 
 <div class="fieldwrap">
   <div class="toggle" id="toggle"></div>

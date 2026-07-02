@@ -37,7 +37,7 @@ def render_sitrep() -> bytes:
     if isinstance(state.get("recommendation"), dict):
         state["recommendation"]["r"] = r_fresh
         state["recommendation"]["r_provisional"] = prov_fresh
-    return report.render_html(state, st.load_history(), int(time.time())).encode("utf-8")
+    return report.render_html(state, st.load_history(), int(time.time()), served=True).encode("utf-8")
 
 
 def _placeholder(msg: str) -> bytes:

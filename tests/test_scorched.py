@@ -287,7 +287,12 @@ good_state = {
 }
 html = rpt.render_html(good_state, [], NOW)
 check("report substitutes all placeholders", "__DECK__" not in html and "__DATA__" not in html
-      and "__STAMP__" not in html and "__BURN__" not in html)
+      and "__STAMP__" not in html and "__BURN__" not in html and "__REFRESH__" not in html)
+# Phase 2 (#12): served sitrep gets a Refresh button (reloads /sitrep); the offline file does not.
+_served = rpt.render_html(good_state, [], NOW, served=True)
+check("served sitrep shows a Refresh button that reloads",
+      "refreshbtn" in _served and "location.reload()" in _served and "__REFRESH__" not in _served)
+check("offline sitrep (default) ships no Refresh button", "location.reload()" not in html)
 check("report is non-trivial HTML", html.lstrip().startswith("<") and len(html) > 1000)
 # None state (never any reading) must not throw.
 check("report handles None state", isinstance(rpt.render_html(None, [], NOW), str))
