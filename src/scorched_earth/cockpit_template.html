@@ -68,6 +68,7 @@
        font-size:17px;padding:11px 26px 10px;background:#0c1217;border:1px solid var(--mod-bd);color:var(--secondary);
        cursor:pointer;transition:background .12s,color .12s,border-color .12s,box-shadow .12s}
   .btn:hover{background:#15212a;color:var(--strong)}
+  .btn.spin{opacity:.55}
   .btn .gl{font-size:14px}
   .btn--run.is-primary{border-color:var(--secured);color:#0c1206;background:var(--secured)}
   .btn--run.is-primary:hover{background:var(--secured2)}
@@ -203,6 +204,7 @@
         <span class="liveflag" id="liveFlag"></span>
         <button class="btn btn--run" id="btnRun"><span class="gl">&#9654;</span> RUN</button>
         <button class="btn btn--stop" id="btnStop"><span class="gl">&#9632;</span> STOP</button>
+        <button class="btn" id="btnRefresh" title="Re-read the board from disk (picks up a scan run elsewhere). SSE already pushes live run updates.">&#8635; REFRESH</button>
       </div>
     </div>
     <h1 class="hdr__title">WAR ROOM</h1>
@@ -517,6 +519,19 @@ const STATE = __COCKPIT_JSON__;
   document.getElementById("btnStop").addEventListener("click", ()=>{
     state.busy = false; renderHeader(); renderStatus(activeRepoObj());  // optimistic
     post("/stop", {});
+  });
+  // Manual board refresh: SSE only pushes on engine events, so an external jobs.json change
+  // (a fresh /coa scan) is invisible until we re-read /state. This does exactly that; it never
+  // re-scans the repo. Preserves the operator's active repo tab across the patch.
+  document.getElementById("btnRefresh").addEventListener("click", ()=>{
+    const btn = document.getElementById("btnRefresh"); btn.classList.add("spin");
+    fetch("/state?t=" + encodeURIComponent(TOKEN), {cache:"no-store"})
+      .then(r=>r.json())
+      .then(s=>{ const keep = activeRepo; const next = normalize(s); state = next;
+                 activeRepo = next.repos.some(r=>r.repo===keep) ? keep : (next.repos[0]?next.repos[0].repo:null);
+                 render(); })
+      .catch(()=>{})
+      .then(()=>{ btn.classList.remove("spin"); });
   });
 
   root.addEventListener("click", e=>{

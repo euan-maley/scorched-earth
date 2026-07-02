@@ -552,6 +552,11 @@ check("cockpit HALTED state carries a resume hint (re-queued; press RUN)",
 check("cockpit HALTED is distinct from an operator pause (operator does not force HALTED)",
       'state.stop_reason === "limit"' in _hh)  # operator/None fall through to IDLE
 
+# --- Phase 2: manual board REFRESH pulls an external jobs.json change (#6) ----------
+# SSE only pushes on engine events, so a fresh /coa scan is invisible until /state is re-read.
+check("cockpit wires a manual REFRESH that re-reads /state (no re-scan)",
+      "btnRefresh" in _hh and '/state?t="' in _hh and "re-scan" in _hh)
+
 # --- Phase 2: the unified shell (one server, big-tab frame over all three surfaces) ---
 from scorched_earth import shell as _shell  # noqa: E402
 # In shell mode make_server serves the frame at / and folds in the two read-only tabs

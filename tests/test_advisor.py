@@ -198,6 +198,15 @@ check("render_html multi-repo arms the refresh token",
       '"TK9"' in _multi and "__COA_TOKEN__" not in _multi)
 check("render_html single-repo still works (backward compat)", '"repos"' in render_html(_coaA, "2026-06-25"))
 
+# --- Phase 2: freshness UI + honest Refresh (#5/#6) --------------------------------
+# The COA template paints the scanned-ago label client-side from each repo's scannedAt; these
+# confirm the template ships the freshness readout and an honest (does-not-re-scan) Refresh.
+_fresh_html = render_html(None, "2026-06-25", repos=[("/x/alpha", _coaA)], verdict="green", token="TK9")
+check("COA template wires a scanned-ago freshness label off scannedAt",
+      "scannedAgo" in _fresh_html and "SCANNED" in _fresh_html)
+check("COA Refresh is honest that it does not re-scan the repo",
+      "Does NOT re-scan" in _fresh_html and "run /coa to re-scan" in _fresh_html)
+
 # --- coa_view.py (served, read-only) ---------------------------------------------
 from scorched_earth import coa_view as _cv  # noqa: E402
 import threading as _thr, urllib.request as _url, urllib.error as _uerr  # noqa: E402
