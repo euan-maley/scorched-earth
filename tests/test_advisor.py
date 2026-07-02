@@ -165,6 +165,27 @@ check("link_repo gitignores .scorched/ without clobbering existing entries",
 _io.link_repo(_repo2)  # re-link must not duplicate
 check("gitignore .scorched/ entry is idempotent",
       open(os.path.join(_repo2, ".gitignore")).read().count(".scorched") == 1)
+
+# jobs_scanned_at: the sidecar (scan-meta.json) is the real scan stamp, not jobs.json's mtime -
+# a copy/restore/touch of jobs.json alone must not fake "scanned just now"
+_repo3 = tempfile.mkdtemp()
+os.makedirs(os.path.join(_repo3, ".scorched"), exist_ok=True)
+with open(os.path.join(_repo3, ".scorched", "jobs.json"), "w") as f:
+    json.dump([{"id": "j1", "defcon": 2, "value": 3}], f)
+os.utime(os.path.join(_repo3, ".scorched", "jobs.json"), (1000, 1000))  # fake an old mtime
+_io.write_scan_meta(_repo3, ts=2000.0)
+check("jobs_scanned_at prefers the sidecar's scannedAt over jobs.json's mtime",
+      _io.jobs_scanned_at(_repo3) == 2000.0)
+
+with open(_io.scan_meta_path(_repo3), "w") as f:
+    f.write("{not json")
+check("jobs_scanned_at falls back to jobs.json mtime when the sidecar is corrupt",
+      _io.jobs_scanned_at(_repo3) == 1000.0)
+
+_repo4 = tempfile.mkdtemp()
+check("jobs_scanned_at returns None when jobs.json was never written",
+      _io.jobs_scanned_at(_repo4) is None)
+
 os.environ.clear(); os.environ.update(_env_keys)
 
 # --- bin/scorch verbs (subprocess, temp HOME) ------------------------------------

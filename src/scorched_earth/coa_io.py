@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import List, Optional, Tuple
 
 from . import state as st
@@ -95,11 +96,39 @@ def load_jobs(repo_path: str) -> List[Job]:
     return parse_jobs(data, repo=os.path.realpath(os.path.expanduser(repo_path)))
 
 
+def scan_meta_path(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "scan-meta.json")
+
+
+def write_scan_meta(repo_path: str, ts: Optional[float] = None) -> str:
+    """Stamp the real scan time in a sidecar next to jobs.json, so freshness can't be faked by
+    a copy/restore/touch of jobs.json alone. Creates .scorched/ if absent."""
+    os.makedirs(_repo_dir(repo_path), exist_ok=True)
+    p = scan_meta_path(repo_path)
+    tmp = f"{p}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump({"scannedAt": ts if ts is not None else time.time()}, f)
+    os.replace(tmp, p)
+    return p
+
+
 def jobs_scanned_at(repo_path: str):
-    """Epoch seconds of the repo's jobs.json (its last scan), or None if never scanned.
-    The scan writes jobs.json, so the file mtime IS the scan time, no schema change needed."""
+    """Epoch seconds of the repo's last scan, or None if never scanned. Prefers the
+    scan-meta.json sidecar (the real scan timestamp, written by write_scan_meta); falls back to
+    jobs.json's mtime (today's behavior) if the sidecar is absent, unreadable, or malformed - a
+    copy/restore/touch of jobs.json alone can no longer fake "scanned just now" once the sidecar
+    exists. jobs.json missing still means "never scanned" -> None, sidecar or not."""
+    jobs_path = os.path.join(_repo_dir(repo_path), "jobs.json")
+    if not os.path.exists(jobs_path):
+        return None
     try:
-        return os.path.getmtime(os.path.join(_repo_dir(repo_path), "jobs.json"))
+        with open(scan_meta_path(repo_path)) as f:
+            meta = json.load(f)
+        return float(meta["scannedAt"])
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        pass
+    try:
+        return os.path.getmtime(jobs_path)
     except OSError:
         return None
 

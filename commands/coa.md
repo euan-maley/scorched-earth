@@ -65,7 +65,11 @@ IMPACT (DEFCON), never by effort or how long a job would take.
         (refactors, dep upgrades, migrations, perf, bug burndown) changes code and wants tests +
         review - flag it as review-required in the `rationale`.
      7. Emit each job per the schema in the rating block below and write the JSON array to
-        `<repo>/.scorched/jobs.json`.
+        `<repo>/.scorched/jobs.json`. Then stamp the real scan time in the sidecar the freshness
+        readout reads (a copy/restore/touch of `jobs.json` alone must not fake "scanned just now"):
+        ```bash
+        python3 -c "import json,time;json.dump({'scannedAt': time.time()}, open('<repo>/.scorched/scan-meta.json', 'w'))"
+        ```
 
    **DEFCON rating (the core of the scan):**
 
