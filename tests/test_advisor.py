@@ -206,6 +206,9 @@ check("COA template wires a scanned-ago freshness label off scannedAt",
       "scannedAgo" in _fresh_html and "SCANNED" in _fresh_html)
 check("COA Refresh is honest that it does not re-scan the repo",
       "Does NOT re-scan" in _fresh_html and "run /coa to re-scan" in _fresh_html)
+# Phase 2 (#1): the approval marker explains WHY (below the auto-run threshold) and HOW.
+check("COA approval marker explains why (auto-run threshold) and how (--approve / War Room)",
+      "auto-run threshold" in _fresh_html and "scorch coa run --approve" in _fresh_html)
 
 # --- Phase 2: interactive ROE editor model (#10) ----------------------------------
 from scorched_earth import roe_edit as _re

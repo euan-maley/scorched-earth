@@ -259,8 +259,11 @@ var TOKEN = __COA_TOKEN__;
     return `<span class="defcon defcon-${d}">DEFCON ${d}</span>`;
   }
 
-  function approvalBadge(){
-    return `<span class="approval">APPROVAL REQUIRED</span>`;
+  function approvalBadge(job){
+    const d = Math.min(5, Math.max(1, (job.defcon|0)||3));
+    const why = `DEFCON ${d} is below the auto-run threshold, so it is held for approval. `
+              + `Approve with: scorch coa run --approve  (or arm it in the War Room and press RUN).`;
+    return `<span class="approval" title="${esc(why)}">APPROVAL REQUIRED</span>`;
   }
 
   function jobCard(job, idx){
@@ -274,7 +277,7 @@ var TOKEN = __COA_TOKEN__;
           ${defconBadge(job.defcon)}
           <span class="job__title">${esc(job.title)}</span>
           <span class="type">${esc(job.type)}</span>
-          ${job.approval_required ? approvalBadge() : ""}
+          ${job.approval_required ? approvalBadge(job) : ""}
         </div>
         <div class="job__rationale">${esc(job.rationale)}</div>
         <div class="job__cmd" title="Run/execute command. Copy this into a Claude session to launch the job"><span class="px">&#9656;</span><span class="job__cmdlbl">RUN CMD</span><span class="job__cmdtext">${esc(job.command)}</span><button class="job__copy" type="button" data-cmd="${esc(job.command)}">COPY</button></div>

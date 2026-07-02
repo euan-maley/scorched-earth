@@ -323,7 +323,7 @@ const STATE = __COCKPIT_JSON__;
     if(kind==="proposed"){
       const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
       foot.appendChild(html('<span class="defcon defcon-'+d+'">DEFCON '+d+'</span>'));
-      if(job.approval_required) foot.appendChild(html('<span class="capproval">APPROVAL REQUIRED</span>'));
+      if(job.approval_required) foot.appendChild(html('<span class="capproval" title="DEFCON '+d+' is below the auto-run threshold, so it is held for approval. Press RUN as the operator to approve (the cockpit auto-approves operator-driven runs), or run: scorch coa run --approve">APPROVAL REQUIRED</span>'));
       if(job.value!=null) foot.appendChild(html('<span class="cval" style="color:'+VALCOL(+job.value)+'">VAL '+esc(job.value)+'</span>'));
     } else if(kind==="queued"){
       const isNext = idx===0;
@@ -332,7 +332,7 @@ const STATE = __COCKPIT_JSON__;
       if(isNext) foot.appendChild(html('<span class="cnext">NEXT UP</span>'));
       const d = Math.min(5,Math.max(1,(job.defcon|0)||3));
       foot.appendChild(html('<span class="defcon defcon-'+d+'"'+(isNext?'':' style="margin-left:auto"')+'>DEFCON '+d+'</span>'));
-      if(job.approval_required) foot.appendChild(html('<span class="capproval">APPROVAL REQUIRED</span>'));
+      if(job.approval_required) foot.appendChild(html('<span class="capproval" title="DEFCON '+d+' is below the auto-run threshold, so it is held for approval. Press RUN as the operator to approve (the cockpit auto-approves operator-driven runs), or run: scorch coa run --approve">APPROVAL REQUIRED</span>'));
     } else if(kind==="running"){
       foot.appendChild(html('<span class="working"><span class="dot ember" style="background:#ff6a1f"></span>WORKING\u2026</span>'));
       const d = Math.min(5,Math.max(1,(job.defcon|0)||3));

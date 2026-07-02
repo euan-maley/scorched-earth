@@ -556,6 +556,10 @@ check("cockpit HALTED is distinct from an operator pause (operator does not forc
 check("cockpit CRATERED badge explains the fail state (work discarded)",
       "CRATERED" in _hh and "work was discarded" in _hh)
 
+# --- Phase 2: approval marker explains why + how (#1) ------------------------------
+check("cockpit approval marker explains why (auto-run threshold) and how (RUN / --approve)",
+      "auto-run threshold" in _hh and "scorch coa run --approve" in _hh and "APPROVAL REQUIRED" in _hh)
+
 # --- Phase 2: manual board REFRESH pulls an external jobs.json change (#6) ----------
 # SSE only pushes on engine events, so a fresh /coa scan is invisible until /state is re-read.
 check("cockpit wires a manual REFRESH that re-reads /state (no re-scan)",
