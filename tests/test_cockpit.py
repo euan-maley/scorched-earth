@@ -635,6 +635,30 @@ _frame = _shell.render_shell("frame-tok").decode("utf-8")
 check("render_shell substitutes the token and embeds it",
       "__SHELL_TOKEN__" not in _frame and "frame-tok" in _frame
       and _frame.lstrip().lower().startswith("<!doctype html"))
+check("shell frame carries the AFTER-ACTION tab wired to /aar",
+      "AFTER-ACTION" in _frame and '"/aar"' in _frame)
+
+# --- AFTER-ACTION tab: /aar re-render + /artifact serving (v2.7.3) -----------------
+from scorched_earth.coa_serve import serve_artifact, aar_page  # noqa: E402
+from scorched_earth.runner import RunResult as _RR3, JobOutcome as _JO3  # noqa: E402
+from dataclasses import asdict as _ad3  # noqa: E402
+_arepo = _mk_repo([])
+_io.write_deliverable(_arepo, "job1", "# Deliverable: test\n\ngate passed.\n")
+_c_ok, _b_ok, _ct = serve_artifact([_arepo], {"repo": [_arepo], "id": ["job1"], "kind": ["deliverable"]})
+check("serve_artifact returns the deliverable md (200)", _c_ok == 200 and b"Deliverable" in _b_ok)
+check("serve_artifact rejects a traversal id",
+      serve_artifact([_arepo], {"repo": [_arepo], "id": ["../x"], "kind": ["deliverable"]})[0] == 400)
+check("serve_artifact rejects an unknown repo",
+      serve_artifact(["/tmp/notlinked"], {"repo": ["/tmp/other"], "id": ["job1"], "kind": ["deliverable"]})[0] == 400)
+check("serve_artifact 404s a missing artifact",
+      serve_artifact([_arepo], {"repo": [_arepo], "id": ["nope"], "kind": ["deliverable"]})[0] == 404)
+check("aar_page shows a placeholder before any run", b"No run yet" in aar_page([_arepo], "TK"))
+_io.write_run_record(_arepo, _ad3(_RR3(generated_at="2026-07-01", state="done", repo=_arepo,
+    verdict="max", note="1 secured.", jobs=[_JO3(seq=1, id="job1", title="J1", type="docs", defcon=4,
+    outcome="pass", deliverable=".scorched/deliverables/job1.md")])), "2026-07-01")
+_ap = aar_page([_arepo], "TK")
+check("aar_page renders the latest run with an armed OPEN link",
+      b"J1" in _ap and b"/artifact?t=TK" in _ap)
 
 print(f"\n{passed} checks passed.")
 if failures:

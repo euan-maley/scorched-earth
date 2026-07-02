@@ -49,12 +49,13 @@
     <button class="tab" role="tab" data-tab="sitrep">SITREP</button>
     <button class="tab" role="tab" data-tab="coa">COURSE OF ACTION</button>
     <button class="tab" role="tab" data-tab="war-room">WAR ROOM</button>
+    <button class="tab" role="tab" data-tab="aar">AFTER-ACTION</button>
   </nav>
   <div class="panes" id="panes"></div>
 <script>
   const TOKEN = __SHELL_TOKEN__;
-  const TABS = ["sitrep","coa","war-room"];
-  const SRC = {sitrep:"/sitrep", coa:"/coa", "war-room":"/war-room"};
+  const TABS = ["sitrep","coa","war-room","aar"];
+  const SRC = {sitrep:"/sitrep", coa:"/coa", "war-room":"/war-room", aar:"/aar"};
   const panes = document.getElementById("panes");
   const frames = {};                       // tab -> iframe, created on first visit
 
@@ -66,6 +67,8 @@
       f.title = tab;
       panes.appendChild(f);
       frames[tab] = f;
+    } else if(tab === "aar"){                // the debrief is static, so re-pull it on each visit
+      frames[tab].src = SRC[tab] + "?t=" + encodeURIComponent(TOKEN);
     }
     for(const t of TABS){ if(frames[t]) frames[t].classList.toggle("on", t === tab); }
     document.querySelectorAll(".tab").forEach(b =>

@@ -145,6 +145,7 @@
         color:var(--head);font-family:var(--font);font-size:12px;font-weight:800;letter-spacing:1.5px;
         padding:0 13px;cursor:pointer;transition:background .12s,color .12s}
   .copy:hover{background:#1c2a31;color:var(--strong)}
+  .copy--link{display:inline-flex;align-items:center;text-decoration:none}
   .copy.copied{background:var(--secured);color:#0a0604}
 
   /* DEFCON badges (mirrors coa_template.html) */
@@ -302,8 +303,8 @@ const AAR = __REVIEW_JSON__;
         <div class="job__head">${defconBadge(j.defcon)}${pill}<span class="job__title">${esc(j.title)}</span><span class="type">${esc(j.type)}</span>${stamp}${j.outcome==="blocked-approval"?approvalBadge():""}</div>
         ${dataRow(j)}
         <div class="job__note" style="${j.outcome==="fail"?"color:#e0a090;":""}">${esc(j.note)}</div>
-        ${j.deliverable?`<div class="cmd"><span class="cmd__k" title="The per-job deliverable record: what the job produced, its diff, and how to take or drop it.">DELIVERABLE</span><code>${esc(j.deliverable)}</code><button class="copy" data-copy="${esc(j.deliverable)}">COPY</button></div>`:""}
-        ${j.roadblock?`<div class="cmd"><span class="cmd__k cmd__k--d" title="The job hit a roadblock (stuck or gate failed) and paused. Read the report, apply the fix, then: scorch coa resume ${esc(j.id)}">ROADBLOCK</span><code>${esc(j.roadblock)}</code><button class="copy" data-copy="scorch coa resume ${esc(j.id)}">COPY RESUME</button></div>`:""}
+        ${j.deliverable?`<div class="cmd"><span class="cmd__k" title="The per-job deliverable record: what the job produced, its diff, and how to take or drop it.">DELIVERABLE</span><code>${esc(j.deliverable)}</code>${j.deliverableUrl?`<a class="copy copy--link" href="${esc(j.deliverableUrl)}" target="_blank" rel="noopener">OPEN</a>`:""}<button class="copy" data-copy="${esc(j.deliverable)}">COPY</button></div>`:""}
+        ${j.roadblock?`<div class="cmd"><span class="cmd__k cmd__k--d" title="The job hit a roadblock (stuck or gate failed) and paused. Read the report, apply the fix, then: scorch coa resume ${esc(j.id)}">ROADBLOCK</span><code>${esc(j.roadblock)}</code>${j.roadblockUrl?`<a class="copy copy--link" href="${esc(j.roadblockUrl)}" target="_blank" rel="noopener">OPEN</a>`:""}<button class="copy" data-copy="scorch coa resume ${esc(j.id)}">COPY RESUME</button></div>`:""}
         ${cmds(j)}
       </div>
       <div class="gate">

@@ -58,10 +58,28 @@ def render_review_md(rr: RunResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_review_html(rr: RunResult) -> str:
+def rr_from_record(rec: dict) -> RunResult:
+    """Rebuild a RunResult from a stored run-record dict (asdict round-trip). Used by the served
+    AAR tab to re-render the latest run."""
+    from .runner import JobOutcome
+    jobs = [JobOutcome(**j) for j in (rec.get("jobs") or [])]
+    meta = {k: v for k, v in rec.items() if k != "jobs"}
+    return RunResult(jobs=jobs, **meta)
+
+
+def render_review_html(rr: RunResult, token=None, repo=None) -> str:
     with open(_TEMPLATE_PATH, encoding="utf-8") as f:
         template = f.read()
-    html = template.replace("__REVIEW_JSON__", json.dumps(aar_dict(rr)))
+    d = aar_dict(rr)
+    if token and repo:                    # served AAR: arm the OPEN links to the artifact route
+        import urllib.parse as _up
+        for jd in d["jobs"]:
+            q = "?t={}&repo={}&id={}".format(_up.quote(token), _up.quote(repo), _up.quote(jd["id"]))
+            if jd.get("deliverable"):
+                jd["deliverableUrl"] = "/artifact" + q + "&kind=deliverable"
+            if jd.get("roadblock"):
+                jd["roadblockUrl"] = "/artifact" + q + "&kind=roadblock"
+    html = template.replace("__REVIEW_JSON__", json.dumps(d))
     if rr.state == "running":
         meta = f'<meta http-equiv="refresh" content="{rr.refresh_seconds}">'
         # Inject after the <head> open tag, tolerating attributes (design template may use

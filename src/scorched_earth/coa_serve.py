@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import queue as _queue
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -232,6 +233,73 @@ def render_cockpit(token, state):
     return html.encode("utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Shell-mode AFTER-ACTION tab: the latest run record, plus its artifact files
+# ---------------------------------------------------------------------------
+
+def _placeholder(msg):
+    return ("<!doctype html><meta charset='utf-8'><body style='margin:0;background:#0b0705;"
+            "color:#86abab;font-family:ui-monospace,Menlo,monospace;letter-spacing:1px;display:flex;"
+            "align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px'>"
+            "<div>" + msg + "</div></body>").encode("utf-8")
+
+
+def aar_page(shell_repos, token):
+    """The AFTER-ACTION tab body: re-renders the most recent run record across the shell's repos,
+    with the token armed so each job's OPEN links reach the artifact route. Placeholder if no run
+    has happened yet."""
+    from . import review_report
+    best = None                                   # (mtime, repo, record)
+    for r in shell_repos:
+        d = coa_io.runs_dir(r)
+        try:
+            stamps = [f for f in os.listdir(d) if f.endswith(".json")]
+        except OSError:
+            continue
+        if not stamps:
+            continue
+        latest = max(stamps)
+        mt = os.path.getmtime(os.path.join(d, latest))
+        if best is None or mt > best[0]:
+            best = (mt, r, coa_io.read_run_record(r, latest[:-5]))
+    if not best or not best[2]:
+        return _placeholder("No run yet. Queue a job in the War Room, or run `scorch coa run`, "
+                            "then the After-Action Report lands here.")
+    _, repo, rec = best
+    rr = review_report.rr_from_record(rec)
+    real = os.path.realpath(os.path.expanduser(repo))
+    return review_report.render_review_html(rr, token=token, repo=real).encode("utf-8")
+
+
+_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def serve_artifact(shell_repos, qs):
+    """GET /artifact?repo=&id=&kind=deliverable|roadblock -> the artifact .md, wrapped for reading.
+    Repo must be one of the shell's repos and id must be a bare filename (no traversal)."""
+    repo = (qs.get("repo") or [""])[0]
+    jid = (qs.get("id") or [""])[0]
+    kind = (qs.get("kind") or ["deliverable"])[0]
+    allowed = {os.path.realpath(os.path.expanduser(r)) for r in shell_repos}
+    ap = os.path.realpath(os.path.expanduser(repo))
+    if ap not in allowed:
+        return 400, b'{"error":"unknown repo"}', "application/json"
+    if not _ID_RE.match(jid or ""):
+        return 400, b'{"error":"bad id"}', "application/json"
+    path = coa_io.roadblock_path(ap, jid) if kind == "roadblock" else coa_io.deliverable_path(ap, jid)
+    if not os.path.isfile(path):
+        return 404, b'{"error":"not found"}', "application/json"
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    body = ("<!doctype html><meta charset='utf-8'><title>" + jid + "</title>"
+            "<body style='margin:0;background:#0b0f12;color:#cfe0e0;"
+            "font:13px/1.6 ui-monospace,Menlo,Consolas,monospace'>"
+            "<pre style='padding:28px 34px;white-space:pre-wrap;word-break:break-word'>"
+            + esc + "</pre></body>").encode("utf-8")
+    return 200, body, "text/html; charset=utf-8"
+
+
 def make_server(engine, token, *, render=None, shell_repos=None):
     """Build a ThreadingHTTPServer bound to 127.0.0.1 on an ephemeral port.
 
@@ -331,6 +399,12 @@ def make_server(engine, token, *, render=None, shell_repos=None):
             elif shell_mode and path == "/coa.json":
                 from . import coa_view
                 self._send(200, json.dumps(coa_view.coa_state(shell_repos)).encode("utf-8"))
+            elif shell_mode and path == "/aar":
+                self._send(200, aar_page(shell_repos, token), "text/html; charset=utf-8")
+            elif shell_mode and path == "/artifact":
+                qs = parse_qs(urlparse(self.path).query)
+                code, body, ctype = serve_artifact(shell_repos, qs)
+                self._send(code, body, ctype)
             elif path == "/state":
                 self._send(200,
                            json.dumps(engine.state_json()).encode("utf-8"))

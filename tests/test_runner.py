@@ -559,6 +559,23 @@ check("summarize_stream_line extracts assistant text",
 check("summarize_stream_line trims a non-JSON line", _sum("hello there")[:5] == "hello")
 check("summarize_stream_line returns empty for blank input", _sum("   ") == "")
 
+# --- v2.7.3: AAR served re-render + OPEN links ------------------------------------
+from scorched_earth.review_report import rr_from_record, render_review_html  # noqa: E402
+from dataclasses import asdict as _asdict3  # noqa: E402
+_rr_src = RunResult(generated_at="2026-07-01", state="done", repo="/tmp/r", verdict="max",
+                    note="1 secured.",
+                    jobs=[JobOutcome(seq=1, id="a", title="A", type="docs", defcon=4, outcome="pass",
+                          branch="scorched/a", diff={"files": 1, "insertions": 1, "deletions": 0},
+                          note="gate passed.", deliverable=".scorched/deliverables/a.md")])
+_rr_back = rr_from_record(_asdict3(_rr_src))
+check("rr_from_record rebuilds a RunResult with its jobs",
+      _rr_back.state == "done" and _rr_back.jobs[0].id == "a"
+      and _rr_back.jobs[0].deliverable == ".scorched/deliverables/a.md")
+check("served AAR arms the deliverable OPEN link",
+      "/artifact?t=TK" in render_review_html(_rr_src, token="TK", repo="/tmp/r")
+      and "kind=deliverable" in render_review_html(_rr_src, token="TK", repo="/tmp/r"))
+check("static AAR (no token) has no OPEN link", "/artifact" not in render_review_html(_rr_src))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))
