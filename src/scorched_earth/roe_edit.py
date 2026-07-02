@@ -3,10 +3,10 @@ Engagement as a flat list of controls plus a reducer for arrow-key input, so the
 (curses) frontend and a later html frontend share one source of truth.
 
 Only WIRED rules are exposed - fields the advisor/runner actually consume:
-  auto_run_min_defcon (cycle), max_jobs (cycle), allowed_types + unattended_types (toggle rows).
-Freeform fields (test_cmd/setup_cmd/goals/exclude_paths/min_weekly_left) are left to hand-editing
-and are preserved untouched on save. When Phase 3 wires a new rule (e.g. a session deliverable),
-it gets a control here. No dead toggles."""
+  run_mode (cycle), auto_run_min_defcon (cycle), max_jobs (cycle), attended_branch (toggle),
+  advise_on_roadblock (toggle), roadblock_idle_secs (cycle), allowed_types + unattended_types
+  (toggle rows). Freeform fields (test_cmd/setup_cmd/context_cmd/goals/exclude_paths/
+  min_weekly_left) are left to hand-editing and preserved untouched on save. No dead toggles."""
 
 from __future__ import annotations
 
@@ -17,8 +17,10 @@ from .runner import SAFE_UNATTENDED
 
 # Canonical job types (freeform in data, but these are the known ones the scan/runner emit).
 KNOWN_TYPES = ["test", "docs", "perf", "audit", "refactor", "fix", "infra"]
+RUN_MODE_CYCLE = ["headless", "takeover", "session"]   # how a job runs (Phase 3)
 DEFCON_CYCLE = [1, 2, 3, 4, 5]              # auto_run_min_defcon: DEFCON >= N auto-runs; below N asks
 MAX_JOBS_CYCLE = [None, 1, 2, 3, 5, 10]     # None = off (no run cap)
+IDLE_SECS_CYCLE = [300, 600, 900, 1800]     # roadblock idle timeout: 5 / 10 / 15 / 30 min
 
 # The two type-set fields and the set they default to when unset (None).
 _TYPESETS = {"allowed_types": KNOWN_TYPES, "unattended_types": SAFE_UNATTENDED}
@@ -43,12 +45,24 @@ def _typeset(roe: ROE, field: str) -> set:
 def controls(roe: ROE) -> list:
     """The ordered list of editable controls for this ROE, with current values filled in."""
     out = [
+        Control("run_mode", None,
+                "Run mode", "cycle", roe.run_mode, None,
+                "headless = sandboxed worktree; takeover = this window, sandboxed; session = new free session."),
         Control("auto_run_min_defcon", None,
                 "Auto-run threshold", "cycle", f"DEFCON {roe.auto_run_min_defcon}", None,
                 "Jobs at DEFCON >= N auto-run; below N (more critical) needs approval."),
         Control("max_jobs", None,
                 "Run cap", "cycle", "off" if roe.max_jobs is None else str(roe.max_jobs), None,
                 "Stop a war-room session after N jobs. off = drain the whole queue."),
+        Control("attended_branch", None,
+                "Attended branch", "toggle", "", roe.attended_branch,
+                "Attended jobs run on a fresh scorched/<id> branch (on) or your current branch (off)."),
+        Control("advise_on_roadblock", None,
+                "Auto-advise on roadblock", "toggle", "", roe.advise_on_roadblock,
+                "On a headless roadblock, try an advising agent to auto-solve before pausing."),
+        Control("roadblock_idle_secs", None,
+                "Roadblock idle timeout", "cycle", f"{roe.roadblock_idle_secs // 60} min", None,
+                "Headless: minutes of no output before a job is flagged stuck."),
     ]
     allowed = _typeset(roe, "allowed_types")
     for t in KNOWN_TYPES:
@@ -73,10 +87,16 @@ def apply(roe: ROE, index: int, direction: int) -> ROE:
     if not (0 <= index < len(ctrls)):
         return roe
     c = ctrls[index]
+    if c.field == "run_mode":
+        return replace(roe, run_mode=_cycle(RUN_MODE_CYCLE, roe.run_mode, direction or 1))
     if c.field == "auto_run_min_defcon":
         return replace(roe, auto_run_min_defcon=_cycle(DEFCON_CYCLE, roe.auto_run_min_defcon, direction or 1))
     if c.field == "max_jobs":
         return replace(roe, max_jobs=_cycle(MAX_JOBS_CYCLE, roe.max_jobs, direction or 1))
+    if c.field == "roadblock_idle_secs":
+        return replace(roe, roadblock_idle_secs=_cycle(IDLE_SECS_CYCLE, roe.roadblock_idle_secs, direction or 1))
+    if c.field in ("attended_branch", "advise_on_roadblock"):   # plain boolean toggles
+        return replace(roe, **{c.field: not getattr(roe, c.field)})
     if c.field in _TYPESETS:                       # toggle: left/right/enter all flip
         cur = _typeset(roe, c.field)
         cur.discard(c.member) if c.member in cur else cur.add(c.member)
@@ -86,7 +106,8 @@ def apply(roe: ROE, index: int, direction: int) -> ROE:
 
 
 # Which ROE fields the editor manages (overwritten on save); everything else in roe.json is kept.
-MANAGED_FIELDS = ("auto_run_min_defcon", "max_jobs", "allowed_types", "unattended_types")
+MANAGED_FIELDS = ("run_mode", "auto_run_min_defcon", "max_jobs", "attended_branch",
+                  "advise_on_roadblock", "roadblock_idle_secs", "allowed_types", "unattended_types")
 
 
 def to_raw(roe: ROE, base_raw: dict | None = None) -> dict:

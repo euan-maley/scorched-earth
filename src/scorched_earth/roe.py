@@ -19,6 +19,12 @@ class ROE:
     unattended_types: Optional[List[str]] = None    # types allowed to run unattended; None = SAFE default
     test_cmd: Optional[str] = None                  # post-job verification gate command
     setup_cmd: Optional[str] = None                 # dependency pre-warm command (runner-run, with network)
+    # execution-mode rules (Phase 3): how a job runs, and the attended / roadblock leash
+    run_mode: str = "headless"                      # headless | takeover | session (global default + per-repo)
+    context_cmd: Optional[str] = None               # attended pre-task command, e.g. "/kerd:switch in" (freeform)
+    attended_branch: bool = False                   # attended jobs get a scorched/<id> branch vs. current branch
+    roadblock_idle_secs: int = 600                  # headless: seconds of silence before a job is flagged stuck
+    advise_on_roadblock: bool = True                # try the advising agent to auto-solve before pausing
     # goal rules
     exclude_paths: List[str] = field(default_factory=list)
     goals: List[str] = field(default_factory=list)
