@@ -13,9 +13,10 @@ Four subsystems:
 
 - **#3 run modes:** a job can run in one of three modes the user picks. `headless` (today's
   sandboxed, unattended worktree runner, unchanged) stays the default; two new **attended**
-  modes run in the real repo working tree, non-sandboxed, with the human present: `takeover`
-  (seizes the current terminal window) and `session` (opens a new session, optionally after a
-  context-gathering command like `switch in`). Every mode captures a per-job **deliverable**.
+  modes run in the real repo working tree with the human present: `takeover` (seizes the current
+  terminal window, kept OS-sandboxed so network/credentials stay locked) and `session` (opens a
+  new, fully-free session, optionally after a context-gathering command like `switch in`). Every
+  mode captures a per-job **deliverable**.
 - **#4 per-task model:** each job carries a `model` (fable/sonnet/opus/haiku); the runner passes
   `--model` on every launch. The COA officer picks it during the scan.
 - **#11 permissions/goal + roadblock safety net:** attended modes get the ROE leash + goal
@@ -44,11 +45,23 @@ Nothing here touches the statusline hot path. `core.py` stays pure and untouched
 
 A job runs in one of three modes:
 
-| Mode | Runs in | Terminal | Sandbox | Attended | Trigger surface |
-|------|---------|----------|---------|----------|-----------------|
-| `headless` (default) | throwaway worktree `.scorched/wt/<id>` | none (piped) | yes (Seatbelt / bwrap, existing) | no | `scorch coa run`, War Room cockpit |
-| `takeover` | real working tree | **current window** (`os.execvp`) | no | yes | `scorch coa run --here <job-id>` |
-| `session` | real working tree | **new iTerm2 tab/window** (osascript) | no | yes | `scorch coa run --session <job-id>`; a card action in the shell |
+| Mode | Runs in | Terminal | Worktree isolation | OS sandbox | Attended | Trigger surface |
+|------|---------|----------|:---:|:---:|----------|-----------------|
+| `headless` (default) | throwaway worktree `.scorched/wt/<id>` | none (piped) | yes | yes (Seatbelt / bwrap, existing) | no | `scorch coa run`, War Room cockpit |
+| `takeover` | real working tree | **current window** (`os.execvp`) | no | **yes** (network/cred locked) | yes | `scorch coa run --here <job-id>` |
+| `session` | real working tree | **new iTerm2 tab/window** (osascript) | no | no (fully free) | yes | `scorch coa run --session <job-id>`; a card action in the shell |
+
+The sandbox splits into two separable parts: **worktree isolation** (work in a throwaway
+worktree, discarded on kill) is inherent to `headless` only, since attended modes run in your
+real tree so you can see the changes; the **OS sandbox** (network locked to the API, `~/.ssh` /
+`~/.aws` denied) is independent of the worktree and *can* wrap a real-repo run. The line is
+therefore drawn per mode:
+
+- `headless`: both parts (fully confined, unchanged).
+- `takeover`: OS sandbox kept (network + credential restrictions) even though it writes to your
+  real repo. Confined but visible.
+- `session`: fully free (a normal interactive session, no OS sandbox), because it is the
+  "run it in front of me with full context" mode.
 
 ### Mode resolution (the cascade)
 
@@ -82,6 +95,9 @@ clause for free.
 - **`takeover`** is invoked from the window you want seized. `scorch coa run --here <id>`
   assembles the prompt + model, then `os.execvp("claude", [...])` in the repo cwd, *replacing*
   the scorch process. Your shell becomes the claude session; on exit you are back at your prompt.
+  Because it stays OS-sandboxed, the sandbox config is passed on the command line (a
+  `--settings` payload) rather than written into your real repo's `.claude/settings.json` (see
+  section E), so the takeover never mutates your repo's own settings.
 - **`session`** opens a new iTerm2 tab via `osascript` (macOS), `cd`s to the repo, and launches
   `claude` with the composed prompt. Your current window stays free. Fallbacks in order:
   iTerm2 -> Terminal.app -> print the exact command for the user to paste (never fail silently).
@@ -162,11 +178,23 @@ the card) alongside the existing merge/discard commands.
 
 ### Permissions + goal (start to end)
 
-- **headless:** keeps the OS sandbox (`write_sandbox_settings`, unchanged) as the hard boundary.
-- **attended (no sandbox):** the ROE leash and the job's goal are injected into the opening
-  prompt as **binding operating orders**: stay inside `exclude_paths` / `allowed_types`, pursue
-  the stated `goals`, additive and focused, do not touch other repos. The human presence is the
-  enforcement; the injected orders keep the agent on-mission.
+Enforcement is layered per mode:
+
+- **headless:** worktree isolation + OS sandbox (`write_sandbox_settings` into the worktree,
+  unchanged) as the hard boundary.
+- **takeover:** OS sandbox retained (network locked to the API, `~/.ssh` / `~/.aws` denied) even
+  though writes land in your real tree. The sandbox config is delivered **via a CLI `--settings`
+  payload**, not by writing your real repo's `.claude/settings.json`, so the takeover leaves your
+  repo settings untouched. The exact flag is verified against claude-code-guide at build; if a
+  CLI-delivered sandbox is unavailable, the fallback is to write a temp settings file outside the
+  repo and point `claude` at it (never mutate the repo's own `.claude/`).
+- **session:** fully free (no OS sandbox), by design the "run it in front of me" mode.
+
+In all three, the ROE leash and the job's goal are injected into the opening / launch prompt as
+**binding operating orders**: stay inside `exclude_paths` / `allowed_types`, pursue the stated
+`goals`, additive and focused, do not touch other repos. For the attended modes the human
+presence plus (for takeover) the OS sandbox are the enforcement; for `session` the injected
+orders and the human are the only leash, which is the accepted tradeoff for a fully-free session.
 
 ### The roadblock escalation ladder
 
@@ -273,18 +301,22 @@ Each stage is an independently verifiable commit, matching the repo's per-stage 
   unsolved; deliverable written. All via the existing injected-executable seam (no real claude).
 - **Server / UI:** engine `state_json` carries `progress`; SSE pushes it throttled; real
   Playwright drive of the CRT panel and mode tags in the shell, 0 console errors.
-- **Manual / verified-at-build (cannot be unit-tested headlessly):** `execvp` takeover in a real
-  iTerm2 window; the osascript new-tab spawn; the actual `claude --model` / `--session-id` /
-  `--resume` flags (confirmed via claude-code-guide before wiring). These are driven by hand and
-  the exact CLI contract is verified, not assumed.
+- **Manual / verified-at-build (cannot be unit-tested headlessly):** `execvp` takeover seizing the
+  current window (and confirming the CLI-delivered OS sandbox actually restricts network there);
+  the osascript new-tab spawn for `session`; the actual `claude --model` / `--session-id` /
+  `--resume` / `--settings` flags (confirmed via claude-code-guide before wiring). These are
+  driven by hand and the exact CLI contract is verified, not assumed.
 
 ## Open risks / to verify during build
 
-- **`claude` CLI contract:** exact flags for model selection, deterministic session id, and
-  `-p` resume. Verified via claude-code-guide at stage 2 (model) and stage 6 (resume) before
-  wiring; fallbacks specified above if resume of `-p` sessions is unavailable.
+- **`claude` CLI contract:** exact flags for model selection, deterministic session id, `-p`
+  resume, and a **CLI-delivered sandbox** (`--settings` payload) for takeover. Verified via
+  claude-code-guide at stage 2 (model), stage 3 (takeover sandbox), and stage 6 (resume) before
+  wiring; fallbacks specified above where a flag is unavailable.
 - **osascript / iTerm2 dependency:** `session` mode is macOS + iTerm2 first; the Terminal.app and
   print fallbacks keep it functional elsewhere. No hard failure if neither is present.
-- **Attended safety:** attended modes are non-sandboxed by design (in-repo, human present). The
-  injected ROE leash + goal is advisory, not enforced; this is an accepted tradeoff for the
-  "run it in front of me" modes and is documented in the command help.
+- **Attended safety:** `takeover` stays OS-sandboxed (network/cred locked) even in your real repo,
+  so its blast radius is bounded to filesystem writes you are watching. `session` is fully free
+  by design; there the injected ROE leash + goal plus your presence are the only leash, an
+  accepted tradeoff for the "run it in front of me with full context" mode, documented in the
+  command help.
