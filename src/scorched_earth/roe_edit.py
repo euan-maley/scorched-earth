@@ -76,6 +76,7 @@ def controls(roe: ROE) -> list:
 
 
 def _cycle(seq, cur, direction):
+    """Step `cur` forward (direction >= 0) or back through `seq`, wrapping around."""
     i = seq.index(cur) if cur in seq else 0
     return seq[(i + (1 if direction >= 0 else -1)) % len(seq)]
 
