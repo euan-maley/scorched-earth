@@ -624,6 +624,7 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None, approved=Fa
 
 
 def _summary(rr: RunResult) -> str:
+    """Render a RunResult's job-outcome tally into a short human summary line."""
     n = {}
     for j in rr.jobs:
         n[j.outcome] = n.get(j.outcome, 0) + 1
