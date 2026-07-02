@@ -201,6 +201,27 @@ def write_deliverable(repo_path: str, job_id: str, text: str) -> str:
     return path
 
 
+def roadblocks_dir(repo_path: str) -> str:
+    return os.path.join(_repo_dir(repo_path), "roadblocks")
+
+
+def roadblock_path(repo_path: str, job_id: str) -> str:
+    return os.path.join(roadblocks_dir(repo_path), f"{job_id}.md")
+
+
+def roadblock_rel(job_id: str) -> str:
+    return os.path.join(".scorched", "roadblocks", f"{job_id}.md")
+
+
+def write_roadblock(repo_path: str, job_id: str, text: str) -> str:
+    out = roadblocks_dir(repo_path)
+    os.makedirs(out, exist_ok=True)
+    path = roadblock_path(repo_path, job_id)
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
 def write_run_record(repo_path: str, record: dict, date: str) -> str:
     out = runs_dir(repo_path)
     os.makedirs(out, exist_ok=True)
@@ -236,7 +257,8 @@ def board_state(repo_path: str, running_ids=()) -> dict:
     roe = load_roe(repo_path)
     queued = read_queue(repo_path)
     rec = read_run_record(repo_path) or {}
-    finished = [j for j in (rec.get("jobs") or []) if j.get("outcome") in ("pass", "fail")]
+    finished = [j for j in (rec.get("jobs") or [])
+                if j.get("outcome") in ("pass", "fail", "roadblocked")]
     # An in-flight job has been unqueued (at pick) but not yet written to the run record
     # (on completion); without `running_ids` it would fall back into `proposed` because it's
     # still in jobs.json. The Engine passes the currently-running id(s) so the live board

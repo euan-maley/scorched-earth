@@ -238,7 +238,8 @@ const AAR = __REVIEW_JSON__;
     fail:              { cls:"o-fail",    label:"CRATERED",         bar:"#c0392b", pill:"#e2705a", pillBg:"rgba(192,57,43,.18)", pillBd:"#c0392b",  glyph:"\u2717", glyphCol:"#e2705a", gate:"GATE FAIL",    cell:"#5a241a", cellTxt:"#e2705a" },
     "blocked-roe":     { cls:"o-blocked", label:"FENCED OFF",       bar:"#6f8a8a", pill:"#9ec1c1", pillBg:"transparent",        pillBd:"#3a5a5a",  glyph:"\u2298", glyphCol:"#86abab", gate:"NOT RUN",      cell:"#3a4a4a", cellTxt:"#cfe0e0", stamp:"ROE",      stampCol:"#9ec1c1", stampBd:"#3a5a5a", dim:true },
     "blocked-approval":{ cls:"o-blocked", label:"NEEDS APPROVAL",   bar:"#c0392b", pill:"#e2705a", pillBg:"rgba(192,57,43,.10)",pillBd:"#c0392b",  glyph:"\u26A0", glyphCol:"#e2705a", gate:"APPROVAL",     cell:"#3a1a1a", cellTxt:"#e2705a", stamp:"APPROVAL", stampCol:"#ff4040", stampBd:"#c0392b", dim:true },
-    pending:           { cls:"o-pending", label:"QUEUED",           bar:"#2b3d44", pill:"#86abab", pillBg:"transparent",        pillBd:"#2b3d44",  glyph:"\u00B7", glyphCol:"#6f8a8a", gate:"QUEUED",       cell:"transparent",cellTxt:"#86abab", dim:true }
+    pending:           { cls:"o-pending", label:"QUEUED",           bar:"#2b3d44", pill:"#86abab", pillBg:"transparent",        pillBd:"#2b3d44",  glyph:"\u00B7", glyphCol:"#6f8a8a", gate:"QUEUED",       cell:"transparent",cellTxt:"#86abab", dim:true },
+    roadblocked:       { cls:"o-blocked", label:"ROADBLOCKED",      bar:"#e2a04d", pill:"#f0c070", pillBg:"rgba(226,160,77,.16)",pillBd:"#e2a04d",  glyph:"\u26A0", glyphCol:"#f0c070", gate:"NEEDS YOU",    cell:"#4a3a1a", cellTxt:"#f0c070", stamp:"RESUME",   stampCol:"#f0c070", stampBd:"#e2a04d" }
   };
   const DEFCON_BORDER = ["","#c0392b","#e2541d","#e2a04d","#5e7a7a","#3a5a5a"];
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -302,6 +303,7 @@ const AAR = __REVIEW_JSON__;
         ${dataRow(j)}
         <div class="job__note" style="${j.outcome==="fail"?"color:#e0a090;":""}">${esc(j.note)}</div>
         ${j.deliverable?`<div class="cmd"><span class="cmd__k" title="The per-job deliverable record: what the job produced, its diff, and how to take or drop it.">DELIVERABLE</span><code>${esc(j.deliverable)}</code><button class="copy" data-copy="${esc(j.deliverable)}">COPY</button></div>`:""}
+        ${j.roadblock?`<div class="cmd"><span class="cmd__k cmd__k--d" title="The job hit a roadblock (stuck or gate failed) and paused. Read the report, apply the fix, then: scorch coa resume ${esc(j.id)}">ROADBLOCK</span><code>${esc(j.roadblock)}</code><button class="copy" data-copy="scorch coa resume ${esc(j.id)}">COPY RESUME</button></div>`:""}
         ${cmds(j)}
       </div>
       <div class="gate">

@@ -17,6 +17,7 @@ _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "review_template.html")
 _OUTCOME_LABELS = {
     "blocked-roe": "BLOCKED (ROE)",
     "blocked-approval": "NEEDS APPROVAL",
+    "roadblocked": "ROADBLOCKED",
 }
 
 
@@ -27,7 +28,7 @@ def _job_obj(j) -> dict:
         "outcomeLabel": _OUTCOME_LABELS.get(j.outcome, (j.outcome or "").upper()),
         "branch": j.branch, "diff": j.diff,
         "note": j.note, "mergeCmd": j.merge_cmd, "discardCmd": j.discard_cmd,
-        "deliverable": j.deliverable,
+        "deliverable": j.deliverable, "roadblock": j.roadblock,
     }
 
 

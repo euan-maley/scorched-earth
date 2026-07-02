@@ -364,6 +364,47 @@ def _coa_attended(args):
     return exec_modes.run_session(repo, job, roe)
 
 
+def _coa_resume(args):
+    """`scorch coa resume <job-id> [repo]` — continue a roadblocked headless job (Phase 3 #11).
+    Reuses the kept worktree/branch, feeds the roadblock report back in as context, re-runs the
+    gate, and records a fresh deliverable (or a new roadblock report if it stalls again)."""
+    import time as _t
+    from scorched_earth import coa_io, runner
+    ids = [a for a in args if not a.startswith("-")]
+    if not ids:
+        print("Usage: scorch coa resume <job-id> [repo]")
+        return 0
+    job_id = ids[0]
+    repo = next((a for a in ids[1:] if os.path.isdir(os.path.expanduser(a))), None) \
+        or (coa_io.list_repos()[0] if coa_io.list_repos() else ".")
+    job = {j.id: j for j in coa_io.load_jobs(repo)}.get(job_id)
+    if job is None:
+        print(f"No job '{job_id}' in {repo}.")
+        return 0
+    state = st.load_state()
+    if runner.is_stale(state, int(_t.time())):
+        print("No fresh budget snapshot. Open a Claude Code session, then resume.")
+        return 0
+    rpath = coa_io.roadblock_path(repo, job_id)
+    report = open(rpath).read() if os.path.exists(rpath) else ""
+    job.launch = ("You are RESUMING a job that hit a roadblock. Prior roadblock report:\n\n"
+                  + report + "\n\nThe partial work is on branch " + runner.branch_name(job_id)
+                  + " (checked out in this worktree). Continue from there and finish.\n\n"
+                  + (job.launch or job.title))
+    outcome, diff, note = runner.execute_job(repo, job, coa_io.load_roe(repo), resume=True)
+    repo_disp = os.path.realpath(os.path.expanduser(repo))
+    oc = runner.JobOutcome(seq=0, id=job_id, title=job.title, type=job.type, defcon=job.defcon,
+                           outcome=outcome, diff=diff, note=note, branch=runner.branch_name(job_id),
+                           merge_cmd=runner.merge_cmd(repo_disp, job_id),
+                           discard_cmd=runner.discard_cmd(repo_disp, job_id))
+    if outcome == "roadblocked":
+        runner.handle_roadblock(repo, oc)
+    else:
+        runner.write_job_deliverable(repo, oc)
+    print(f"{repo}: {job_id} resume -> {outcome}. {note}")
+    return 0
+
+
 def _coa_run_cli(rest):
     """`scorch coa <queue|run|review> …` — the Phase 2 queue-runner surface."""
     import time as _time
@@ -402,6 +443,9 @@ def _coa_run_cli(rest):
         q = coa_io.enqueue(repo, pick)
         print(f"Queued {len(pick)} job(s); {len(q)} in {repo}/.scorched/queue.json.")
         return 0
+
+    if sub == "resume":
+        return _coa_resume(args)
 
     if sub == "run":
         # --here <job-id> takes over THIS window (attended, sandboxed); --session <job-id> spawns

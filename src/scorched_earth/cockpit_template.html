@@ -155,8 +155,10 @@
   /* done */
   .card--pass{border-left-color:var(--secured);background:linear-gradient(#0f140d,#0c0f0a)}
   .card--fail{border-left-color:var(--fail);background:linear-gradient(#160c0a,#100806);opacity:.92}
+  .card--roadblocked{border-left-color:#e2a04d;background:linear-gradient(#161206,#100c06)}
   .card--pass .ctitle{color:#e7f1dc}
   .card--fail .ctitle{color:#e9c8bf}
+  .card--roadblocked .ctitle{color:#f0d9a8}
 
   .working{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;letter-spacing:2px;color:var(--ember2)}
 
@@ -309,7 +311,8 @@ const STATE = __COCKPIT_JSON__;
 
   function updateCard(el, job, kind, idx){
     el.dataset.id = job.id;
-    el.className = "card card--"+(kind==="finished"?(job.outcome==="fail"?"fail":"pass"):kind);
+    const _fk = job.outcome==="fail"?"fail":(job.outcome==="roadblocked"?"roadblocked":"pass");
+    el.className = "card card--"+(kind==="finished"?_fk:kind);
     const grip = el.querySelector(".grip");
     const draggable = (kind==="proposed"||kind==="queued");
     el.setAttribute("draggable", draggable?"true":"false");
@@ -340,10 +343,11 @@ const STATE = __COCKPIT_JSON__;
       const kb = html('<button class="btn btn--stop" data-kill="'+esc(job.id)+'" style="margin-left:auto;padding:4px 11px 3px;font-size:11px">\u2715 KILL</button>');
       foot.appendChild(kb);
     } else { // finished
-      const pass = job.outcome!=="fail";
-      const badge = pass
-        ? '<span class="cbadge" title="Ran and its verification gate passed." style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>'
-        : '<span class="cbadge" title="The job or its verification gate failed; the work was discarded." style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>';
+      const badge = job.outcome==="roadblocked"
+        ? '<span class="cbadge" title="Stuck or gate failed; paused and the branch was kept. Read .scorched/roadblocks/'+esc(job.id)+'.md, fix, then: scorch coa resume '+esc(job.id)+'" style="color:#f0c070;border-color:#e2a04d;background:rgba(226,160,77,.16)">&#9888; ROADBLOCKED</span>'
+        : job.outcome==="fail"
+        ? '<span class="cbadge" title="The job or its verification gate failed; the work was discarded." style="color:#e2705a;border-color:#c0392b;background:rgba(192,57,43,.16)">&#10007; CRATERED</span>'
+        : '<span class="cbadge" title="Ran and its verification gate passed." style="color:#9fd36a;border-color:#7bb04a;background:rgba(123,176,74,.12)">&#10003; SECURED</span>';
       foot.appendChild(html(badge));
       if(job.branch){
         const br = html('<span class="cbranch" style="flex-basis:100%"><span class="g">&#9095;</span>'+esc(job.branch)+'</span>');
@@ -464,7 +468,8 @@ const STATE = __COCKPIT_JSON__;
 
   function renderStatus(repo){
     const F = repo?(repo.finished||[]):[];
-    const passed = F.filter(j=>j.outcome!=="fail").length;
+    const roadblocked = F.filter(j=>j.outcome==="roadblocked").length;
+    const passed = F.filter(j=>j.outcome==="pass").length;
     const failed = F.filter(j=>j.outcome==="fail").length;
     const queued = repo?(repo.queued||[]).length:0;
     const proposed = repo?(repo.proposed||[]).length:0;
@@ -475,6 +480,7 @@ const STATE = __COCKPIT_JSON__;
       stat(F.length+"/"+total, "DONE")+
       stat(passed,"SECURED","#9fd36a")+
       stat(failed,"CRATERED","#e2705a")+
+      (roadblocked?stat(roadblocked,"ROADBLOCKED","#f0c070"):"")+
       stat(queued,"QUEUED","#e2a04d")+
       stat(proposed,"PROPOSED","#9ec1c1");
 

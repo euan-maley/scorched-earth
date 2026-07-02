@@ -479,6 +479,47 @@ check("run_queue halts the queue on a usage-limit outcome (j2 never runs)", _cal
 check("run_queue records the limit job as 'limit', not 'fail'",
       any(j.outcome == "limit" for j in _rr.jobs))
 
+# --- Stage 6: roadblock ladder (watchdog, report, notify, resume) -----------------
+from scorched_earth.runner import (_run_killable, render_roadblock_md, handle_roadblock,  # noqa: E402
+                                   execute_job as _exec_real)
+import scorched_earth.statusline as _sl  # noqa: E402
+_sl._notify = lambda *a, **k: True       # silence real desktop notifications during tests
+
+_st_idle, _out_idle, _rc_idle = _run_killable(["sleep", "2"], ".", None, poll=0.05, idle_secs=0.3)
+check("_run_killable flags a silent job as idle (the roadblock watchdog)", _st_idle == "idle")
+
+_oc_rb = JobOutcome(seq=1, id="rb", title="Stuck job", type="audit", defcon=1,
+                    outcome="roadblocked", branch="scorched/rb", note="roadblock: gate FAILED (pytest).")
+_rbmd = render_roadblock_md(_oc_rb, "/tmp/r")
+check("render_roadblock_md carries what-happened, the branch, and the resume command",
+      "Stuck job (rb)" in _rbmd and "scorched/rb" in _rbmd and "scorch coa resume rb" in _rbmd)
+
+_rbrepo = tempfile.mkdtemp()
+handle_roadblock(_rbrepo, _oc_rb)
+check("handle_roadblock writes the report and stamps a repo-relative path",
+      _oc_rb.roadblock == ".scorched/roadblocks/rb.md" and os.path.exists(_io.roadblock_path(_rbrepo, "rb")))
+_oc_ok = JobOutcome(seq=1, id="p", title="P", type="test", defcon=3, outcome="pass")
+handle_roadblock(_rbrepo, _oc_ok)
+check("handle_roadblock is a no-op for non-roadblocked outcomes", _oc_ok.roadblock is None)
+
+_ghostrepo = tempfile.mkdtemp()
+_go, _gd, _gn = _exec_real(_ghostrepo, Job(id="ghost", repo=_ghostrepo, title="G", type="test"),
+                           ROE(), resume=True)
+check("execute_job resume with no prior worktree returns a clean fail",
+      _go == "fail" and "no prior worktree" in _gn)
+
+_rbq_repo = _mk_runner_repo([_RJ(id="k1", repo=".", title="1", type="docs", defcon=3, value=9),
+                             _RJ(id="k2", repo=".", title="2", type="docs", defcon=3, value=8)])
+def _rb_exec(repo, job, roe):
+    return ("roadblocked", None, "roadblock: stuck") if job.id == "k1" else ("pass", None, "ok")
+_rrq = _rn.run_queue(_rbq_repo, _state_ok, now=1, date="2026-06-26", execute=_rb_exec)
+check("run_queue records a roadblock but does NOT halt (k2 still runs)",
+      [j.outcome for j in _rrq.jobs] == ["roadblocked", "pass"] and _rrq.state == "done")
+check("run_queue writes the roadblock report + counts it in the summary",
+      os.path.exists(_io.roadblock_path(_rbq_repo, "k1")) and "roadblocked" in _rrq.note)
+check("board_state files a roadblocked job under finished, not proposed",
+      any(j.get("outcome") == "roadblocked" for j in _io.board_state(_rbq_repo)["finished"]))
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

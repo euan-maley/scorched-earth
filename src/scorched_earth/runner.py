@@ -50,7 +50,7 @@ class JobOutcome:
     id: str
     title: str
     type: str
-    outcome: str                      # running|pass|fail|blocked-roe|blocked-approval|killed|limit
+    outcome: str                      # running|pass|fail|blocked-roe|blocked-approval|killed|limit|roadblocked
     defcon: int = 3                   # 1..5 criticality (mirrors Job.defcon)
     branch: Optional[str] = None
     diff: Optional[dict] = None       # {"files":int,"insertions":int,"deletions":int} or None
@@ -58,6 +58,7 @@ class JobOutcome:
     merge_cmd: Optional[str] = None
     discard_cmd: Optional[str] = None
     deliverable: Optional[str] = None  # repo-relative path to the per-job deliverable record
+    roadblock: Optional[str] = None    # repo-relative path to the roadblock report (roadblocked only)
 
 
 @dataclass
@@ -243,41 +244,55 @@ def _diffstat(worktree: str, base_sha: str) -> Optional[dict]:
 _kill_ctx = threading.local()
 
 
-def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1):
+def _terminate(p, grace):
+    """SIGTERM then SIGKILL after grace."""
+    p.terminate()
+    try:
+        p.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        p.kill(); p.wait()
+
+
+def _run_killable(cmd, cwd, kill_event, grace=3.0, poll=0.1, idle_secs=None):
     """Run cmd capturing stdout (for rate-limit detection). Returns (status, output, returncode)
-    where status is 'killed' or 'done'. Honors kill_event (SIGTERM then SIGKILL after grace).
+    where status is 'killed', 'idle' (no output for idle_secs = stuck = a roadblock), or 'done'.
+    Honors kill_event (SIGTERM then SIGKILL after grace).
 
     The command streams continuous JSON (`claude -p --output-format stream-json --verbose`). A
     DAEMON READER THREAD drains p.stdout to EOF concurrently so the child never blocks on a full
     OS pipe buffer (~64KB) while the main loop only polls poll()/kill_event. Without this drain a
-    long run deadlocks: the child blocks on write(), poll() stays None forever, the worker hangs."""
+    long run deadlocks: the child blocks on write(), poll() stays None forever, the worker hangs.
+    The reader also stamps the last-output time so the idle watchdog can spot a stuck job."""
     p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    if kill_event is None:
-        out, _ = p.communicate()        # communicate() already drains both pipes
+    if kill_event is None and idle_secs is None:
+        out, _ = p.communicate()        # fast path: no kill/idle watch -> communicate() drains
         return "done", out or "", p.returncode
     chunks = []
+    last = [time.time()]                 # time of the most recent output line (idle watchdog)
 
     def _drain():
         try:
             for line in p.stdout:       # reads to EOF; keeps the pipe empty so the child never blocks
                 chunks.append(line)
+                last[0] = time.time()
         except Exception:  # noqa: BLE001 — reader is best-effort; status/returncode still authoritative
             pass
 
     reader = threading.Thread(target=_drain, daemon=True)
     reader.start()
     while p.poll() is None:
-        if kill_event.is_set():
-            p.terminate()
-            try:
-                p.wait(timeout=grace)
-            except subprocess.TimeoutExpired:
-                p.kill(); p.wait()
+        if kill_event is not None and kill_event.is_set():
+            _terminate(p, grace)
             reader.join(timeout=grace)
             return "killed", "".join(chunks), p.returncode
+        if idle_secs is not None and (time.time() - last[0]) > idle_secs:
+            _terminate(p, grace)
+            reader.join(timeout=grace)
+            return "idle", "".join(chunks), p.returncode
         time.sleep(poll)
     reader.join(timeout=grace)          # let the reader finish draining the now-closed pipe
-    return ("killed" if kill_event.is_set() else "done"), "".join(chunks), p.returncode
+    return ("killed" if (kill_event is not None and kill_event.is_set()) else "done"), \
+        "".join(chunks), p.returncode
 
 
 def _discard_worktree(root, job_id):
@@ -290,18 +305,22 @@ def _discard_worktree(root, job_id):
 # execute_job — real per-job work
 # ---------------------------------------------------------------------------
 
-def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict], str]:
+def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> Tuple[str, Optional[dict], str]:
     """Real per-job work: worktree -> sandbox settings -> pre-warm deps -> sandboxed
     claude -p -> test gate.
 
-    Returns (outcome, diff, note). Outcome is 'pass' or 'fail'. The orchestration in
-    run_queue treats any exception here as a 'fail' so one bad job never aborts the run.
+    Returns (outcome, diff, note). Outcome is one of pass | fail | killed | limit | roadblocked.
+    A ROADBLOCK (stuck past the ROE idle timeout, or a failed gate) KEEPS the branch so the
+    advising agent / operator can pick it up and `scorch coa resume <id>` can continue. The
+    orchestration in run_queue treats any exception here as a 'fail' so one bad job never aborts
+    the run. resume=True reuses an existing worktree/branch from a prior roadblocked attempt
+    instead of creating a fresh one.
 
     Sandbox caveats (from planning lookup):
     - Network filtering is hostname-only (no TLS inspection); narrow allowlists matter.
       With API-only + offline agent this is moot for our use case.
     - Linux needs bubblewrap+socat installed; failIfUnavailable: true makes a missing
-      sandbox a hard error rather than silently running unconfined — correct for an
+      sandbox a hard error rather than silently running unconfined, correct for an
       autonomous executor.
     """
     root = os.path.realpath(os.path.expanduser(repo))
@@ -310,40 +329,54 @@ def execute_job(repo: str, job: "Job", roe: "ROE") -> Tuple[str, Optional[dict],
     try:
         base = _git(root, "rev-parse", "HEAD")
         base_sha = base.stdout.strip() if base.returncode == 0 else "HEAD~1"
-        # Worktree add is INSIDE the try AND its return code is checked: _git never raises
-        # (no check=True), so a failed add (dup branch, full disk) must not silently proceed
-        # against a missing worktree, nor abort the whole run.
-        wadd = _git(root, "worktree", "add", "-b", br, wt, "HEAD")
-        if wadd.returncode != 0:
-            return "fail", None, "worktree add failed: " + (wadd.stderr or "").strip()[:200]
+        if resume:
+            # Continue a prior roadblocked attempt: its worktree/branch were kept, reuse them.
+            if not os.path.isdir(wt):
+                return "fail", None, "resume: no prior worktree at {} (nothing to continue).".format(wt)
+        else:
+            # Worktree add is INSIDE the try AND its return code is checked: _git never raises
+            # (no check=True), so a failed add (dup branch, full disk) must not silently proceed
+            # against a missing worktree, nor abort the whole run.
+            wadd = _git(root, "worktree", "add", "-b", br, wt, "HEAD")
+            if wadd.returncode != 0:
+                return "fail", None, "worktree add failed: " + (wadd.stderr or "").strip()[:200]
         # Write sandbox settings BEFORE any spawn so the agent starts confined.
         write_sandbox_settings(wt)
         if roe.setup_cmd:           # pre-warm deps with network (trusted, runner-run)
             subprocess.run(roe.setup_cmd, cwd=wt, shell=True,
                            capture_output=True, text=True)
-        # Killable claude step: the cockpit Engine may set _kill_ctx.event for this job.
-        status, out, rc = _run_killable(build_claude_cmd(job, wt), wt, getattr(_kill_ctx, "event", None))
+        # Killable claude step: the cockpit Engine may set _kill_ctx.event for this job. The idle
+        # watchdog flags a job that has gone silent past the ROE timeout as a roadblock.
+        status, out, rc = _run_killable(build_claude_cmd(job, wt), wt,
+                                        getattr(_kill_ctx, "event", None),
+                                        idle_secs=(roe.roadblock_idle_secs or None))
         if status == "killed":
             _discard_worktree(root, job.id)
-            return "killed", None, "killed by operator — work discarded."
+            return "killed", None, "killed by operator, work discarded."
+        if status == "idle":                            # stuck: keep the branch for resume
+            mins = int((roe.roadblock_idle_secs or 0) / 60)
+            return ("roadblocked", _diffstat(wt, base_sha),
+                    "roadblock: no output for {}m (stuck). Branch kept; auto-advise or "
+                    "`scorch coa resume {}`.".format(mins, job.id))
         if detect_rate_limit(out):
             _discard_worktree(root, job.id)             # nothing landed; job returns to the queue
-            return "limit", None, "stopped: usage limit reached — re-queued, resume after reset."
+            return "limit", None, "stopped: usage limit reached, re-queued, resume after reset."
         diff = _diffstat(wt, base_sha)
-        # A nonzero claude exit with no changes is a real failure (e.g. a rejected flag / version
-        # mismatch), not a phantom 'pass' — catch it before the gate, which would otherwise let an
-        # empty no-gate run report 'pass'.
+        # A nonzero claude exit with no changes is a broken invocation (e.g. a rejected flag /
+        # version mismatch), not a phantom 'pass' and not a work roadblock the agent can solve.
         if rc != 0 and not diff:
             return ("fail", diff,
-                    "claude exited {} with no changes — flag/version error? "
-                    "(check the invocation)".format(rc))
+                    "claude exited {} with no changes (flag/version error?), "
+                    "check the invocation.".format(rc))
         gate = build_gate_cmd(job, roe)
         if gate is None:
-            return "pass", diff, "no gate configured (ROE test_cmd unset) — review manually."
+            return "pass", diff, "no gate configured (ROE test_cmd unset), review manually."
         g = subprocess.run(gate, cwd=wt, shell=True, capture_output=True, text=True)
         if g.returncode == 0:
             return "pass", diff, "gate passed."
-        return "fail", diff, "gate FAILED ({}) — branch kept for triage.".format(gate)
+        return ("roadblocked", diff,                    # failed gate: a roadblock, branch kept
+                "roadblock: gate FAILED ({}). Branch kept; auto-advise or "
+                "`scorch coa resume {}`.".format(gate, job.id))
     except Exception as e:          # noqa: BLE001 — never let one job abort the run
         return "fail", None, "runner error: {}".format(e)
 
@@ -376,6 +409,42 @@ def write_job_deliverable(repo: str, oc: "JobOutcome") -> None:
         return
     coa_io.write_deliverable(repo, oc.id, render_deliverable_md(oc, repo))
     oc.deliverable = coa_io.deliverable_rel(oc.id)
+
+
+def render_roadblock_md(oc: "JobOutcome", repo: str) -> str:
+    """The roadblock report: what happened, where it stopped, and how to pick it back up. Pure."""
+    lines = [
+        "# Roadblock: {} ({})".format(oc.title, oc.id), "",
+        "Repo: {}".format(repo),
+        "Type: {} . DEFCON {}".format(oc.type, oc.defcon),
+        "Branch: {}".format(oc.branch or "(none)"), "",
+        "## What happened", "", oc.note or "(no note)", "",
+        "## Where it stopped / suggested fix", "",
+        "Inspect the branch above for the partial work. Apply the fix, then "
+        "`scorch coa resume {}` to continue and finish.".format(oc.id),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _notify_roadblock(oc: "JobOutcome") -> None:
+    """Ping the developer that a job needs them (reuses the statusline notifier). Best-effort."""
+    try:
+        from . import statusline
+        subtitle = (oc.title or oc.id)[:60].replace('"', "'")
+        msg = (oc.note or "needs you").replace('"', "'")[:120]
+        statusline._notify("Scorched Earth: job roadblocked", subtitle, msg)
+    except Exception:  # noqa: BLE001 — a failed notification must never abort the run
+        pass
+
+
+def handle_roadblock(repo: str, oc: "JobOutcome") -> None:
+    """On a roadblocked job: write the roadblock report, stamp oc.roadblock, and notify the
+    developer. The advising-agent auto-solve (Stage 7) hooks in ahead of this."""
+    if oc.outcome != "roadblocked":
+        return
+    coa_io.write_roadblock(repo, oc.id, render_roadblock_md(oc, repo))
+    oc.roadblock = coa_io.roadblock_rel(oc.id)
+    _notify_roadblock(oc)
 
 
 def _outcome_for(job: Job, seq: int, disposition: str) -> JobOutcome:
@@ -442,6 +511,8 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None, approved=Fa
         oc = run_one(repo, job, roe, repo_disp, i, execute=execute,
                      on_running=lambda r: (rr.jobs.append(r), _persist()))
         write_job_deliverable(repo, oc)       # per-job deliverable record (pass/fail only)
+        if oc.outcome == "roadblocked":       # report + notify; the run continues to the next job
+            handle_roadblock(repo, oc)
         rr.jobs[-1] = oc                      # replace the 'running' outcome with the finished one
         if oc.outcome == "limit":
             rr.state = "halted"
@@ -460,6 +531,7 @@ def _summary(rr: RunResult) -> str:
     parts = []
     if n.get("pass"):              parts.append(f"{n['pass']} secured")
     if n.get("fail"):              parts.append(f"{n['fail']} cratered")
+    if n.get("roadblocked"):       parts.append(f"{n['roadblocked']} roadblocked")
     if n.get("blocked-roe"):       parts.append(f"{n['blocked-roe']} blocked (ROE)")
     if n.get("blocked-approval"):  parts.append(f"{n['blocked-approval']} need approval")
     if n.get("killed"):            parts.append(f"{n['killed']} killed")
