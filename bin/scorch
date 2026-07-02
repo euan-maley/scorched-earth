@@ -281,6 +281,12 @@ def _coa_cli(raw):
         import dataclasses as _dc
         named = [a for a in rest if not a.startswith("-")]
         repo = named[0] if named else "."
+        if "--web" in rest:
+            # The served editor: the shell opened on the RULES OF ENGAGEMENT tab (all linked
+            # repos, or just the named one). This is what /roe launches, since a slash command
+            # has no tty for the curses editor.
+            repos = [repo] if named else (coa_io.list_repos() or [repo])
+            return _serve_shell(repos, tab="roe")
         # Interactive editor when we own a real terminal; JSON fallback for pipes/scripts/--json.
         if "--json" in rest or not sys.stdout.isatty():
             print(_json.dumps(_dc.asdict(coa_io.load_roe(repo)), indent=2))

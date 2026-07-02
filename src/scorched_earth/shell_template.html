@@ -50,12 +50,13 @@
     <button class="tab" role="tab" data-tab="coa">COURSE OF ACTION</button>
     <button class="tab" role="tab" data-tab="war-room">WAR ROOM</button>
     <button class="tab" role="tab" data-tab="aar">AFTER-ACTION</button>
+    <button class="tab" role="tab" data-tab="roe">RULES OF ENGAGEMENT</button>
   </nav>
   <div class="panes" id="panes"></div>
 <script>
   const TOKEN = __SHELL_TOKEN__;
-  const TABS = ["sitrep","coa","war-room","aar"];
-  const SRC = {sitrep:"/sitrep", coa:"/coa", "war-room":"/war-room", aar:"/aar"};
+  const TABS = ["sitrep","coa","war-room","aar","roe"];
+  const SRC = {sitrep:"/sitrep", coa:"/coa", "war-room":"/war-room", aar:"/aar", roe:"/roe"};
   const panes = document.getElementById("panes");
   const frames = {};                       // tab -> iframe, created on first visit
 

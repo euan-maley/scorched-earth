@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scorched Earth: Rules of Engagement</title>
+<!--
+  RULES OF ENGAGEMENT - the served ROE editor (a shell tab). Drives the same pure roe_edit
+  model as `scorch roe` in a terminal: every click is one (repo, index, direction) step sent to
+  the token-guarded POST /roe, saved instantly server-side, and the page repaints from the
+  returned truth. Freeform fields render read-only.
+
+  HOW IT FILLS: roe_view.render_page replaces __ROE_JSON__ (the full state) and __ROE_TOKEN__.
+-->
+<style>
+  :root{
+    color-scheme:dark;
+    --font:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --ground:#0b0705; --panel:#0b0f12; --mod:#10181d;
+    --panel-bd:#243639; --mod-bd:#2b3d44; --track:#070b0d; --track-bd:#243a3a;
+    --strong:#eef3f3; --primary:#c1dada; --secondary:#9ec1c1; --muted:#86abab; --head:#8fb8b8;
+    --amber:#e2a04d; --ember:#e2541d; --ember2:#ff9a3d; --bracket:#3a5a5a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--ground);font-family:var(--font);padding:26px 16px;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:980px;margin:0 auto;background:var(--panel);border:1px solid var(--panel-bd);
+        position:relative;overflow:hidden;box-shadow:0 0 0 1px var(--ground),0 18px 60px rgba(0,0,0,.6)}
+  .br{position:absolute;width:11px;height:11px;z-index:9}
+  .br.tl{left:6px;top:6px;border-left:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.tr{right:6px;top:6px;border-right:2px solid var(--bracket);border-top:2px solid var(--bracket)}
+  .br.bl{left:6px;bottom:6px;border-left:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+  .br.brr{right:6px;bottom:6px;border-right:2px solid var(--bracket);border-bottom:2px solid var(--bracket)}
+
+  .hdr{position:relative;padding:20px 22px 18px;border-bottom:1px solid #1b2a30;
+       background:linear-gradient(#0f161a,#0b0f12)}
+  .hdr__top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .hdr__tag{display:flex;align-items:center;gap:11px;font-size:14px;letter-spacing:2px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--amber);
+       box-shadow:0 0 8px var(--amber)}
+  .hdr__title{margin:13px 0 0;font-size:clamp(26px,5vw,42px);font-weight:800;letter-spacing:2px;
+    line-height:.96;background:linear-gradient(90deg,#ff3b1f,#ff8a1f,#ffd24a,#ff8a1f,#ff3b1f);
+    background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:firetext 2s linear infinite}
+  @keyframes firetext{to{background-position:200% 0}}
+  .hdr__sub{margin-top:8px;font-size:14px;letter-spacing:2px;color:#e9c08a}
+  .saved{font-size:12px;font-weight:800;letter-spacing:2px;color:#7cb342;opacity:0;
+         transition:opacity .2s}
+  .saved.on{opacity:1}
+  .refresh{font-family:var(--font);font-size:12px;font-weight:800;letter-spacing:1.5px;
+           color:var(--ember2);background:none;border:1px solid #5a3014;padding:5px 12px;
+           cursor:pointer;border-radius:2px;white-space:nowrap}
+  .refresh:hover{background:#1a0f08;color:#ff9a3d}
+
+  .tabs{display:flex;align-items:stretch;flex-wrap:wrap;gap:0;padding:0 18px;background:#0a1014;
+        border-bottom:1px solid #1b2a30}
+  .tabs__label{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;
+               letter-spacing:2px;color:var(--muted);padding:10px 14px 10px 0}
+  .tabs__chev{color:var(--ember2);font-size:14px}
+  .tab{font-family:var(--font);font-size:13px;font-weight:700;letter-spacing:1.2px;
+       color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;
+       padding:10px 14px;cursor:pointer}
+  .tab:hover{color:var(--secondary)}
+  .tab.active{color:var(--strong);border-bottom-color:var(--ember)}
+
+  .deck{padding:18px;display:flex;flex-direction:column;gap:14px}
+  .mod{border:1px solid var(--mod-bd);background:var(--mod);padding:14px 16px}
+  .mod__hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+           border-bottom:1px solid var(--mod-bd);padding-bottom:8px;margin-bottom:13px;letter-spacing:2px}
+  .mod__hd .l{font-size:15px;color:var(--head);font-weight:700}
+  .mod__hd .r{font-size:12px;color:var(--muted)}
+
+  .row{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:6px 18px;align-items:center;
+       padding:10px 6px;border-bottom:1px solid #16232a}
+  .row:last-child{border-bottom:0}
+  .row__label{font-weight:700;color:var(--strong);letter-spacing:.4px;font-size:15px}
+  .row__help{grid-column:1 / -1;font-size:13px;line-height:1.35;color:var(--muted);max-width:78ch}
+  .cyc{display:inline-flex;align-items:center;gap:8px}
+  .cyc__btn{font-family:var(--font);font-size:15px;font-weight:800;color:var(--ember2);
+            background:var(--track);border:1px solid var(--track-bd);width:30px;height:26px;
+            cursor:pointer;line-height:1}
+  .cyc__btn:hover{background:#1a0f08;border-color:#5a3014}
+  .cyc__val{min-width:96px;text-align:center;font-size:14px;font-weight:700;letter-spacing:1px;
+            color:var(--amber);border:1px solid var(--mod-bd);background:var(--track);
+            padding:4px 10px}
+  .tgl{font-family:var(--font);font-size:14px;font-weight:800;letter-spacing:1px;cursor:pointer;
+       border:1px solid var(--mod-bd);background:var(--track);padding:4px 14px;color:var(--muted)}
+  .tgl.on{color:#7cb342;border-color:#3d5a24}
+  .tgl:hover{border-color:#5a3014}
+
+  .free{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:13px}
+  .free dt{color:var(--head);letter-spacing:1px;font-weight:700}
+  .free dd{margin:0;color:var(--secondary);word-break:break-word}
+  .meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px;
+        letter-spacing:1px;color:#7a9d9d;padding:2px}
+  .scan{position:absolute;inset:0;pointer-events:none;z-index:7;
+        background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);
+        mix-blend-mode:multiply}
+  .vig{position:absolute;inset:0;pointer-events:none;z-index:7;
+       background:radial-gradient(ellipse at center,transparent 56%,rgba(0,0,0,.42) 100%)}
+  @media (prefers-reduced-motion:reduce){.hdr__title{animation:none;background-position:0 0}}
+</style>
+</head>
+<body>
+<div class="wrap" id="roe"></div>
+<script>
+var DATA = __ROE_JSON__;
+var TOKEN = __ROE_TOKEN__;
+
+(function(){
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const root = document.getElementById("roe");
+  let active = 0;
+
+  function tabsHTML(){
+    const R = DATA.repos || [];
+    if(R.length <= 1) return "";
+    return `<div class="tabs"><span class="tabs__label">REPOS <span class="tabs__chev">&#8250;</span></span>` +
+      R.map((rp,i)=>`<button class="tab${i===active?' active':''}" data-i="${i}">${esc(rp.name||rp.repo)}</button>`).join("") +
+      `</div>`;
+  }
+
+  function rowHTML(c, i){
+    let ctl;
+    if(c.kind === "cycle"){
+      ctl = `<span class="cyc">
+        <button class="cyc__btn" data-act="left" data-i="${i}" title="previous value">&#8249;</button>
+        <span class="cyc__val">${esc(c.value)}</span>
+        <button class="cyc__btn" data-act="right" data-i="${i}" title="next value">&#8250;</button>
+      </span>`;
+    } else {
+      ctl = `<button class="tgl${c.on?' on':''}" data-act="flip" data-i="${i}">${c.on?"[x] ON":"[&nbsp;&nbsp;] OFF"}</button>`;
+    }
+    return `<div class="row"><span class="row__label">${esc(c.label)}</span>${ctl}
+            <span class="row__help">${esc(c.help)}</span></div>`;
+  }
+
+  function freeformHTML(f){
+    const rows = Object.entries(f || {})
+      .filter(([,v]) => v !== null && v !== undefined && String(v) !== "" && !(Array.isArray(v) && !v.length))
+      .map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v)?v.join(", "):v)}</dd>`).join("");
+    return `<div class="mod">
+      <div class="mod__hd"><span class="l">FREEFORM (read-only)</span>
+        <span class="r">hand-edit in .scorched/roe.json</span></div>
+      ${rows ? `<dl class="free">${rows}</dl>`
+             : `<div style="font-size:13px;color:var(--muted)">none set (test_cmd, setup_cmd, context_cmd, goals, exclude_paths, min_weekly_left)</div>`}
+    </div>`;
+  }
+
+  function paint(){
+    const R = DATA.repos || [];
+    if(active >= R.length) active = 0;
+    const r = R[active] || {controls:[], freeform:{}, name:""};
+    root.innerHTML =
+      '<span class="br tl"></span><span class="br tr"></span><span class="br bl"></span><span class="br brr"></span>' +
+      `<div class="hdr">
+        <div class="hdr__top">
+          <div class="hdr__tag"><span class="dot"></span><span>// ROE &middot; STANDING ORDERS</span></div>
+          <span style="display:flex;align-items:center;gap:14px">
+            <span class="saved" id="saved">&#10003; SAVED</span>
+            <button class="refresh" id="refreshBtn" title="Re-read every repo's roe.json">&#8635; REFRESH</button>
+          </span>
+        </div>
+        <h1 class="hdr__title">RULES OF ENGAGEMENT</h1>
+        <div class="hdr__sub">AS SET BY THE OPERATOR &middot; EVERY CHANGE SAVES INSTANTLY &middot; ${esc(r.name)}</div>
+      </div>` +
+      tabsHTML() +
+      `<div class="deck">
+        <div class="mod">
+          <div class="mod__hd"><span class="l">WIRED RULES</span><span class="r">click &#8249;&nbsp;&#8250; to cycle &middot; click a toggle to flip</span></div>
+          ${(r.controls||[]).map(rowHTML).join("")}
+        </div>
+        ${freeformHTML(r.freeform)}
+        <div class="meta"><span>SAVED TO ${esc(r.repo)}/.scorched/roe.json</span><span>// FIELD INTEL &middot; RULES OF ENGAGEMENT</span></div>
+      </div>
+      <div class="scan"></div><div class="vig"></div>`;
+  }
+
+  let savedTimer = null;
+  function flashSaved(){
+    const el = document.getElementById("saved");
+    if(!el) return;
+    el.classList.add("on");
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(()=>el.classList.remove("on"), 1200);
+  }
+
+  function step(index, direction){
+    const r = (DATA.repos||[])[active];
+    if(!r) return;
+    fetch("/roe", {method:"POST",
+                   headers:{"X-Scorch-Token": TOKEN, "Content-Type":"application/json"},
+                   body: JSON.stringify({repo: r.repo, index: index, direction: direction})})
+      .then(res => res.ok ? res.json() : null)
+      .then(fresh => { if(fresh && fresh.controls){ DATA.repos[active] = fresh; paint(); flashSaved(); } })
+      .catch(()=>{});
+  }
+
+  function doRefresh(){
+    fetch("/roe.json?t=" + encodeURIComponent(TOKEN), {cache:"no-store"})
+      .then(res => res.json())
+      .then(fresh => { if(fresh && fresh.repos){ DATA = fresh; paint(); } })
+      .catch(()=>{});
+  }
+
+  root.addEventListener("click", function(e){
+    const tab = e.target.closest(".tab");
+    if(tab){ active = parseInt(tab.getAttribute("data-i"),10) || 0; paint(); return; }
+    if(e.target.closest("#refreshBtn")){ doRefresh(); return; }
+    const btn = e.target.closest("[data-act]");
+    if(!btn) return;
+    const i = parseInt(btn.getAttribute("data-i"), 10);
+    const act = btn.getAttribute("data-act");
+    step(i, act === "left" ? -1 : act === "right" ? 1 : 0);
+  });
+
+  paint();
+})();
+</script>
+</body></html>

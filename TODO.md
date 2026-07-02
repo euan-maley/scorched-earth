@@ -1,6 +1,21 @@
 # TODO
 
-## Current Session (2026-07-02): merge, release v2.7.2/v2.7.3, CRT + AAR tab, hands-on haiku, dispatch image - DONE
+## Current Session (2026-07-02, pt.2): product review of the 13-item backlog work
+
+Goal: review the shipped features from the 2026-07-01 backlog list, hands-on QA first, then code review of the riskiest/flagged areas. Fix small as we go, report big for triage.
+
+1. [ ] Setup: confirm linked repos + staged jobs, boot `scorch coa --serve` (shell) in background, connect Playwright
+2. [ ] QA sweep A (browser): shell tabs #13, sitrep refresh #12, freshness #5/#6, approval tooltips #1, cratered legend #9, AFTER-ACTION tab + OPEN buttons
+3. [ ] QA sweep B (live run): one real haiku docs job; live progress #7, CRT monitor, deliverable -> AAR OPEN
+4. [ ] QA sweep C (terminal/engine): ROE editor #10 (pty), run modes #3/#4 (--session real spawn, takeover to the exec boundary), roadblock ladder #11 (stalling stub + resume), HALTED #2/#8 (crafted limit state, real limit unforceable)
+5. [ ] Code review: parallel agents on /artifact, exec_modes.py, runner roadblock ladder, coa_serve shell routes + QA-flagged areas
+6. [x] Findings: small fixes committed as found (docs in same commit); ranked findings list for triage
+7. [x] Fix wave: all review findings fixed (fable on the runner-semantics core, sonnet agents on the mechanical batches); attended_perms ROE dial added (user request)
+8. [x] ROE editor HTML frontend (#10 follow-up, user request): a 5th shell tab over the roe_edit model behind a guarded POST /roe; /roe command launches it via `scorch roe --web` (built + browser-verified; closes the last Phase 2 roadmap item)
+
+---
+
+## Prior Session (2026-07-02): merge, release v2.7.2/v2.7.3, CRT + AAR tab, hands-on haiku, dispatch image - DONE
 
 Shipped Phase 3 + 4 to the public plus two rounds of live-visibility polish, all released.
 

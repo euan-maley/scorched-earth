@@ -660,6 +660,75 @@ _ap = aar_page([_arepo], "TK")
 check("aar_page renders the latest run with an armed OPEN link",
       b"J1" in _ap and b"/artifact?t=TK" in _ap)
 
+# --- RULES OF ENGAGEMENT tab: served editor over the roe_edit model (#10 follow-up) -
+from scorched_earth import roe_view as _rv  # noqa: E402
+
+_roe_repo = tempfile.mkdtemp(); os.makedirs(os.path.join(_roe_repo, ".scorched"), exist_ok=True)
+_rvs = _rv.roe_state([_roe_repo])
+check("roe_state carries controls + read-only freeform per repo",
+      len(_rvs["repos"]) == 1 and isinstance(_rvs["repos"][0]["controls"], list)
+      and "test_cmd" in _rvs["repos"][0]["freeform"])
+_page = _rv.render_page("RT", [_roe_repo]).decode("utf-8")
+check("roe_view.render_page fills the template (no placeholder leak)",
+      "__ROE_JSON__" not in _page and "__ROE_TOKEN__" not in _page
+      and "RULES OF ENGAGEMENT" in _page)
+
+_roe_eng = Engine([_roe_repo], execute=lambda *a: ("pass", None, "ok"),
+                  load_state=lambda: _STATE, now=lambda: 1)
+_roe_eng.stop()
+_roe_httpd, _roe_port = make_server(_roe_eng, "roe-tok", shell_repos=[_roe_repo])
+_shth.Thread(target=_roe_httpd.serve_forever, daemon=True).start()
+def _roeget(path, tok="roe-tok"):
+    c = http.client.HTTPConnection("127.0.0.1", _roe_port, timeout=3)
+    c.request("GET", path + (f"?t={tok}" if tok is not None else ""))
+    r = c.getresponse(); b = r.read(); c.close(); return r.status, b
+def _roepost(body, tok="roe-tok"):
+    c = http.client.HTTPConnection("127.0.0.1", _roe_port, timeout=3)
+    hdrs = {"Content-Type": "application/json"}
+    if tok is not None:
+        hdrs["X-Scorch-Token"] = tok
+    c.request("POST", "/roe", json.dumps(body), hdrs)
+    r = c.getresponse(); b = r.read(); c.close(); return r.status, b
+
+check("shell mode: GET /roe serves the editor page", _roeget("/roe")[0] == 200)
+_s, _b = _roeget("/roe.json")
+check("shell mode: GET /roe.json returns the editor state",
+      _s == 200 and json.loads(_b)["repos"][0]["repo"] == os.path.realpath(_roe_repo))
+_ctrls0 = json.loads(_b)["repos"][0]["controls"]
+_ab_idx = next(i for i, c in enumerate(_ctrls0) if c["field"] == "attended_branch")
+_ap_idx = next(i for i, c in enumerate(_ctrls0) if c["field"] == "attended_perms")
+_s, _b = _roepost({"repo": _roe_repo, "index": _ab_idx, "direction": 0})
+check("POST /roe flips a toggle and returns the fresh controls",
+      _s == 200 and json.loads(_b)["controls"][_ab_idx]["on"] is True)
+check("POST /roe persisted the step to the repo's roe.json",
+      json.load(open(os.path.join(_roe_repo, ".scorched", "roe.json")))["attended_branch"] is True)
+_s, _b = _roepost({"repo": _roe_repo, "index": _ap_idx, "direction": 1})
+check("POST /roe cycles attended_perms skip -> edits",
+      _s == 200 and json.loads(_b)["controls"][_ap_idx]["value"] == "edits")
+check("POST /roe rejects a non-allowlisted repo",
+      _roepost({"repo": "/tmp/other", "index": 0, "direction": 1})[0] == 400)
+check("POST /roe rejects a malformed step (index/direction validation)",
+      _roepost({"repo": _roe_repo, "index": "3", "direction": 1})[0] == 400
+      and _roepost({"repo": _roe_repo, "index": 0, "direction": 2})[0] == 400
+      and _roepost({"repo": _roe_repo, "index": True, "direction": 1})[0] == 400)
+check("POST /roe without the token header is forbidden",
+      _roepost({"repo": _roe_repo, "index": 0, "direction": 1}, tok=None)[0] == 403)
+_roe_httpd.shutdown()
+
+_st_eng2 = Engine([_roe_repo], execute=lambda *a: ("pass", None, "ok"),
+                  load_state=lambda: _STATE, now=lambda: 1)
+_st_httpd2, _st_port2 = make_server(_st_eng2, "st2-tok")   # standalone: no shell tabs
+_shth.Thread(target=_st_httpd2.serve_forever, daemon=True).start()
+_c2 = http.client.HTTPConnection("127.0.0.1", _st_port2, timeout=3)
+_c2.request("POST", "/roe", json.dumps({"repo": _roe_repo, "index": 0, "direction": 1}),
+            {"X-Scorch-Token": "st2-tok", "Content-Type": "application/json"})
+_r2 = _c2.getresponse(); _r2.read(); _c2.close()
+check("standalone cockpit (no shell) refuses POST /roe", _r2.status == 404)
+_st_httpd2.shutdown()
+
+check("shell frame carries the RULES OF ENGAGEMENT tab wired to /roe",
+      "RULES OF ENGAGEMENT" in _frame and '"/roe"' in _frame)
+
 print(f"\n{passed} checks passed.")
 if failures:
     print(f"{len(failures)} FAILED: " + ", ".join(failures))

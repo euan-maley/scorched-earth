@@ -401,6 +401,13 @@ def make_server(engine, token, *, render=None, shell_repos=None):
                 self._send(200, json.dumps(coa_view.coa_state(shell_repos)).encode("utf-8"))
             elif shell_mode and path == "/aar":
                 self._send(200, aar_page(shell_repos, token), "text/html; charset=utf-8")
+            elif shell_mode and path == "/roe":
+                from . import roe_view
+                self._send(200, roe_view.render_page(token, shell_repos),
+                           "text/html; charset=utf-8")
+            elif shell_mode and path == "/roe.json":
+                from . import roe_view
+                self._send(200, json.dumps(roe_view.roe_state(shell_repos)).encode("utf-8"))
             elif shell_mode and path == "/artifact":
                 qs = parse_qs(urlparse(self.path).query)
                 code, body, ctype = serve_artifact(shell_repos, qs)
@@ -460,9 +467,25 @@ def make_server(engine, token, *, render=None, shell_repos=None):
                 for _rp in run_repos:
                     if os.path.realpath(os.path.expanduser(_rp or "")) not in engine.repos:
                         self._send(400, b'{"error":"unknown repo"}'); return
-            if path in ("/queue", "/unqueue", "/reorder", "/kill"):
+            if path in ("/queue", "/unqueue", "/reorder", "/kill", "/roe"):
                 if os.path.realpath(os.path.expanduser(repo or "")) not in engine.repos:
                     self._send(400, b'{"error":"unknown repo"}'); return
+            if path == "/roe":
+                # One editor step (index, direction), applied by the pure roe_edit reducer and
+                # saved server-side; only shell mode serves the editor page but the write path
+                # validates independently: allowlisted repo, int index, direction in -1/0/1.
+                if not shell_mode:
+                    self._send(404, b'{"error":"not found"}'); return
+                idx, dirn = body.get("index"), body.get("direction")
+                if not isinstance(idx, int) or isinstance(idx, bool) or dirn not in (-1, 0, 1):
+                    self._send(400, b'{"error":"bad step"}'); return
+                from . import roe_view
+                try:
+                    fresh = roe_view.apply_step(repo, idx, dirn)
+                except Exception as e:             # noqa: BLE001
+                    self._send(500, json.dumps({"error": str(e)}).encode("utf-8")); return
+                self._send(200, json.dumps(fresh).encode("utf-8"))
+                return
             # job-ids ONLY: any cmd/launch field in the body is never read.
             try:
                 if path == "/queue":
