@@ -62,6 +62,9 @@ plugin/skill; install flow asks the user how they want the light displayed.
 
 ## Gotchas
 
+- **The plugin version string gates updates.** `claude plugin update` only pulls a fresh copy
+  when the version number in `plugin.json` changes; merging to `main` alone does NOT reach existing
+  testers. Bump `plugin.json` + `pyproject.toml` for any change you want people to receive.
 - `rate_limits` and either bucket can be missing early in a session → segment must
   emit nothing, never error (the statusline must keep rendering).
 - `resets_at` is unix **seconds**, not ms.

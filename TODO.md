@@ -1,6 +1,22 @@
 # TODO
 
-## Current Session (2026-07-01, pt.3): Phase 3 + 4 - execution engine + live progress - DONE
+## Current Session (2026-07-02): merge, release v2.7.2/v2.7.3, CRT + AAR tab, hands-on haiku, dispatch image - DONE
+
+Shipped Phase 3 + 4 to the public plus two rounds of live-visibility polish, all released.
+
+- **Published v2.7.2:** merged `feat/coa-observability-freshness` (Phase 1+2+3+4) into `main`, tagged, GitHub Release; refreshed README + marketplace to name the run modes / roadblock net.
+- **CRT field monitor (#7):** a beige retro-monitor overlay in the War Room cockpit (`▣ CRT`), green phosphor screen streaming each running job's latest step off the SSE progress log. Matched to the demo video by sampling an actual frame (screen `#0d170f`, muted jade text `#4d8560`, khaki bezel).
+- **AFTER-ACTION shell tab:** new `/aar` route re-renders the latest run across repos (`rr_from_record`); each deliverable/roadblock row has an **OPEN** button served by a token-guarded, path-validated `/artifact` route. 4th big tab in the shell.
+- **fix(runner): idempotent worktree** - a leftover `scorched/<id>` branch no longer craters a re-run; execute_job clears the stale pair first. Found during the real haiku run.
+- **Published v2.7.3** (CRT + AAR + fix), then **merged the two haiku docstrings** (clamp_defcon, _cycle) into `main`. Suites **371** (78/75/99/119).
+- **Hands-on haiku test:** ran `scorch coa run` for real with `--model haiku` in this repo; two docs jobs SECURED in sandboxed worktrees, gate-verified, deliverables written. Confirmed the whole engine works end-to-end with a real model.
+- **Dispatch image:** built `~/Downloads/scorched-earth-dispatch.png` (2160x2700, IG 4:5) - General Claudewitz field dispatch, solid fire-red/amber (no gradients), centered AUTHORIZED stamp, P.S. as plain text above the CTA. Source: `<scratchpad>/dispatch.html`.
+
+**Open / next:** version-string gates plugin updates (merging alone does not reach testers; bump to push changes). Leftover `scorched/doc-*` branches + `.scorched/wt/` cleaned at close. The **ROE editor HTML frontend** (#10 follow-up) is still the one deferred Phase 2 item.
+
+---
+
+## Prior Session (2026-07-01, pt.3): Phase 3 + 4 - execution engine + live progress - DONE
 
 Built the whole execution-engine spec (`docs/superpowers/specs/2026-07-01-execution-engine-and-progress-design.md`) in 8 verified stages, one commit each, on `feat/coa-observability-freshness`. Suites 310 -> **361** (78/75/92/116). No plan-skill ceremony (user's call), TDD-ish per stage.
 
