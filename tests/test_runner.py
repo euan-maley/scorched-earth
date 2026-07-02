@@ -478,6 +478,8 @@ _rr = _rn.run_queue(_lim_repo, _state_ok, now=1, date="2026-06-25", execute=_lim
 check("run_queue halts the queue on a usage-limit outcome (j2 never runs)", _calls == ["j1"])
 check("run_queue records the limit job as 'limit', not 'fail'",
       any(j.outcome == "limit" for j in _rr.jobs))
+check("a limit halt leaves the whole queue intact (both jobs still queued for after reset)",
+      [j.id for j in _io.read_queue(_lim_repo)] == ["j1", "j2"])
 
 # --- Stage 6: roadblock ladder (watchdog, report, notify, resume) -----------------
 from scorched_earth.runner import (_run_killable, render_roadblock_md, handle_roadblock,  # noqa: E402
@@ -519,6 +521,16 @@ check("run_queue writes the roadblock report + counts it in the summary",
       os.path.exists(_io.roadblock_path(_rbq_repo, "k1")) and "roadblocked" in _rrq.note)
 check("board_state files a roadblocked job under finished, not proposed",
       any(j.get("outcome") == "roadblocked" for j in _io.board_state(_rbq_repo)["finished"]))
+check("run_queue dequeues finished jobs (pass AND roadblocked leave the queue)",
+      _io.read_queue(_rbq_repo) == [])
+
+# blocked-approval jobs are recorded but STAY queued: a later `run --approve` picks them up
+_gate_repo = _mk_runner_repo([_RJ(id="g1", repo=".", title="G", type="docs", defcon=1, value=9)])
+_rrg = _rn.run_queue(_gate_repo, _state_ok, now=1, date="2026-06-26",
+                     execute=lambda *a: ("pass", None, "ok"))
+check("run_queue leaves an approval-gated job in the queue",
+      [j.outcome for j in _rrg.jobs] == ["blocked-approval"]
+      and [j.id for j in _io.read_queue(_gate_repo)] == ["g1"])
 
 # --- Stage 7: advising-agent auto-solver ------------------------------------------
 from scorched_earth.runner import build_advisor_cmd  # noqa: E402
@@ -531,15 +543,34 @@ check("build_advisor_cmd is a headless recovery invocation with problem + task +
       and _adv[_adv.index("--model") + 1] == "sonnet")
 
 _savedadv = _rnmod._try_advise
-_rnmod._try_advise = lambda wt, job, roe, base, reason: (True, {"files": 1, "insertions": 3,
-                                                               "deletions": 0}, "fixed")
+_rnmod._try_advise = lambda wt, job, roe, base, reason: ("solved", {"files": 1, "insertions": 3,
+                                                                   "deletions": 0}, "fixed")
 _ao = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
                                   ROE(advise_on_roadblock=True), "sha", "gate FAILED (pytest)")
 check("advise auto-solve turns a roadblock into a pass", _ao[0] == "pass" and "auto-solved" in _ao[2])
-_rnmod._try_advise = lambda *a: (False, None, "nope")
+_rnmod._try_advise = lambda *a: ("unsolved", None, "nope")
 _au = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
                                   ROE(advise_on_roadblock=True), "sha", "stuck")
 check("advise failure leaves the job roadblocked", _au[0] == "roadblocked" and "could not recover" in _au[2])
+# a usage limit or an operator kill DURING the advising attempt must escalate, not read as
+# roadblocked: a limit has to halt the run (the next job would just spawn into the same
+# ceiling) and a kill has to discard like every other kill
+_rnmod._try_advise = lambda *a: ("limit", None, "usage limit hit during recovery.")
+_al = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                  ROE(advise_on_roadblock=True), "sha", "stuck")
+check("advise limit escalates as limit, not roadblocked", _al[0] == "limit")
+_rnmod._try_advise = lambda *a: ("killed", None, "killed by operator during recovery.")
+_ak = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
+                                  ROE(advise_on_roadblock=True), "sha", "stuck")
+check("advise kill escalates as killed, not roadblocked", _ak[0] == "killed")
+_mk_killed = _rnmod._map_recovery(tempfile.mkdtemp(), Job(id="x", repo="r", title="X", type="test"),
+                                  "scorched/x", ("killed", None, "killed by operator during recovery."))
+check("_map_recovery: kill during recovery discards the work",
+      _mk_killed[0] == "killed" and "discarded" in _mk_killed[2])
+_mk_lim = _rnmod._map_recovery("/tmp/r", Job(id="x", repo="r", title="X", type="test"),
+                               "scorched/x", ("limit", {"files": 1}, "usage limit hit during recovery."))
+check("_map_recovery: limit during recovery keeps the branch",
+      _mk_lim[0] == "limit" and "kept on scorched/x" in _mk_lim[2])
 _seen = []
 _rnmod._try_advise = lambda *a: (_seen.append(1), (True, None, "x"))[1]
 _aoff = _rnmod._roadblock_or_advise("/tmp/wt", Job(id="x", repo="r", title="X", type="test"),
@@ -575,6 +606,46 @@ check("served AAR arms the deliverable OPEN link",
       "/artifact?t=TK" in render_review_html(_rr_src, token="TK", repo="/tmp/r")
       and "kind=deliverable" in render_review_html(_rr_src, token="TK", repo="/tmp/r"))
 check("static AAR (no token) has no OPEN link", "/artifact" not in render_review_html(_rr_src))
+
+# --- review batch: kept work must survive re-dispatch and mid-job limits (real git) ---
+import subprocess as _sp  # noqa: E402
+_stubdir = tempfile.mkdtemp()
+with open(os.path.join(_stubdir, "claude"), "w") as _f:
+    _f.write("#!/bin/sh\nexit 0\n")
+os.chmod(os.path.join(_stubdir, "claude"), 0o755)
+_oldpath = os.environ["PATH"]
+os.environ["PATH"] = _stubdir + os.pathsep + _oldpath
+
+def _gitc(repo, *args):
+    return _sp.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t"] + list(args),
+                   capture_output=True, text=True)
+
+_kwrepo = tempfile.mkdtemp()
+_gitc(_kwrepo, "init")
+with open(os.path.join(_kwrepo, "README.md"), "w") as _f:
+    _f.write("base\n")
+_gitc(_kwrepo, "add", "."); _gitc(_kwrepo, "commit", "-m", "base")
+_gitc(_kwrepo, "checkout", "-b", "scorched/z")          # a prior attempt kept work here
+with open(os.path.join(_kwrepo, "PARTIAL.md"), "w") as _f:
+    _f.write("kept work\n")
+_gitc(_kwrepo, "add", "."); _gitc(_kwrepo, "commit", "-m", "partial")
+_gitc(_kwrepo, "checkout", "-")
+_zjob = Job(id="z", repo=_kwrepo, title="Z", type="docs")
+_zo, _zd, _zn = _exec_real(_kwrepo, _zjob, ROE(test_cmd="true", advise_on_roadblock=False))
+check("re-dispatch over a kept branch auto-resumes instead of destroying it",
+      _zo == "pass"
+      and _gitc(_kwrepo, "rev-list", "--count", "HEAD..scorched/z").stdout.strip() != "0"
+      and os.path.exists(os.path.join(_kwrepo, ".scorched", "wt", "z", "PARTIAL.md")))
+
+with open(os.path.join(_stubdir, "claude"), "w") as _f:   # now the ceiling hits mid-resume
+    _f.write('#!/bin/sh\necho \'{"error":"rate_limit"}\'\nexit 1\n')
+_lo, _ld, _ln = _exec_real(_kwrepo, _zjob, ROE(test_cmd="true", advise_on_roadblock=False),
+                           resume=True)
+check("limit during resume keeps the kept branch + worktree",
+      _lo == "limit" and "kept on scorched/z" in _ln
+      and _gitc(_kwrepo, "rev-parse", "--verify", "--quiet", "scorched/z").returncode == 0
+      and os.path.isdir(os.path.join(_kwrepo, ".scorched", "wt", "z")))
+os.environ["PATH"] = _oldpath
 
 print(f"\n{passed} checks passed.")
 if failures:

@@ -362,36 +362,64 @@ def _discard_worktree(root, job_id):
 
 def _try_advise(wt, job, roe, base_sha, problem):
     """One bounded recovery attempt: run an advising agent in the worktree, then re-gate.
-    Returns (solved, diff, note). Solved only when a gate exists and passes after the fix."""
+    Returns (verdict, diff, note); verdict is 'solved' | 'unsolved' | 'killed' | 'limit'.
+    Solved only when a gate exists and passes after the fix. A kill or usage-limit during
+    the attempt is surfaced as its own verdict so the caller can escalate (a limit must
+    halt the whole run, not mislabel the job roadblocked and spawn the next job into it)."""
     status, out, rc = _run_killable(build_advisor_cmd(job, roe, problem), wt,
                                     getattr(_kill_ctx, "event", None),
                                     idle_secs=(roe.roadblock_idle_secs or None),
                                     on_line=getattr(_kill_ctx, "progress", None))
     diff = _diffstat(wt, base_sha)
-    if status in ("killed", "idle") or detect_rate_limit(out):
-        return False, diff, "advising agent could not recover ({}).".format(status)
+    if status == "killed":
+        return "killed", diff, "killed by operator during recovery."
+    if detect_rate_limit(out):
+        return "limit", diff, "usage limit hit during recovery."
+    if status == "idle":
+        return "unsolved", diff, "advising agent could not recover (idle)."
     gate = build_gate_cmd(job, roe)
     if gate is None:
-        return False, diff, "advising agent ran but there is no gate to confirm recovery."
-    g = subprocess.run(gate, cwd=wt, shell=True, capture_output=True, text=True)
-    if g.returncode == 0:
-        return True, diff, "gate passed after recovery."
-    return False, diff, "advising agent's fix still fails the gate."
+        return "unsolved", diff, "advising agent ran but there is no gate to confirm recovery."
+    gstatus, gout, grc = _run_killable(["/bin/sh", "-c", gate], wt,
+                                       getattr(_kill_ctx, "event", None))
+    if gstatus == "killed":
+        return "killed", diff, "killed by operator during recovery."
+    if grc == 0:
+        return "solved", diff, "gate passed after recovery."
+    return "unsolved", diff, "advising agent's fix still fails the gate."
 
 
 def _roadblock_or_advise(wt, job, roe, base_sha, reason):
     """Turn a detected roadblock into an outcome: if advise_on_roadblock, try one recovery
-    attempt (a pass on success), else record 'roadblocked' with a resume hint."""
+    attempt (a pass on success), else record 'roadblocked' with a resume hint. A kill or
+    usage-limit during the attempt escalates as its own outcome (execute_job maps 'killed'
+    to a discard and 'limit' to a run halt)."""
     advised = ""
     if roe.advise_on_roadblock:
-        solved, diff, note = _try_advise(wt, job, roe, base_sha, reason)
-        if solved:
+        verdict, diff, note = _try_advise(wt, job, roe, base_sha, reason)
+        if verdict == "solved":
             return "pass", diff, "roadblock auto-solved by advising agent ({}). {}".format(reason, note)
+        if verdict in ("killed", "limit"):
+            return verdict, diff, note
         advised = " (advising agent could not recover)"
     else:
         diff = _diffstat(wt, base_sha)
     return ("roadblocked", diff,
             "roadblock: {}.{} Branch kept; `scorch coa resume {}`.".format(reason, advised, job.id))
+
+
+def _map_recovery(root, job, br, oc):
+    """Map a recovery-phase escalation to its run-level outcome: an operator kill discards the
+    work (kill means 'get rid of it'); a usage limit keeps the branch (the job stays queued and
+    auto-resumes after the reset). Everything else passes through."""
+    outcome, diff, note = oc
+    if outcome == "killed":
+        _discard_worktree(root, job.id)
+        return "killed", None, "killed by operator, work discarded."
+    if outcome == "limit":
+        return "limit", diff, ("stopped: usage limit during recovery; work kept on {}, "
+                               "auto-resumes on the next run after reset.".format(br))
+    return outcome, diff, note
 
 
 # ---------------------------------------------------------------------------
@@ -422,16 +450,28 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
     try:
         base = _git(root, "rev-parse", "HEAD")
         base_sha = base.stdout.strip() if base.returncode == 0 else "HEAD~1"
+        br_exists = _git(root, "rev-parse", "--verify", "--quiet", br).returncode == 0
+        if not resume and br_exists:
+            # A prior attempt KEPT work here (a roadblock report, or commits HEAD doesn't
+            # have, e.g. a mid-job usage limit). A plain re-dispatch must continue it, not
+            # silently destroy it: auto-switch to resume.
+            ahead = _git(root, "rev-list", "--count", "HEAD.." + br).stdout.strip()
+            if ahead not in ("", "0") or os.path.exists(coa_io.roadblock_path(repo, job.id)):
+                resume = True
         if resume:
-            # Continue a prior roadblocked attempt: its worktree/branch were kept, reuse them.
+            # Continue a prior kept attempt. Its worktree may have been pruned (a limit halt
+            # keeps only the branch); recreate it from the kept branch in that case.
             if not os.path.isdir(wt):
-                return "fail", None, "resume: no prior worktree at {} (nothing to continue).".format(wt)
+                if not br_exists:
+                    return "fail", None, "resume: no prior worktree at {} (nothing to continue).".format(wt)
+                wadd = _git(root, "worktree", "add", wt, br)
+                if wadd.returncode != 0:
+                    return "fail", None, "resume: worktree re-add failed: " + (wadd.stderr or "").strip()[:200]
         else:
-            # A leftover worktree/branch from a prior interrupted run would make `worktree add`
-            # fail ("branch already exists"); clear the stale pair so a re-run starts clean (the
-            # earlier attempt was already recorded or discarded). Same job id is never in flight
-            # twice, so this only ever removes a dead leftover.
-            if os.path.isdir(wt) or _git(root, "rev-parse", "--verify", "--quiet", br).returncode == 0:
+            # A leftover worktree/branch with nothing kept (no report, no commits ahead) is a
+            # dead remnant of an interrupted run; clear the stale pair so the re-run starts
+            # clean instead of cratering on "branch already exists".
+            if os.path.isdir(wt) or br_exists:
                 _discard_worktree(root, job.id)
             # Worktree add is INSIDE the try AND its return code is checked: _git never raises
             # (no check=True), so a failed add (full disk, etc.) must not silently proceed against
@@ -442,8 +482,11 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
         # Write sandbox settings BEFORE any spawn so the agent starts confined.
         write_sandbox_settings(wt)
         if roe.setup_cmd:           # pre-warm deps with network (trusted, runner-run)
-            subprocess.run(roe.setup_cmd, cwd=wt, shell=True,
-                           capture_output=True, text=True)
+            sstatus, _sout, _src = _run_killable(["/bin/sh", "-c", roe.setup_cmd], wt,
+                                                 getattr(_kill_ctx, "event", None))
+            if sstatus == "killed":
+                _discard_worktree(root, job.id)
+                return "killed", None, "killed by operator, work discarded."
         # Killable claude step: the cockpit Engine may set _kill_ctx.event for this job. The idle
         # watchdog flags a job that has gone silent past the ROE timeout as a roadblock.
         status, out, rc = _run_killable(build_claude_cmd(job, wt), wt,
@@ -456,11 +499,20 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
         if status == "idle":                            # stuck: try recovery, else keep for resume
             secs = int(roe.roadblock_idle_secs or 0)
             dur = "{}m".format(secs // 60) if secs >= 60 else "{}s".format(secs)
-            return _roadblock_or_advise(wt, job, roe, base_sha,
-                                        "no output for {} (stuck)".format(dur))
+            return _map_recovery(root, job, br,
+                                 _roadblock_or_advise(wt, job, roe, base_sha,
+                                                      "no output for {} (stuck)".format(dur)))
         if detect_rate_limit(out):
-            _discard_worktree(root, job.id)             # nothing landed; job returns to the queue
-            return "limit", None, "stopped: usage limit reached, re-queued, resume after reset."
+            diff = _diffstat(wt, base_sha)
+            if resume or diff:
+                # Committed work exists on the branch (a resumed attempt, or partial commits
+                # before the ceiling hit): keep it. The job stays queued and the kept-work
+                # guard above auto-resumes it on the next run after the reset.
+                return "limit", diff, ("stopped: usage limit reached; work so far kept on {}, "
+                                       "auto-resumes on the next run after reset.".format(br))
+            _discard_worktree(root, job.id)             # nothing landed; job stays queued
+            return "limit", None, ("stopped: usage limit reached, nothing landed; "
+                                   "job stays queued, run again after reset.")
         diff = _diffstat(wt, base_sha)
         # A nonzero claude exit with no changes is a broken invocation (e.g. a rejected flag /
         # version mismatch), not a phantom 'pass' and not a work roadblock the agent can solve.
@@ -471,11 +523,16 @@ def execute_job(repo: str, job: "Job", roe: "ROE", *, resume: bool = False) -> T
         gate = build_gate_cmd(job, roe)
         if gate is None:
             return "pass", diff, "no gate configured (ROE test_cmd unset), review manually."
-        g = subprocess.run(gate, cwd=wt, shell=True, capture_output=True, text=True)
-        if g.returncode == 0:
+        gstatus, _gout, grc = _run_killable(["/bin/sh", "-c", gate], wt,
+                                            getattr(_kill_ctx, "event", None))
+        if gstatus == "killed":
+            _discard_worktree(root, job.id)
+            return "killed", None, "killed by operator, work discarded."
+        if grc == 0:
             return "pass", diff, "gate passed."
-        return _roadblock_or_advise(wt, job, roe, base_sha,   # failed gate: try recovery, else roadblock
-                                    "gate FAILED ({})".format(gate))
+        return _map_recovery(root, job, br,
+                             _roadblock_or_advise(wt, job, roe, base_sha,   # failed gate: recover or roadblock
+                                                  "gate FAILED ({})".format(gate)))
     except Exception as e:          # noqa: BLE001 — never let one job abort the run
         return "fail", None, "runner error: {}".format(e)
 
@@ -613,6 +670,11 @@ def run_queue(repo, state, *, now, date, execute=None, on_step=None, approved=Fa
         if oc.outcome == "roadblocked":       # report + notify; the run continues to the next job
             handle_roadblock(repo, oc)
         rr.jobs[-1] = oc                      # replace the 'running' outcome with the finished one
+        if oc.outcome in ("pass", "fail", "roadblocked", "killed"):
+            # A finished job leaves the queue (same semantics as the cockpit engine): a
+            # re-run must not silently re-execute it. Roadblocked comes back via `resume`,
+            # not the queue. Blocked-* and limit jobs stay queued for a later run.
+            coa_io.unqueue(repo, oc.id)
         if oc.outcome == "limit":
             rr.state = "halted"
             _persist()
